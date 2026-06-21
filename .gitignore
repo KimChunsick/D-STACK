@@ -1,0 +1,73 @@
+# ── Allowlist: deny everything at the top level by default… ──
+/*
+
+# …then re-include only curated top-level paths.
+!/.gitignore
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/install.sh
+!/docs/
+!/tests/
+!/claude/
+!/codex/
+!/gemini/
+
+# ── Inside each agent dir: deny-all, then re-include only curated entries ──
+# Unanticipated names (claude/id_rsa, novel skill dirs, hook blobs) are denied here
+# and never re-included — the allowlist stays a true allowlist at every level we can
+# enumerate. hooks/ and rules/ are pinned to exact files; skills/ to exact skill dirs.
+/claude/*
+!/claude/.gitkeep
+!/claude/CLAUDE.md
+!/claude/settings.json
+!/claude/statusline-command.sh
+!/claude/hooks/
+/claude/hooks/*
+!/claude/hooks/fullcycle-inject.sh
+!/claude/hooks/fullcycle-gate.sh
+!/claude/skills/
+/claude/skills/*
+!/claude/skills/full-cycle/
+!/claude/skills/codex-review/
+/codex/*
+!/codex/.gitkeep
+!/codex/instructions.md
+!/codex/rules/
+/codex/rules/*
+!/codex/rules/default.rules
+/gemini/*
+!/gemini/.gitkeep
+!/gemini/README.md
+
+# ── Defense in depth: hard-deny secret/runtime names anywhere (incl. allowed subtrees) ──
+# Backstops the one inherent wholesale surface: files *inside* a named skill dir.
+**/auth.json
+**/credentials.json
+**/*credentials*
+**/*password*
+**/.netrc
+**/id_rsa
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.token
+**/*_token
+**/*.secret
+**/*.sqlite
+**/*.sqlite-*
+**/*.sqlite3
+**/*.db
+**/*.db3
+**/history.jsonl
+**/config.toml
+**/.DS_Store
+**/sessions/
+**/projects/
+**/memory/
+.env
+.env.*

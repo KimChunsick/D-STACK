@@ -1,0 +1,53 @@
+# M2 E2E evidence — 868c7a7
+## bash tests/run.sh
+── test_claude_artifacts.sh
+  ✓ PASS: claude artifacts
+── test_codex_artifacts.sh
+  ✓ PASS: codex artifacts + gemini placeholder
+── test_gitignore_secret_guard.sh
+  ✓ PASS: gitignore secret guard
+── test_repo_agents_docs.sh
+  ✓ PASS: repo agent docs
+
+ALL TESTS PASSED
+
+## settings.json: valid JSON, $HOME present, no /Users/, no third-party
+jq: valid
+  $HOME count: 3
+  /Users/ count: 0
+  third-party refs: 0
+
+## tracked tree (no secrets/PII)
+  .gitignore
+  AGENTS.md
+  CLAUDE.md
+  README.md
+  claude/.gitkeep
+  claude/CLAUDE.md
+  claude/hooks/fullcycle-gate.sh
+  claude/hooks/fullcycle-inject.sh
+  claude/settings.json
+  claude/skills/codex-review/SKILL.md
+  claude/skills/full-cycle/SKILL.md
+  claude/statusline-command.sh
+  codex/.gitkeep
+  codex/instructions.md
+  codex/rules/default.rules
+  docs/dstack-backup/M1-foundation/01-gitignore-secret-guard.md
+  docs/dstack-backup/M1-foundation/02-repo-agents-docs.md
+  docs/dstack-backup/M2-ingest/03-claude-artifacts.md
+  docs/dstack-backup/M2-ingest/04-codex-artifacts-gemini-placeholder.md
+  docs/dstack-backup/M3-install-verify/05-install-sh.md
+  docs/dstack-backup/M3-install-verify/06-e2e-restore-commit.md
+  docs/dstack-backup/PLAN.md
+  docs/dstack-backup/evidence/m1-tests.txt
+  gemini/.gitkeep
+  gemini/README.md
+  tests/lib.sh
+  tests/run.sh
+  tests/test_claude_artifacts.sh
+  tests/test_codex_artifacts.sh
+  tests/test_gitignore_secret_guard.sh
+  tests/test_repo_agents_docs.sh
+
+## private-name denylist guard fires on injected name: verified earlier (see commit log)

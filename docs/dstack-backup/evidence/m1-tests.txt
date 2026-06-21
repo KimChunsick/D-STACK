@@ -1,0 +1,33 @@
+# M1 E2E evidence — b0654cf
+## bash tests/run.sh
+── test_gitignore_secret_guard.sh
+  ✓ PASS: gitignore secret guard
+── test_repo_agents_docs.sh
+  ✓ PASS: repo agent docs
+
+ALL TESTS PASSED
+
+## structural checks
+- CLAUDE.md imports AGENTS.md:
+1:@AGENTS.md
+- tracked tree (no secrets):
+.gitignore
+AGENTS.md
+CLAUDE.md
+claude/.gitkeep
+codex/.gitkeep
+docs/dstack-backup/M1-foundation/01-gitignore-secret-guard.md
+docs/dstack-backup/M1-foundation/02-repo-agents-docs.md
+docs/dstack-backup/M2-ingest/03-claude-artifacts.md
+docs/dstack-backup/M2-ingest/04-codex-artifacts-gemini-placeholder.md
+docs/dstack-backup/M3-install-verify/05-install-sh.md
+docs/dstack-backup/M3-install-verify/06-e2e-restore-commit.md
+docs/dstack-backup/PLAN.md
+gemini/.gitkeep
+README.md
+tests/lib.sh
+tests/run.sh
+tests/test_gitignore_secret_guard.sh
+tests/test_repo_agents_docs.sh
+- secret guard: dummy auth.json ignored?
+claude/auth.json
