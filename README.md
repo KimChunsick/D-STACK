@@ -36,9 +36,11 @@ re-enable any plugins you use manually (e.g. via `/plugin`).
 
 ## Uninstall
 
-`install.sh` replaces each live file with a symlink and saves the original as
-`<file>.bak.<timestamp>`. To revert: delete the symlink and move the matching
-`.bak` back, e.g. `rm ~/.claude/CLAUDE.md && mv ~/.claude/CLAUDE.md.bak.* ~/.claude/CLAUDE.md`.
+`install.sh` replaces each live file with a symlink and saves the original under
+`~/.dstack-backups/<timestamp>/` (mirroring the live path) — so a backed-up skill/hook
+dir is never re-discovered as a duplicate. To revert an entry, delete the symlink and
+move its backup back, e.g.
+`rm ~/.claude/CLAUDE.md && mv ~/.dstack-backups/<ts>/.claude/CLAUDE.md ~/.claude/CLAUDE.md`.
 
 ## Safety
 

@@ -30,6 +30,9 @@ codex/rules/default.rules|.codex/rules/default.rules|link
 
 # Timestamp for backup names (overridable for deterministic tests).
 ts="${DSTACK_BACKUP_TS:-$(date +%Y%m%d-%H%M%S)}"
+# Backups go OUTSIDE the live agent dirs so a backed-up skill/hook dir is never
+# re-discovered as a skill/hook. Structure under the root mirrors the live path.
+backup_root="$HOME/.dstack-backups/$ts"
 linked=0; copied=0; backed=0; noop=0; skipped=0
 
 note() { printf '%s\n' "$*"; }
@@ -56,11 +59,12 @@ while IFS='|' read -r rel target mode; do
     note "  = up to date: $target"; noop=$((noop + 1)); continue
   fi
 
-  # Back up anything already there (real file/dir or stale symlink). Pick a
+  # Back up anything already there into the backup root (outside live dirs). Pick a
   # collision-free name so a backup never overwrites an earlier backup.
   if [ -e "$dst" ] || [ -L "$dst" ]; then
-    bak="$dst.bak.$ts"; n=1
-    while [ -e "$bak" ] || [ -L "$bak" ]; do bak="$dst.bak.$ts.$n"; n=$((n + 1)); done
+    bak="$backup_root/$target"; n=1
+    while [ -e "$bak" ] || [ -L "$bak" ]; do bak="$backup_root/$target.$n"; n=$((n + 1)); done
+    run mkdir -p "$(dirname "$bak")"
     run mv "$dst" "$bak"
     note "  ~ backed up existing → ${bak#"$HOME/"}"; backed=$((backed + 1))
   fi
