@@ -1,16 +1,15 @@
-## 0. Full-Cycle Workflow (강제)
+## 0. Full-Cycle Workflow (mandatory)
 
-**모든 구현·변경·버그수정·리팩터·설정·빌드 작업은 `full-cycle` 스킬로 시작한다.**
-파이프라인: 의도캡처 → 보안/UI·UX/기술 3축 평가 → (불확실하면) deep-research(반대의견 포함)
-→ 심층 인터뷰(뻔한 질문 금지) → 마일스톤+PR단위 태스크 분해 → `docs/<작업>/<마일스톤>/<태스크>.md`
-문서화 → Red-Green-Refactor TDD → `codex-review`(GPT-5.5 적대적 검증 + 문서 내 합의 루프)
-→ E2E 캡처 검증 → 최종 보고.
+**Every implementation / change / bugfix / refactor / configuration / build task starts with the `full-cycle` skill.**
+Pipeline: intent capture → security/UI·UX/technical tri-axis evaluation → (if uncertain) deep-research (including opposing views)
+→ deep interview (no obvious questions) → milestone + PR-sized task decomposition → `docs/<work>/<milestone>/<task>.md`
+documentation → Red-Green-Refactor TDD → `codex-review` (GPT-5.5 adversarial verification + in-document consensus loop)
+→ E2E capture verification → final report.
 
-- **스킵**: 프롬프트에 `[quick]` 를 쓰면 이 워크플로우를 건너뛴다. 순수 질문·조회·대화도 생략 가능.
-- **강제 게이트**: 태스크 문서의 `## 게이트 상태` 체크박스가 미완료(`- [ ]`)면 Stop 훅이 턴 종료를
-  차단한다. 게이트는 *실제로* 완료했을 때만 체크할 것 — 체크박스 위조는 사용자가 금지한
-  "완료했다고 거짓말" 그 자체다. 사용자 입력 대기가 필요하면 해당 태스크를 `.fullcycle-active`
-  에서 제거해 일시중지로 표시한다.
+- **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
+- **Mandatory gate**: while a task doc's `## Gate status` checkbox is unchecked (`- [ ]`), the Stop hook blocks the turn
+  from ending. Only check a gate when it is *actually* complete — faking a checkbox is exactly the "lie that it's done"
+  the user forbids. If you need to wait for user input, remove that task from `.fullcycle-active` to mark it paused.
 
 ## 1. Think Before Coding
 

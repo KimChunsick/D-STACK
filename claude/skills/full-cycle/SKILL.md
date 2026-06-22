@@ -78,8 +78,8 @@ files were changed and why each change was made. Write this *as you work*, not a
 Invoke the `codex-review` skill on the task doc. It sends the doc + diff to Codex
 (GPT-5.5) for adversarial verification across security/technical/UI&UX, software
 structure, and "does this satisfy the real Why". Record GPT's verdict in the doc and
-run the rebuttal/consensus loop **inside the document** until 합의완료 (consensus) or
-수정완료 (resolved). Then tick the Codex checkbox.
+run the rebuttal/consensus loop **inside the document** until **agreed** (both sides
+agree) or **resolved** (raised issues fixed). Then tick the Codex checkbox.
 
 ## Phase 10 — E2E capture verification
 Verify the task actually works, hands-on (invoke `verify` / `run` skills as fitting):
@@ -101,26 +101,26 @@ verified, what changed, and any follow-ups. This is the close-out the user expec
 ```markdown
 # <NN-task-name>
 
-## 의도 / Why
+## Intent / Why
 <what this task achieves and why it matters to the overall work>
 
-## 작업 내용 (무엇을 / 왜)
+## What was done (what / why)
 <what was done and why>
 
-## 변경 파일 (어디를 / 왜 수정)
+## Files changed (where / why)
 - `path` — <why this change>
 
-## Codex 리뷰 (GPT-5.5)
+## Codex review (GPT-5.5)
 <GPT verdict recorded here; Claude<->GPT rebuttals appended until consensus>
-- 합의 상태: 진행중 | 합의완료 | 수정완료
+- Consensus: in progress | agreed | resolved
 
-## E2E 검증
+## E2E verification
 <evidence: screenshot path / run output>
 
-## 게이트 상태
-- [ ] TDD: Red→Green→Refactor 완료
-- [ ] Codex(GPT-5.5) 적대적 리뷰 합의완료
-- [ ] E2E 캡처 검증 완료
+## Gate status
+- [ ] TDD: Red→Green→Refactor complete
+- [ ] Codex (GPT-5.5) adversarial review consensus
+- [ ] E2E capture verified
 ```
 
 The Stop hook scans active task docs for unchecked `- [ ]` boxes. Tick a box only when

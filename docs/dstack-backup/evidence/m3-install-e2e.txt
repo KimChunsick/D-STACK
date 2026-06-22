@@ -1,7 +1,7 @@
-# M3 E2E evidence — d4416a8
+# M3 E2E evidence — c70e15b
 
 ## 1) Fresh install into a sandbox HOME (real run)
-D-STACK installer  (repo: <REPO>)
+D-STACK installer  (repo: /Users/<user>/Projects/D-STACK)
   + linked: .claude/CLAUDE.md → claude/CLAUDE.md
   + linked: .claude/settings.json → claude/settings.json
   + linked: .claude/statusline-command.sh → claude/statusline-command.sh
@@ -26,12 +26,12 @@ Summary: linked=9 copied=0 backed-up=0 up-to-date=0 skipped=0
   [OK] .codex/rules/default.rules -> <REPO>/codex/rules/default.rules
 
 ## 3) Linked content is readable through the symlink (spot check)
-  ~/.claude/CLAUDE.md first line: ## 0. Full-Cycle Workflow (강제)
+  ~/.claude/CLAUDE.md first line: ## 0. Full-Cycle Workflow (mandatory)
   ~/.codex/rules/default.rules lines:       34
 
 ## 4) $HOME expansion proxy (Claude runs hook commands via sh -c)
   settings.json command: bash $HOME/.claude/hooks/fullcycle-inject.sh
-  sh -c resolves $HOME to: /var/folders/hy/z5hc9p397c16llrhf34x23pc0000gn/T/tmp.xmsPGCPONE/.claude/hooks/fullcycle-inject.sh
+  sh -c resolves $HOME to: <HOME>/.claude/hooks/fullcycle-inject.sh
   -> target exists at expanded path: YES
 
 ## 5) Idempotent second run (no new backups)
@@ -46,7 +46,7 @@ Summary: linked=0 copied=0 backed-up=0 up-to-date=9 skipped=0
 ── test_gitignore_secret_guard.sh
   ✓ PASS: gitignore secret guard
 ── test_install_sh.sh
-  ✓ PASS: install.sh links + backup + idempotent + dry-run
+  ✓ PASS: install.sh links + backup + idempotent + dry-run + collision-safe
 ── test_repo_agents_docs.sh
   ✓ PASS: repo agent docs
 

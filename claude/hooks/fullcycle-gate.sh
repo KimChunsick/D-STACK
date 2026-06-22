@@ -17,5 +17,5 @@ while IFS= read -r doc; do
   fi
 done < "$f"
 [ -z "$pending" ] && exit 0
-reason="full-cycle 게이트 미완료 — 다음 태스크 문서의 '게이트 상태' 체크박스(TDD / Codex 합의 / E2E)를 실제로 완료해야 턴을 끝낼 수 있습니다: $pending. 남은 게이트를 처리하세요. 사용자 입력을 기다려야 한다면 해당 태스크를 .fullcycle-active 에서 제거해 일시중지로 표시하세요."
+reason="full-cycle gate incomplete — you can end the turn only once the 'Gate status' checkboxes (TDD / Codex consensus / E2E) in these task docs are actually complete: $pending. Resolve the remaining gates. If you must wait for user input, remove that task from .fullcycle-active to mark it paused."
 jq -n --arg r "$reason" '{decision:"block",reason:$r}'
