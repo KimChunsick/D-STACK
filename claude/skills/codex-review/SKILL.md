@@ -32,8 +32,8 @@ codex exec --skip-git-repo-check "You are an adversarial code reviewer. Critical
 
 ## Step 3 — Record and rebut
 Paste GPT's verdict into the task doc under `## Codex review (GPT-5.5)`. Then, for each
-point, respond honestly in the same section using the `receiving-code-review` skill's
-discipline — verify the claim, don't perform agreement, don't blindly comply:
+point, respond honestly in the same section — verify the claim, don't perform
+agreement, don't blindly comply:
 - Agree → fix it, note the fix.
 - Disagree → write your counter-argument with evidence.
 

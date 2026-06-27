@@ -1,6 +1,6 @@
 # D-STACK Agent-Config Backup — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task — a fresh subagent per task with a review between tasks. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn the empty `D-STACK` repo into an extensible, **public-safe**, single-source-of-truth (SSOT) backup of the user's *own authored* AI-agent configs (Claude + Codex today; Gemini/others later), where the repo holds the real files and `~/.claude` / `~/.codex` get symlinks pointing back here.
 

@@ -21,9 +21,8 @@ assert_contains claude/settings.json '$HOME'
 command -v jq >/dev/null 2>&1 || fail "jq not found (required by hooks and this check)"
 jq -e . claude/settings.json >/dev/null || fail "settings.json is not valid JSON"
 
-# Public-safety: no affiliation-revealing marketplace/plugin config. The public
-# superpowers plugin is fine; private marketplaces (apps-in-toss / extraKnownMarketplaces)
-# must never appear (they disclose affiliation).
-assert_not_matches 'apps-in-toss|extraKnownMarketplaces|toss' claude/settings.json
+# No third-party plugins/marketplaces in settings.json: no superpowers, no enabledPlugins,
+# no apps-in-toss / extraKnownMarketplaces (affiliation disclosure). Plugins are not backed up.
+assert_not_matches 'superpowers|enabledPlugins|apps-in-toss|extraKnownMarketplaces|toss' claude/settings.json
 
 pass "claude artifacts"

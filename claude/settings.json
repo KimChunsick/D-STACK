@@ -31,9 +31,6 @@
     "type": "command",
     "command": "sh $HOME/.claude/statusline-command.sh"
   },
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true
-  },
   "skipDangerousModePermissionPrompt": true,
   "agentPushNotifEnabled": true,
   "skipAutoPermissionPrompt": true

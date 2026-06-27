@@ -45,13 +45,12 @@ If any axis raised a question you cannot answer with confidence, invoke the
 Skip this phase only when nothing is genuinely uncertain (say so explicitly).
 
 ## Phase 4 — Deep interview
-Interview the user to close the remaining gaps in intent. Use the `brainstorming`
-skill's discipline: one question at a time, prefer multiple choice.
-**Do not ask obvious questions.** Ask only what changes the design. Continue until
-the intent is fully pinned down.
+Interview the user to close the remaining gaps in intent: ask one question at a time,
+prefer multiple choice. **Do not ask obvious questions.** Ask only what changes the
+design. Continue until the intent is fully pinned down.
 
 ## Phase 5 — Milestone + task decomposition
-Invoke the `writing-plans` skill. Break the work into the largest units (milestones),
+Write an implementation plan. Break the work into the largest units (milestones),
 then break each milestone into detailed sub-tasks. **Correct task size = roughly one
 human-reviewable PR** (a bit larger is fine). The priority is splitting the problem
 small. Number milestones and tasks.
@@ -66,9 +65,9 @@ append its doc path to `.fullcycle-active` at the project root (one path per lin
 the Stop hook reads this file to know which tasks are in flight.
 
 ## Phase 7 — Per-task TDD
-For every task, follow the `test-driven-development` skill: **Red** (write a failing
-test that encodes *why* the behavior matters) → **Green** (minimum code to pass) →
-**Refactor** (clean up, tests stay green). Then tick the TDD checkbox in the task doc.
+For every task, follow strict TDD: **Red** (write a failing test that encodes *why*
+the behavior matters) → **Green** (minimum code to pass) → **Refactor** (clean up,
+tests stay green). Then tick the TDD checkbox in the task doc.
 
 ## Phase 8 — Per-task documentation
 In the task `.md`, record: what was done, why it was done, the Why it serves, which
