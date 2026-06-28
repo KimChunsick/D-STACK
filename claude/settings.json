@@ -3,8 +3,6 @@
     "defaultMode": "auto"
   },
   "model": "opus[1m]",
-  "autoCompactEnabled": true,
-  "autoCompactWindow": 563000,
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -31,7 +29,10 @@
     "type": "command",
     "command": "sh $HOME/.claude/statusline-command.sh"
   },
+  "autoCompactWindow": 563000,
   "skipDangerousModePermissionPrompt": true,
+  "autoCompactEnabled": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "tui": "fullscreen"
 }
