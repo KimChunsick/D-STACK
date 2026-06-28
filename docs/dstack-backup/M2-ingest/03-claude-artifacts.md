@@ -16,7 +16,7 @@ Ingest only the **authored** Claude artifacts into the SSOT; install.sh later sy
 - Findings → actions:
   - (MED) `settings.json` carried third-party plugin/marketplace config (Toss disclosure) → **removed per the user's decision** (commit `868c7a7`); a guard test blocks re-introduction.
   - (MED) `test_claude_artifacts` scanned only `settings.json` → strengthened to scan all of `claude/` for `/Users/` and to validate JSON via `jq`.
-  - (HIGH, cross-cutting) username/project names lingered in git history → user decision: **scrub history before push** (final M3 step); commit author set to `<maintainer-email>`.
+  - (HIGH, cross-cutting) username/project names lingered in git history → user decision: **scrub history before push** (final M3 step); commit author set to the maintainer's public email.
 - Consensus: **resolved** (code fixes done; history scrub reserved for the final step).
 
 ## E2E verification
