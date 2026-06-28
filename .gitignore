@@ -30,8 +30,10 @@
 /claude/skills/*
 !/claude/skills/full-cycle/
 !/claude/skills/codex-review/
+!/claude/skills/codex-research/
 /codex/*
 !/codex/.gitkeep
+!/codex/AGENTS.md
 !/codex/instructions.md
 !/codex/rules/
 /codex/rules/*

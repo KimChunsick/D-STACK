@@ -22,6 +22,7 @@ HOME="$SBX" bash "$REPO/install.sh" >/dev/null
 [ "$(readlink "$SBX/.claude/CLAUDE.md")" = "$REPO/claude/CLAUDE.md" ] || fail "wrong CLAUDE.md link target"
 [ -L "$SBX/.claude/skills/full-cycle" ] || fail "skill dir not symlinked"
 [ -L "$SBX/.codex/instructions.md" ] || fail "codex instructions not symlinked"
+[ "$(readlink "$SBX/.codex/AGENTS.md")" = "$REPO/codex/AGENTS.md" ] || fail "wrong codex AGENTS.md target"
 [ "$(readlink "$SBX/.codex/rules/default.rules")" = "$REPO/codex/rules/default.rules" ] || fail "wrong codex rules target"
 
 # Backups land OUTSIDE the live dirs, preserving content.

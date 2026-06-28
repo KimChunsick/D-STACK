@@ -1,15 +1,18 @@
 ## 0. Full-Cycle Workflow (mandatory)
 
 **Every implementation / change / bugfix / refactor / configuration / build task starts with the `full-cycle` skill.**
-Pipeline: intent capture → security/UI·UX/technical tri-axis evaluation → (if uncertain) deep-research (including opposing views)
-→ deep interview (no obvious questions) → milestone + PR-sized task decomposition → `docs/<work>/<milestone>/<task>.md`
-documentation → Red-Green-Refactor TDD → `codex-review` (GPT-5.5 adversarial verification + in-document consensus loop)
-→ E2E capture verification → final report.
+Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation → **per-Goal Codex research**
+(`codex-research` skill — both-sides evidence; `deep-research` only as fallback) → deep interview (no obvious questions)
+→ **one Goal** + milestone + PR-sized task decomposition → `docs/<goal>/GOAL.md` + task folders
+(`<milestone>/<NN-task>/task.md`) → Red-Green-Refactor TDD → `codex-review` (GPT-5.5 adversarial review recorded in a
+separate `codex-review.md` + consensus loop) → **per-task + per-milestone + final Goal E2E** → final report.
 
 - **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
-- **Mandatory gate**: while a task doc's `## Gate status` checkbox is unchecked (`- [ ]`), the Stop hook blocks the turn
-  from ending. Only check a gate when it is *actually* complete — faking a checkbox is exactly the "lie that it's done"
-  the user forbids. If you need to wait for user input, remove that task from `.fullcycle-active` to mark it paused.
+- **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or task doc
+  (`## Gate status`) has an unchecked `- [ ]` box, the Stop hook blocks the turn from ending. The hook is a *tripwire*
+  (section-scoped, milestone-tied, one-Goal, schema-required, Codex-artifact-gated), not a sandbox — only check a gate
+  when it is *actually* complete; faking a checkbox is exactly the "lie that it's done" the user forbids. To pause for
+  user input, remove that doc from `.fullcycle-active`.
 
 ## 1. Think Before Coding
 

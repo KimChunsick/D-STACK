@@ -24,6 +24,8 @@ claude/hooks/fullcycle-inject.sh|.claude/hooks/fullcycle-inject.sh|link
 claude/hooks/fullcycle-gate.sh|.claude/hooks/fullcycle-gate.sh|link
 claude/skills/full-cycle|.claude/skills/full-cycle|link
 claude/skills/codex-review|.claude/skills/codex-review|link
+claude/skills/codex-research|.claude/skills/codex-research|link
+codex/AGENTS.md|.codex/AGENTS.md|link
 codex/instructions.md|.codex/instructions.md|link
 codex/rules/default.rules|.codex/rules/default.rules|link
 "
