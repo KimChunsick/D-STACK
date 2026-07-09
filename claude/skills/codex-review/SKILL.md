@@ -50,5 +50,15 @@ If disagreements remain, send your rebuttals back to Codex (repeat Step 2 with t
 **agreed** (both sides agree) or **resolved** (raised issues fixed). Only then tick the Codex
 checkbox in the task doc's `## Gate status`.
 
+The gate machine-checks this, as a strict **verdict-only line**: the **last** line that begins
+with `Consensus:` must be *exactly* `Consensus: agreed` or `Consensus: resolved` (a leading
+`- `/`* `/`**` and a trailing `.` are fine — nothing else). Put all rationale on *other* lines;
+a trailing clause is rejected on purpose, because that is exactly where a negation would hide
+(`Consensus: agreed to reject the PR`). Across a multi-round loop only the last such line
+counts, so when a re-review finds a blocker, end the file on `Consensus: disagreed` rather than
+leaving a stale `agreed`. Correctly rejected: `disagreed`, `unresolved`, `not agreed`, `agreed
+was not reached`, `resolved to reject …`, and a negative verdict prefixed with any glyph
+(`Consensus: ❌ disagreed`).
+
 Keep both sides' arguments in `codex-review.md` — the record of *why* a decision was made is
 the point, not just the final answer.
