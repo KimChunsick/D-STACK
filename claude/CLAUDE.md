@@ -14,6 +14,25 @@ separate `codex-review.md` + consensus loop) → **per-task + per-milestone + fi
   when it is *actually* complete; faking a checkbox is exactly the "lie that it's done" the user forbids. To pause for
   user input, remove that doc from `.fullcycle-active`.
 
+## 0.1 Frontend work → `frontend-dev` subagent (mandatory)
+
+**All frontend code work — components (React or any other framework), hooks,
+styles/templates/markup, frontend utilities, frontend test and story files, and frontend
+build configuration — MUST be delegated to the `frontend-dev` subagent**
+(Agent tool / `@agent-frontend-dev`). The rule keys on the nature of the code, not the repo
+shape: it applies equally inside frontend-only repos, full-stack apps, and mixed monorepos.
+Generated frontend artifacts are not hand-edited by any loop — regenerate them via their
+pipeline (delegated when that means changing frontend source). The main loop never implements
+frontend code directly; the sole exception is a one-line typo/copy/constant fix.
+
+- The subagent starts with fresh context: the delegation prompt must carry the full task,
+  target files, constraints, and any repo conventions already discovered.
+- This composes with the full-cycle workflow: the pipeline (docs, review, E2E orchestration)
+  still runs in the main loop; the frontend implementation steps inside it — including
+  writing frontend test code — are delegated.
+- Relay the subagent's report — including its gate results and any surfaced violations —
+  rather than silently re-doing its work.
+
 ## 1. Think Before Coding
 
 **Don't assume. Don't hide confusion. Surface tradeoffs.**

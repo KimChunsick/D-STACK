@@ -132,6 +132,58 @@ if git check-ignore --no-index -q claude/ultracode.zsh; then
 fi
 assert_matches '^claude/ultracode\.zsh\|\.claude/ultracode\.zsh\|link$' install.sh
 
+# frontend-dev subagent: the dedicated frontend implementer. Must exist, carry valid
+# frontmatter (name is the identity hooks/routing see, description drives delegation),
+# steer ALL frontend code work to itself, and stay vendor-neutral — same
+# plugin/marketplace/affiliation hygiene bar as settings.json below.
+fa=claude/agents/frontend-dev.md
+[ -s "$fa" ] || fail "missing or empty: $fa"
+sed -n 1p "$fa" | grep -qx -- '---' || fail "$fa: must open with YAML frontmatter"
+# Identity + delegation steer must live INSIDE a properly CLOSED frontmatter block —
+# the same strings placed in the body (or after a missing closing delimiter) must fail.
+fm="$(awk 'NR==1{next} /^---$/{c=1; exit} {print} END{if(!c) exit 1}' "$fa")" \
+  || fail "$fa: frontmatter never closes"
+printf '%s\n' "$fm" | grep -qE '^name: frontend-dev$' || fail "$fa: frontmatter lacks 'name: frontend-dev'"
+printf '%s\n' "$fm" | grep -qE '^description: ..*MUST BE USED' \
+  || fail "$fa: description lacks the MUST BE USED delegation steer"
+# Frontmatter is a closed shape, not just present fields: every line must be one of the
+# two known single-line keys — a stray/malformed line (e.g. 'broken: [') fails loud here
+# instead of failing silently at agent discovery.
+if printf '%s\n' "$fm" | grep -vE '^(name|description): .' | grep -q .; then
+  fail "$fa: frontmatter contains lines beyond the known name/description keys"
+fi
+# The calibrated substance must survive: every top-level section must OPEN and CLOSE,
+# and the FULL rule bands (M1–M9, S1–S15, P1–P2) must be present — deleting any
+# calibrated rule, not just the band endpoints, trips this.
+for sec in philosophy precedence decision_algorithms rules examples \
+           stack workflow self_review reporting; do
+  assert_contains "$fa" "<$sec>"
+  assert_contains "$fa" "</$sec>"
+done
+for i in 1 2 3 4 5 6 7 8 9;                       do assert_matches "id=\"M$i\"" "$fa"; done
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15;     do assert_matches "id=\"S$i\"" "$fa"; done
+for i in 1 2;                                     do assert_matches "id=\"P$i\"" "$fa"; done
+assert_not_matches 'superpowers|enabledPlugins|apps-in-toss|extraKnownMarketplaces|toss' "$fa"
+# SSOT wiring: allowlisted by exact name (agents/ stays deny-all inside), effectively
+# tracked (a later rule must not override the `!`-entry), linked by install.sh, and the
+# global CLAUDE.md must carry the mandatory routing rule that sends frontend work here.
+assert_contains .gitignore '!/claude/agents/frontend-dev.md'
+if git check-ignore --no-index -q "$fa"; then
+  fail "$fa is gitignored (allowlist line overridden by a later rule)"
+fi
+# Structural exactness, not just probes: agent .md files are executable instruction
+# material, so the ONLY permitted agents-path negations are the directory itself and the
+# exact pinned file — any other re-include (e.g. '!/claude/agents/a*.md') fails here even
+# if every ignored-name probe still passes.
+if grep -E '^!' .gitignore | grep -F 'agents' \
+   | grep -vxE '!/claude/agents/|!/claude/agents/frontend-dev\.md' | grep -q .; then
+  fail ".gitignore: agents-touching negation beyond the exact two allowlist lines"
+fi
+assert_matches '^claude/agents/frontend-dev\.md\|\.claude/agents/frontend-dev\.md\|link$' install.sh
+# One co-located phrase, not two independent greps — 'frontend-dev' somewhere plus an
+# unrelated 'MUST be delegated' elsewhere must not satisfy the routing-rule guard.
+assert_matches 'MUST be delegated to the .frontend-dev. subagent' claude/CLAUDE.md
+
 # Portability: no machine-specific home path in ANY claude artifact (not just settings.json).
 if grep -rqEI '/Users/' claude; then fail "machine-specific /Users/ path leaked under claude/"; fi
 assert_contains claude/settings.json '$HOME'

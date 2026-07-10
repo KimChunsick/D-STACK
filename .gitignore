@@ -32,6 +32,9 @@
 !/claude/skills/full-cycle/
 !/claude/skills/codex-review/
 !/claude/skills/codex-research/
+!/claude/agents/
+/claude/agents/*
+!/claude/agents/frontend-dev.md
 /codex/*
 !/codex/.gitkeep
 !/codex/AGENTS.md

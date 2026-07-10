@@ -17,6 +17,9 @@ leaks=(
   claude/hooks/auth.json claude/skills/full-cycle/credentials.json
   claude/hooks/random_unknownfile claude/hooks/deploy_key_prod
   codex/rules/random_unknownfile claude/skills/novel_secret_dir/blob
+  claude/agents/random_unknownfile claude/agents/auth.json
+  claude/agents/unknown-agent.md claude/agents/nested/inner-agent.md
+  claude/agents/frontend-xyz.md claude/agents/f.md
 )
 created=()
 cleanup() { [ "${#created[@]}" -gt 0 ] && rm -f "${created[@]}"; return 0; }
@@ -30,6 +33,54 @@ for f in "${leaks[@]}"; do
     fail "secret present in git index (already tracked): $f"
   fi
 done
+
+# Behavioral exact-allowlist for agent definitions: agent .md files are executable
+# instruction material, so with the probe battery above still on disk, git must see
+# NOTHING addable under claude/agents/ except the single pinned file — this trips on ANY
+# spelling of a re-include (rooted, unrooted, glob) that exposes any probe.
+extra="$(git ls-files -o --exclude-standard claude/agents/ | grep -vx 'claude/agents/frontend-dev.md' || true)"
+[ -z "$extra" ] || fail "unexpected addable files under claude/agents/: $extra"
+
+# The allowlist is a CLOSED set: every negation (re-include) line in .gitignore must be
+# one of the expected, consciously-added entries below, in order. This rejects ANY new
+# `!` rule — whatever its spelling, root, or glob (`!claude/agents/f*.md`,
+# `!/claude/**/z*.md`, …) — until it is deliberately added here alongside its review.
+# Finite probe batteries cannot close the pattern space; pinning the rule set itself does.
+expected_negations='!/.gitignore
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/install.sh
+!/docs/
+!/tests/
+!/claude/
+!/codex/
+!/gemini/
+!/claude/.gitkeep
+!/claude/CLAUDE.md
+!/claude/settings.json
+!/claude/statusline-command.sh
+!/claude/ultracode.zsh
+!/claude/hooks/
+!/claude/hooks/fullcycle-inject.sh
+!/claude/hooks/fullcycle-gate.sh
+!/claude/skills/
+!/claude/skills/full-cycle/
+!/claude/skills/codex-review/
+!/claude/skills/codex-research/
+!/claude/agents/
+!/claude/agents/frontend-dev.md
+!/codex/.gitkeep
+!/codex/AGENTS.md
+!/codex/instructions.md
+!/codex/rules/
+!/codex/rules/default.rules
+!/gemini/.gitkeep
+!/gemini/README.md'
+got_negations="$(grep '^!' .gitignore)"
+[ "$got_negations" = "$expected_negations" ] \
+  || fail ".gitignore negation set drifted from the pinned allowlist:
+$(diff <(printf '%s\n' "$expected_negations") <(printf '%s\n' "$got_negations") || true)"
 
 # The tracked tree must contain no secret pattern.
 if git ls-files | grep -Ei 'auth\.json|credentials\.json|\.netrc|id_rsa|id_ed25519|history\.jsonl|config\.toml|\.DS_Store|\.(pem|key|p12|pfx|token|secret|sqlite[0-9]?|db[0-9]?)$|(^|/)\.env'; then
