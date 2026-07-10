@@ -1,11 +1,11 @@
 {
-  "permissions": {
-    "defaultMode": "auto"
-  },
-  "model": "opus[1m]",
   "env": {
     "CLAUDE_CODE_SUBAGENT_MODEL": "opus"
   },
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "UserPromptSubmit": [
       {

@@ -22,6 +22,7 @@
 !/claude/CLAUDE.md
 !/claude/settings.json
 !/claude/statusline-command.sh
+!/claude/ultracode.zsh
 !/claude/hooks/
 /claude/hooks/*
 !/claude/hooks/fullcycle-inject.sh

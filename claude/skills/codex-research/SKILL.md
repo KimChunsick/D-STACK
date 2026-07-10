@@ -6,7 +6,8 @@ description: Delegated deep research by Codex CLI (GPT-5.5) using its live web t
 # Codex Delegated Research (GPT-5.5 + web.run)
 
 Codex is configured as the maintainer's adversarial **researcher** (`~/.codex/AGENTS.md`)
-and runs GPT-5.5 at xhigh (`~/.codex/config.toml`). In `codex exec` it has a live `web.run`
+and runs GPT-5.5 at xhigh for research (pinned below — review uses GPT-5.6 Sol;
+`~/.codex/config.toml` backstops the effort globally). In `codex exec` it has a live `web.run`
 tool — verified — so it does real web search + page fetch, not training-data recall.
 
 Run this **every Goal** (full-cycle Phase 3), after tri-axis, before decomposition. It is
@@ -39,6 +40,8 @@ codex exec \
 - `-s read-only` — never mutate the tree.
 - `-C "$SCRATCH"` — minimal working root (cwd isolation, not a chroot); web research needs no repo context.
 - `-m gpt-5.5 -c model_reasoning_effort="xhigh"` — pin model+effort; do not depend on config drift.
+  Research deliberately stays on GPT-5.5 (cost: Sol is ~2× gpt-5.5 by API-token pricing;
+  Codex-credit units unverified. Review pins Sol — the quality gate is worth it).
 - `-o …` — `--output-last-message`: reproducible artifact capture (no manual copy/paste).
 - `codex exec` accepts a prompt arg *and* stdin: stdin is appended as a `<stdin>` block, so the
   static instructions stay in the (safe) prompt and the variable brief rides on stdin.

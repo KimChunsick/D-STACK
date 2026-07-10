@@ -20,6 +20,7 @@ MAP="
 claude/CLAUDE.md|.claude/CLAUDE.md|link
 claude/settings.json|.claude/settings.json|link
 claude/statusline-command.sh|.claude/statusline-command.sh|link
+claude/ultracode.zsh|.claude/ultracode.zsh|link
 claude/hooks/fullcycle-inject.sh|.claude/hooks/fullcycle-inject.sh|link
 claude/hooks/fullcycle-gate.sh|.claude/hooks/fullcycle-gate.sh|link
 claude/skills/full-cycle|.claude/skills/full-cycle|link
