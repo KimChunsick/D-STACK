@@ -87,10 +87,42 @@ docs/<goal>/<MN-milestone>/<NN-task>/codex-review.md   # written in Phase 9
 ```
 `GOAL.md` (template below) holds the Goal, the interview record, the research summary, the
 milestone/task checklist, **and the Goal gate**. Use the task template (below) for each
-`task.md`. **Register `GOAL.md` AND the current `task.md` in `.fullcycle-active`** (one path per
-line) — the Stop hook reads this file to know what is in flight. `GOAL.md` stays registered for
-the whole Goal; remove a `task.md` line only when its gates are ticked (or to pause for user
-input).
+`task.md`. **Register `GOAL.md` AND the current `task.md` in `.fullcycle-active`**, one line each,
+**tagged with your session id** so concurrent tabs don't cross-block — the Stop hook enforces only
+the lines your own session owns. Use these exact-match, idempotent, lock-serialized helpers (a real
+TAB separates id and path; `reg` is safe to re-run, `unreg` targets only your own line; a `mkdir`
+lock — portable, no `flock` needed — serializes the read-modify-write so a concurrent `unreg` can't
+drop a simultaneous `reg`):
+```bash
+T=$(printf '\t'); L=.fullcycle-active.lock
+_lock()   { local n=0; until mkdir "$L" 2>/dev/null; do n=$((n+1)); [ $n -ge 100 ] && return 1; sleep 0.05; done
+            trap '_unlock' EXIT; trap '_unlock; exit 130' INT; trap '_unlock; exit 143' TERM; }  # signal ⇒ unlock THEN abort (no mutate-after-unlock)
+_unlock() { rmdir "$L" 2>/dev/null; trap - EXIT INT TERM; }
+reg()   { _lock || return 1; local l="$CLAUDE_CODE_SESSION_ID$T$1" rc=0
+          grep -qxF -- "$l" .fullcycle-active 2>/dev/null || { printf '%s\n' "$l" >> .fullcycle-active || rc=1; }
+          _unlock; return $rc; }                                   # rc reflects the append, not _unlock
+unreg() { _lock || return 1; local l="$CLAUDE_CODE_SESSION_ID$T$1" t rc=0; t=$(mktemp) || { _unlock; return 1; }
+          grep -vxF -- "$l" .fullcycle-active > "$t" 2>/dev/null; [ $? -ge 2 ] && rc=1  # grep 1=no-match ok, ≥2=read error
+          if [ $rc -eq 0 ]; then mv "$t" .fullcycle-active || rc=1; else rm -f "$t"; fi   # never clobber on a read error
+          _unlock; return $rc; }
+reg docs/<goal>/GOAL.md || echo "WARN: registration failed — Goal is UNGATED" >&2
+reg docs/<goal>/<MN-milestone>/<NN-task>/task.md || echo "WARN: registration failed — task is UNGATED" >&2
+```
+The Stop hook reads this file to know what is in flight. `GOAL.md` stays registered for the whole
+Goal; `unreg docs/<goal>/<MN>/<NN>/task.md` a task line only when its gates are ticked (or to pause
+for user input). **Fail-closed:** an untagged line, or an empty `$CLAUDE_CODE_SESSION_ID`, is
+enforced by *every* session — a missing tag never silently escapes the gate; the hook also dedupes,
+so a doubly-registered line counts once. **Caveats (accepted at this scale — a few human-paced
+tabs, not a distributed system):** (a) `/clear` rotates the session id, so lines registered before
+it become orphans that block nobody — `unreg` (with the old id) or hand-edit to clear them; likewise
+a line tagged with an id no live session holds (a typo, a stale id) is an orphan, not fail-closed.
+(b) The `mkdir` lock serializes mutations, so no registration is lost in normal operation; only a
+*hard* kill (SIGKILL / power loss) mid-mutation can strand the lock dir — recover with
+`rm -rf .fullcycle-active.lock`. (c) **Migration:** an existing *untagged* line stays globally
+enforced until removed — appending a tagged line does not convert it, and `unreg` (which builds
+`<your-id><TAB><path>`) cannot match an untagged line. To migrate a repo once, while no other tab is
+registering, keep only the tagged (TAB-bearing) lines:
+`t=$(mktemp); grep -F "$T" .fullcycle-active > "$t" 2>/dev/null || true; mv "$t" .fullcycle-active`.
 
 ## Phase 7 — Per-task TDD
 For every task, follow strict TDD: **Red** (write a failing test that encodes *why*
@@ -115,7 +147,7 @@ Verify the task actually works, hands-on (invoke `verify` / `run` skills as fitt
 - **Desktop app**: capture the screen and confirm it runs/behaves correctly.
 - **CLI/library/config**: run it and confirm it executes correctly.
 Save the evidence into `task.md`. Never claim it works without direct evidence. Tick the E2E
-checkbox. When all of a task's gates are ticked, remove its line from `.fullcycle-active`.
+checkbox. When all of a task's gates are ticked, remove its line (your session-tagged one) from `.fullcycle-active`.
 
 ## Phase 11 — Per-milestone E2E
 When **every task in a milestone** is done, run a **milestone-level E2E** that exercises those
@@ -126,8 +158,8 @@ the evidence in `GOAL.md` and tick that milestone's box in the **Goal gate**.
 When **every milestone** is done, run one **final Goal-level E2E** that exercises the whole
 Goal end-to-end, and tick the `GOAL E2E` box in the Goal gate. Only when every Goal-gate box is
 ticked may the loop end. Then write the final report: which milestones/tasks completed, how each
-finished, what was verified, what changed, and any follow-ups — and remove `GOAL.md` from
-`.fullcycle-active`.
+finished, what was verified, what changed, and any follow-ups — and remove `GOAL.md` (your
+session-tagged line) from `.fullcycle-active`.
 
 ---
 

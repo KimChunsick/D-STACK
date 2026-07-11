@@ -13,16 +13,42 @@
 # with the inject hook + adversarial review, skipping becomes costly and visible — defense in
 # depth, not a single airtight gate.
 #
+# Per-session scoping: a registry line may be tagged "<owner-session><TAB><docpath>" so that
+# concurrent tabs don't cross-block. This Stop hook enforces only the lines IT owns, keyed on
+# $CLAUDE_CODE_SESSION_ID (the same id Claude Code injects into hook + Bash subprocesses; it is
+# also the `session_id` on hook stdin). SELF-ATTESTATION LIMIT: like a ticked checkbox, an owner
+# tag is written by the guarded agent — a wrong tag (bug or intent) can make this Stop ignore a
+# doc, and `/clear` rotates the id so a doc registered before it becomes an orphan no live session
+# owns (blocks nobody — an accepted, documented cost, not stale-owner reclamation). This is not a
+# new *malicious* bypass: deleting the line (the escape hatch) already does the same. FAIL-CLOSED:
+# any line we cannot attribute — no tag (legacy), an empty owner, or an empty $CLAUDE_CODE_SESSION_ID
+# (id unknown) — is enforced by EVERY session, so uncertainty blocks rather than silently clears.
+#
 # Escape hatch (avoids deadlock): remove a doc's line from .fullcycle-active to pause it.
 f=".fullcycle-active"
 [ -f "$f" ] || exit 0
 
-goals=(); tasks=()
-while IFS= read -r doc; do
-  [ -z "$doc" ] && continue
+sid="${CLAUDE_CODE_SESSION_ID:-}"      # this session's identity; empty ⇒ fail-closed (enforce all)
+tab="$(printf '\t')"
+goals=(); tasks=(); seen=""
+while IFS= read -r line; do
+  [ -z "$line" ] && continue
+  case "$line" in
+    *"$tab"*) owner="${line%%"$tab"*}"; doc="${line#*"$tab"}" ;;   # tagged: split on first TAB
+    *)        owner=""; doc="$line" ;;                             # untagged legacy line
+  esac
+  # Skip a line only when it is provably someone else's: it has an owner, we know our own id,
+  # and they differ. Everything else (ours, or unattributable — no owner / empty id) falls
+  # through and is enforced. (An owner no live session holds — a typo, or a line stranded by
+  # `/clear` rotating the id — is an orphan by construction: nobody enforces it. That is the
+  # accepted orphan semantics, NOT the fail-closed path, which covers only *unattributable*
+  # lines. See the block comment above.)
+  if [ -n "$owner" ] && [ -n "$sid" ] && [ "$owner" != "$sid" ]; then continue; fi
   case "$doc" in docs/*) : ;; *) continue ;; esac      # only docs/ paths are honored
   [ -L "$doc" ] && continue                             # never follow a symlinked doc
   [ -f "$doc" ] || continue
+  case "$seen" in *"<$doc>"*) continue ;; esac          # dedupe: same doc registered twice
+  seen="$seen<$doc>"                                    # (any writer/race) counts once — no false >1-Goal
   case "$doc" in *GOAL.md) goals+=("$doc") ;; *) tasks+=("$doc") ;; esac
 done < "$f"
 
@@ -93,5 +119,5 @@ for g in "${goals[@]}"; do
 done
 
 [ -z "$p" ] && exit 0
-reason="full-cycle gate incomplete —$p  Resolve these, or remove a doc from .fullcycle-active to pause it. (Tripwire over registered docs + Codex review, not a sandbox: a ticked box is self-attested — do not fake it.)"
+reason="full-cycle gate incomplete —$p  (Enforced for this session: its own owner-tagged docs plus any untagged/unknown-id lines; another session's tagged docs are not shown here.) Resolve these, or remove a doc's line from .fullcycle-active to pause it. (Tripwire over registered docs + Codex review, not a sandbox: a ticked box is self-attested — do not fake it.)"
 jq -n --arg r "$reason" '{decision:"block",reason:$r}'

@@ -10,9 +10,12 @@ separate `codex-review.md` + consensus loop) → **per-task + per-milestone + fi
 - **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
 - **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or task doc
   (`## Gate status`) has an unchecked `- [ ]` box, the Stop hook blocks the turn from ending. The hook is a *tripwire*
-  (section-scoped, milestone-tied, one-Goal, schema-required, Codex-artifact-gated), not a sandbox — only check a gate
-  when it is *actually* complete; faking a checkbox is exactly the "lie that it's done" the user forbids. To pause for
-  user input, remove that doc from `.fullcycle-active`.
+  (section-scoped, milestone-tied, one-Goal, schema-required, Codex-artifact-gated, **per-session-scoped**), not a
+  sandbox — only check a gate when it is *actually* complete; faking a checkbox is exactly the "lie that it's done" the
+  user forbids. **Per-session:** each registry line in `.fullcycle-active` is tagged with the owning session id
+  (`$CLAUDE_CODE_SESSION_ID`), and a Stop enforces only the lines its own session owns, so concurrent terminal tabs
+  don't cross-block; untagged / unknown-id lines stay fail-closed (enforced by everyone). To pause for user input,
+  remove that doc's line from `.fullcycle-active`.
 
 ## 0.1 Frontend work → `frontend-dev` subagent (mandatory)
 

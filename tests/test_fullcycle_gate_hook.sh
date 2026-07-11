@@ -182,4 +182,60 @@ done
 printf '# Review\n1. Consensus: agreed\n' > docs/g/M1/T01/codex-review.md
 out="$(bash "$HOOK")"; [ -z "$out" ] || fail "C23: an ordered-list positive verdict was wrongly blocked"
 
-pass "Stop hook: milestone-tied (level ≥1/case/indent/word-boundary), one-Goal, schema-required (Goal+task), Codex unconditional strict-positive-verdict-gated (last verdict wins; ordered/heading/emoji/blockquote-tolerant), GFM-marker-robust, escape-hatch-sound"
+# ================= Per-session scoping (owner-tagged registry lines) =================
+# Registry lines may be tagged "<session_id><TAB><docpath>". The Stop hook reads its own
+# $CLAUDE_CODE_SESSION_ID and enforces ONLY lines it owns; unattributable lines (untagged /
+# empty id / empty owner) are fail-closed = enforced by everyone. WHY: concurrent tabs must
+# not cross-block, yet nothing unattributable may silently escape the gate.
+mkdir -p docs/ga/M1/T01 docs/gb
+GA=docs/ga/GOAL.md; GB=docs/gb/GOAL.md
+TAB="$(printf '\t')"
+
+# ---- Case 24: isolation both directions — A's Stop ignores B's incomplete owned doc;
+#      B's Stop still blocks on B's own incomplete doc. ----
+printf '# GOAL\n## Goal gate\n- [x] GOAL E2E: done\n' > "$GA"           # A: complete
+printf '# GOAL\n## Goal gate\n- [ ] GOAL E2E: pending\n' > "$GB"        # B: incomplete
+printf 'A%s%s\nB%s%s\n' "$TAB" "$GA" "$TAB" "$GB" > .fullcycle-active
+out="$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")"; [ -z "$out" ] || fail "C24: session A was blocked by session B's incomplete owned doc (isolation broken)"
+blocks "$(CLAUDE_CODE_SESSION_ID=B bash "$HOOK")" || fail "C24: session B was NOT blocked by its OWN incomplete owned doc"
+
+# ---- Case 25: an UNTAGGED (legacy) line is fail-closed — enforced even by a session that
+#      knows its own id and owns nothing here. ----
+printf '%s\n' "$GB" > .fullcycle-active                                 # untagged, incomplete
+blocks "$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")" || fail "C25: untagged legacy line was not enforced (fail-closed broken)"
+
+# ---- Case 26: EMPTY / unset session id falls back to checking ALL docs (fail-closed) ⇒ BLOCK.
+#      Must unset explicitly — the test host may itself run inside a real CLAUDE_CODE_SESSION_ID. ----
+printf 'A%s%s\nB%s%s\n' "$TAB" "$GA" "$TAB" "$GB" > .fullcycle-active
+blocks "$(env -u CLAUDE_CODE_SESSION_ID bash "$HOOK")" || fail "C26: unset session id did not fall back to enforcing all docs"
+
+# ---- Case 27: the one-Goal rule is PER SESSION — two Goals total, each owned by a different
+#      session, must NOT read as '>1 Goal' for either. ----
+printf '# GOAL\n## Goal gate\n- [x] GOAL E2E: done\n' > "$GB"           # B now complete
+printf 'A%s%s\nB%s%s\n' "$TAB" "$GA" "$TAB" "$GB" > .fullcycle-active
+out="$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")"; [ -z "$out" ] || fail "C27: two Goals across two sessions wrongly tripped the one-Goal rule for session A"
+
+# ---- Case 28: within-session one-Goal still holds — ONE session owning two Goals ⇒ BLOCK. ----
+printf 'A%s%s\nA%s%s\n' "$TAB" "$GA" "$TAB" "$GB" > .fullcycle-active
+blocks "$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")" || fail "C28: one session owning two Goals did not trip the one-Goal rule"
+
+# ---- Case 29: task-requires-Goal is PER SESSION — A owns a complete task but no A-owned
+#      Goal; B's Goal must NOT satisfy it ⇒ BLOCK. ----
+printf '# t\n## Gate status\n- [x] TDD\n- [x] E2E\n' > docs/ga/M1/T01/task.md
+printf '# Review\n- Consensus: agreed\n' > docs/ga/M1/T01/codex-review.md
+printf 'A%s%s\nB%s%s\n' "$TAB" docs/ga/M1/T01/task.md "$TAB" "$GB" > .fullcycle-active
+blocks "$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")" || fail "C29: session A's task with no A-owned Goal was allowed (a different session's Goal wrongly satisfied it)"
+
+# ---- Case 30: an EMPTY-owner tagged line (leading TAB, e.g. registered when the id was blank)
+#      is unattributable ⇒ fail-closed, enforced by everyone ⇒ BLOCK. ----
+printf '# GOAL\n## Goal gate\n- [ ] GOAL E2E: pending\n' > "$GB"          # incomplete
+printf '%s%s\n' "$TAB" "$GB" > .fullcycle-active                          # leading TAB ⇒ empty owner
+blocks "$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")" || fail "C30: an empty-owner (leading-TAB) line was not fail-closed enforced"
+
+# ---- Case 31: the SAME doc registered twice by one session must count ONCE — a duplicate
+#      GOAL.md line must NOT trip the one-Goal rule (hook dedupes, robust to writer/race sloppiness). ----
+printf '# GOAL\n## Goal gate\n- [x] GOAL E2E: done\n' > "$GA"
+printf 'A%s%s\nA%s%s\n' "$TAB" "$GA" "$TAB" "$GA" > .fullcycle-active     # GA registered twice by A
+out="$(CLAUDE_CODE_SESSION_ID=A bash "$HOOK")"; [ -z "$out" ] || fail "C31: a duplicate GOAL.md registration wrongly tripped the one-Goal rule (dedupe broken)"
+
+pass "Stop hook: milestone-tied (level ≥1/case/indent/word-boundary), one-Goal, schema-required (Goal+task), Codex unconditional strict-positive-verdict-gated (last verdict wins; ordered/heading/emoji/blockquote-tolerant), GFM-marker-robust, escape-hatch-sound, per-session-owner-scoped (isolation both ways; untagged/empty-id fail-closed; one-Goal & task-needs-Goal scoped per session)"
