@@ -41,12 +41,14 @@ assert_not_matches '\\[[:space:]]+#'    "$cr"
 assert_contains .gitignore '!/claude/skills/codex-research/'
 assert_matches '^claude/skills/codex-research\|\.claude/skills/codex-research\|link$' install.sh
 
-# codex-review: verdict + rebuttals go in a SEPARATE codex-review.md in the task folder
-# (not inline), the review material includes UNTRACKED new files (git diff omits them), and
-# the reviewer must also attack the research's own assumptions (dual-role mitigation).
+# codex-review: every consensus round gets a NEW numbered review file in the task folder
+# (not inline or appended to a singleton), the review material includes UNTRACKED new files
+# (git diff omits them), and the reviewer attacks the research's assumptions.
 crv=claude/skills/codex-review/SKILL.md
 asm=claude/skills/codex-review/assemble-review.sh
-assert_matches 'codex-review\.md'      "$crv"   # separate file in the task folder
+assert_matches 'codex-review-<NNN>\.md' "$crv"  # one new file per consensus round
+assert_matches 'never append|do not append' "$crv"
+assert_not_matches 'separate `codex-review\.md`' "$crv" # old accumulating singleton is gone
 assert_matches 'created|[Uu]ntracked'  "$crv"   # new/created files reach the reviewer (git diff omits them)
 assert_matches 'research'              "$crv"   # reviewer challenges the research...
 assert_matches 'assumption'            "$crv"   # ...its assumptions
@@ -61,6 +63,8 @@ assert_contains "$asm" 'auth\.json'             # concrete secret pattern (liter
 assert_matches 'SKIPPED: symlink'      "$asm"   # symlink targets not followed
 assert_matches 'cat -- '               "$asm"   # leading-dash-safe
 assert_matches 'git diff HEAD --'      "$asm"   # SCOPED per-file diff, never repo-wide
+assert_contains "$asm" 'codex-review-[0-9]{3,}\.md' # minimum-three-digit, variable-width rounds
+assert_matches 'REVIEW_ROUNDS'         "$asm"   # every prior round remains available to re-review
 # The review call itself must pin model+effort AND run isolated (it used to rely on config
 # drift, at effort *none*). Anchored to the executable `codex exec …` line — model+effort
 # adjacency right before the prompt string — so a pin dropped from the command fails even if
@@ -79,6 +83,18 @@ assert_not_matches '\-\-model[ =]|model=|\-\-config' "$cr"
 # scratch dirs must not leak (cleanup trap on the executable line).
 assert_matches 'UNTRUSTED DATA'                  "$crv"
 assert_matches '^SCRATCH="\$\(mktemp -d\)"; trap' "$crv"
+assert_matches 'review documents.*English'       "$crv"
+assert_matches 'research brief.*English'         "$cr"
+assert_matches 'Suggested direction'              "$crv"
+assert_matches 'Illustrative example'              "$crv"
+assert_matches 'code/pseudocode.*ASCII'            "$crv"
+assert_matches "only the reviewer's opinion"       "$crv"
+assert_matches 'not a patch to copy verbatim'      "$crv"
+assert_matches 'Verification'                     "$crv"
+assert_matches 'until.*consensus|until.*resolved|Continue.*consensus' "$crv"
+assert_not_matches 'three autonomous rounds|3 autonomous rounds|at most three' "$crv"
+assert_not_matches 'ROUND.*-le 999|round limit exhausted' "$crv"
+assert_matches '1000.*1001' "$crv"             # numbering grows beyond three digits
 # Effective-override guard: the pin being PRESENT is not enough — a SECOND `-m`/effort flag
 # later on the command line (even after the prompt string; clap lets trailing flags win)
 # would silently beat the pin at runtime while every pattern above stays green. So inside
@@ -183,15 +199,29 @@ assert_matches '^claude/agents/frontend-dev\.md\|\.claude/agents/frontend-dev\.m
 # One co-located phrase, not two independent greps — 'frontend-dev' somewhere plus an
 # unrelated 'MUST be delegated' elsewhere must not satisfy the routing-rule guard.
 assert_matches 'MUST be delegated to the .frontend-dev. subagent' claude/CLAUDE.md
+assert_matches 'parent agent.*English' "$fa"
+
+# Every live instruction/prompt surface is English. settings.json is deliberately excluded:
+# its `language: 한국어` value controls direct user-facing conversation.
+for english_surface in claude/CLAUDE.md "$fa" "$cr" "$crv" \
+                       claude/skills/full-cycle/SKILL.md \
+                       claude/hooks/fullcycle-inject.sh; do
+  assert_not_matches '[가-힣]' "$english_surface"
+done
 
 # Portability: no machine-specific home path in ANY claude artifact (not just settings.json).
 if grep -rqEI '/Users/' claude; then fail "machine-specific /Users/ path leaked under claude/"; fi
 assert_contains claude/settings.json '$HOME'
 
 # settings.json must remain valid JSON after the path rewrite. jq is already required
-# by the hooks themselves, so it is a hard dependency (not an optional check).
+# by the hooks themselves, so it is a hard dependency (not an optional check). The language
+# key is user-owned configuration and may be absent on a clean checkout; when present, it must
+# agree with the Korean direct-interaction contract rather than silently contradicting it.
 command -v jq >/dev/null 2>&1 || fail "jq not found (required by hooks and this check)"
 jq -e . claude/settings.json >/dev/null || fail "settings.json is not valid JSON"
+language="$(jq -r '.language // empty' claude/settings.json)"
+[ -z "$language" ] || [ "$language" = "한국어" ] \
+  || fail "settings.json language, when configured, must keep direct user interaction in Korean"
 
 # No third-party plugins/marketplaces in settings.json: no superpowers, no enabledPlugins,
 # no apps-in-toss / extraKnownMarketplaces (affiliation disclosure). Plugins are not backed up.

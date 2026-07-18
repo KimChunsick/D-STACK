@@ -1,6 +1,6 @@
 ---
 name: full-cycle
-description: MANDATORY delivery pipeline for ANY implementation or change task — features, bugfixes, refactors, configuration, anything that edits files or builds something. Invoke at the START of such work. Drives intent capture, security/UX&DX/technical tri-axis evaluation, per-Goal Codex research (both-sides evidence; deep-research only as fallback), deep interview, one-Goal + milestone + PR-sized task decomposition, GOAL.md + task-folder docs, Red-Green-Refactor TDD, adversarial Codex (GPT-5.5) review in a separate codex-review.md with a consensus loop, per-task + per-milestone + final Goal E2E capture, and a final report. Skip ONLY when the user wrote [quick], or the request is pure Q&A / lookup / conversation with no file changes.
+description: MANDATORY delivery pipeline for ANY implementation or change task — features, bugfixes, refactors, configuration, anything that edits files or builds something. Invoke at the START of such work. Drives intent capture, security/UX&DX/technical tri-axis evaluation, per-Goal Codex research (both-sides evidence; deep-research only as fallback), deep interview, one-Goal + milestone + PR-sized task decomposition, GOAL.md + task-folder docs, Red-Green-Refactor TDD, adversarial Codex (GPT-5.6 Sol) review in one new codex-review-<NNN>.md per round with a consensus loop, per-task + per-milestone + final Goal E2E capture, and a final report. Skip ONLY when the user wrote [quick], or the request is pure Q&A / lookup / conversation with no file changes.
 ---
 
 # Full-Cycle Delivery
@@ -13,6 +13,14 @@ is complete.
 
 If the user wrote `[quick]` in the prompt, this skill does not apply — answer directly.
 
+## Language boundary
+
+Communicate directly with the user in Korean. Write all workflow artifacts in English,
+including Goal, research, task, review, planning, and recorded E2E documents. Every prompt,
+brief, follow-up, status message, and report exchanged between agents or models is also
+English. Product copy, source comments, and ordinary repository documentation follow the
+target project's conventions unless the user explicitly requires a language.
+
 ## Phase checklist (create one todo per phase)
 
 1. Intent capture
@@ -23,7 +31,7 @@ If the user wrote `[quick]` in the prompt, this skill does not apply — answer 
 6. docs/ scaffold (GOAL.md + task folders)
 7. Per-task TDD (Red → Green → Refactor)
 8. Per-task documentation
-9. Codex (GPT-5.5) adversarial review → separate `codex-review.md` + consensus loop
+9. Codex (GPT-5.6 Sol) adversarial review → new `codex-review-<NNN>.md` per round + consensus loop
 10. Per-task E2E capture
 11. Per-milestone E2E (when a milestone's tasks are all done)
 12. Final Goal E2E + final report (when all milestones are done)
@@ -83,7 +91,8 @@ Under the project root, create one Goal directory holding a `GOAL.md` and a **fo
 docs/<goal>/GOAL.md
 docs/<goal>/research/<topic>.md
 docs/<goal>/<MN-milestone>/<NN-task>/task.md
-docs/<goal>/<MN-milestone>/<NN-task>/codex-review.md   # written in Phase 9
+docs/<goal>/<MN-milestone>/<NN-task>/codex-review-001.md   # first Phase 9 round
+docs/<goal>/<MN-milestone>/<NN-task>/codex-review-002.md   # only if re-review is needed
 ```
 `GOAL.md` (template below) holds the Goal, the interview record, the research summary, the
 milestone/task checklist, **and the Goal gate**. Use the task template (below) for each
@@ -133,13 +142,28 @@ tests stay green). Then tick the TDD checkbox in `task.md`.
 In `task.md`, record: what was done, why, the Why it serves, which files changed and why each
 change was made. Write this *as you work*, not after.
 
-## Phase 9 — Codex adversarial review (→ separate codex-review.md)
+## Phase 9 — Codex adversarial review (→ one new file per round)
 Invoke the `codex-review` skill. It assembles the task's material (fail-closed allowlist),
-sends it to Codex (GPT-5.5) for adversarial verification across security/technical/UI&UX&DX,
+sends it to Codex (GPT-5.6 Sol) for adversarial verification across security/technical/UI&UX&DX,
 software structure, and "does this satisfy the real Why" (and challenges the research's own
-assumptions), and records the verdict + your rebuttals in **`codex-review.md` in the task
-folder** (never inline in `task.md`). Run the consensus loop until **agreed** (both sides
-agree) or **resolved** (raised issues fixed). Then tick the Codex checkbox in `task.md`.
+assumptions), and records each invocation + rebuttal in a new English
+**`codex-review-<NNN>.md` in the task folder** (never inline in `task.md`, never appended to a
+closed prior round).
+
+On every re-review, first verify unresolved findings, claimed fixes/rebuttals, and regressions
+caused by those fixes, then continue checking the supplied task scope for newly discovered
+concrete defects. Do not suppress a real issue merely because it appeared in a later round;
+accuracy and safety take priority. Do not repeat a closed point without materially new
+evidence. Every finding must include evidence, a rough suggested direction, a small illustrative
+example (partial code/pseudocode, ASCII structure or flow, or a concrete before→after shape),
+the explicit caveat that the example is only the reviewer's opinion and not a patch to copy
+verbatim, and a verification method. The builder must adapt the idea to the actual implementation
+and verify it instead of treating the example as authoritative code.
+
+Continue with a new numbered file until the latest round reaches **agreed** (both sides agree)
+or **resolved** (every blocking finding is fixed, disproved, or explicitly disposed by a user
+decision). There is no arbitrary round cap. If a real product/risk choice requires the user,
+ask in Korean and resume the review afterward. Then tick the Codex checkbox in `task.md`.
 
 ## Phase 10 — Per-task E2E capture
 Verify the task actually works, hands-on (invoke `verify` / `run` skills as fitting):
@@ -157,9 +181,9 @@ the evidence in `GOAL.md` and tick that milestone's box in the **Goal gate**.
 ## Phase 12 — Final Goal E2E + report
 When **every milestone** is done, run one **final Goal-level E2E** that exercises the whole
 Goal end-to-end, and tick the `GOAL E2E` box in the Goal gate. Only when every Goal-gate box is
-ticked may the loop end. Then write the final report: which milestones/tasks completed, how each
-finished, what was verified, what changed, and any follow-ups — and remove `GOAL.md` (your
-session-tagged line) from `.fullcycle-active`.
+ticked may the loop end. Then give the user a Korean final report: which milestones/tasks
+completed, how each finished, what was verified, what changed, and any follow-ups — and remove
+`GOAL.md` (your session-tagged line) from `.fullcycle-active`.
 
 ---
 
@@ -199,11 +223,11 @@ session-tagged line) from `.fullcycle-active`.
 - `path` — <why this change>
 
 ## E2E verification
-<evidence: screenshot path / run output>     # Codex review lives in codex-review.md, not here
+<evidence: screenshot path / run output>     # Review rounds live in codex-review-<NNN>.md
 
 ## Gate status
 - [ ] TDD: Red→Green→Refactor complete
-- [ ] Codex (GPT-5.5) adversarial review consensus
+- [ ] Codex (GPT-5.6 Sol) adversarial review consensus
 - [ ] E2E capture verified
 ```
 

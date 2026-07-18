@@ -8,6 +8,10 @@ cd "$(git rev-parse --show-toplevel)"
 grep -qE '^@AGENTS\.md[[:space:]]*$' CLAUDE.md || fail "CLAUDE.md must start by importing @AGENTS.md"
 assert_contains AGENTS.md "Never commit secrets"
 assert_contains AGENTS.md "install.sh"
+assert_matches 'user.*Korean' AGENTS.md
+assert_matches 'workflow artifacts.*English' AGENTS.md
+assert_matches 'between agents or models.*English' AGENTS.md
+assert_not_matches '[가-힣]' AGENTS.md
 for d in claude codex gemini; do
   [ -d "$d" ] || fail "missing agent dir: $d"
 done

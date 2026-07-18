@@ -17,6 +17,13 @@ that follow symlinks) every machine sees the change.
   live under agent-first folders: `claude/`, `codex/`, `gemini/`. `install.sh`
   links each into the live agent dir.
 
+## Language boundary
+
+- Communicate directly with the user in Korean.
+- Write all workflow artifacts — Goal, research, task, review, plan, and recorded evidence documents — in English.
+- Write every prompt, brief, follow-up, status message, and report passed between agents or models in English.
+- Product copy, source comments, and repository documentation follow the target project's own conventions unless the user explicitly requires a language.
+
 ## Golden rules
 
 1. **Never commit secrets or runtime state.** This repo is **public**. The

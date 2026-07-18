@@ -4,8 +4,9 @@
 Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation → **per-Goal Codex research**
 (`codex-research` skill — both-sides evidence; `deep-research` only as fallback) → deep interview (no obvious questions)
 → **one Goal** + milestone + PR-sized task decomposition → `docs/<goal>/GOAL.md` + task folders
-(`<milestone>/<NN-task>/task.md`) → Red-Green-Refactor TDD → `codex-review` (GPT-5.5 adversarial review recorded in a
-separate `codex-review.md` + consensus loop) → **per-task + per-milestone + final Goal E2E** → final report.
+(`<milestone>/<NN-task>/task.md`) → Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
+one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-task + per-milestone + final Goal E2E**
+→ final report.
 
 - **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
 - **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or task doc
@@ -17,7 +18,16 @@ separate `codex-review.md` + consensus loop) → **per-task + per-milestone + fi
   don't cross-block; untagged / unknown-id lines stay fail-closed (enforced by everyone). To pause for user input,
   remove that doc's line from `.fullcycle-active`.
 
-## 0.1 Frontend work → `frontend-dev` subagent (mandatory)
+## 0.1 Language boundary (mandatory)
+
+- Communicate directly with the user in Korean: questions, progress updates, decisions, and the final response.
+- Write all workflow artifacts in English: `GOAL.md`, research briefs/artifacts, `task.md`,
+  `codex-review-<NNN>.md`, plans, and recorded E2E evidence.
+- Write every prompt, brief, follow-up, status message, and report passed between agents or models in English.
+- Product copy, source comments, and ordinary project documentation follow the target
+  repository's conventions unless the user explicitly sets a language.
+
+## 0.2 Frontend work → `frontend-dev` subagent (mandatory)
 
 **All frontend code work — components (React or any other framework), hooks,
 styles/templates/markup, frontend utilities, frontend test and story files, and frontend

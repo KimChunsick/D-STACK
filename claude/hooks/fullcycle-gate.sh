@@ -8,10 +8,11 @@
 # setext form are self-attestation limits no regex closes. What it DOES enforce mechanically:
 # unchecked gate boxes (any GFM marker) block; tasks require a single registered Goal; every ATX
 # 'M<n>' milestone heading needs a ticked milestone-E2E box; every registered task needs a
-# codex-review.md whose final Consensus line is a clean positive verdict (a strict allow-list —
-# 'disagreed' / 'unresolved' / 'agreed was not reached' / 'agreed to reject' all fail). Together
-# with the inject hook + adversarial review, skipping becomes costly and visible — defense in
-# depth, not a single airtight gate.
+# contiguous codex-review-001.md…NNN series whose latest file has exactly one clean positive
+# Consensus line (a strict allow-list — 'disagreed' / 'unresolved' / 'agreed was not reached' /
+# 'agreed to reject' all fail). A legacy codex-review.md alone never passes. Together with the
+# inject hook + adversarial review, skipping becomes costly and visible — defense in depth, not
+# a single airtight gate.
 #
 # Per-session scoping: a registry line may be tagged "<owner-session><TAB><docpath>" so that
 # concurrent tabs don't cross-block. This Stop hook enforces only the lines IT owns, keyed on
@@ -25,6 +26,8 @@
 # (id unknown) — is enforced by EVERY session, so uncertainty blocks rather than silently clears.
 #
 # Escape hatch (avoids deadlock): remove a doc's line from .fullcycle-active to pause it.
+LC_ALL=C
+export LC_ALL
 f=".fullcycle-active"
 [ -f "$f" ] || exit 0
 
@@ -58,22 +61,63 @@ done < "$f"
 # section instead just over-blocks (safe, recoverable); real gates live outside code fences.
 section() { awk -v h="## $2" 'index($0,h)==1{f=1;next} /^## /{f=0} f' "$1"; }
 
-# A codex-review.md carries a genuine positive consensus. Design is a POSITIVE-ONLY WHITELIST
-# (fail-closed): a negation lexicon is unwinnable — 'reject', 'block', 'nack', 'wontfix', 'no-go'
-# would all need listing, and any miss is a bypass. So we require the FINAL verdict line to be
-# *exactly* a clean positive and reject everything else. The authoritative line is the LAST line
-# that begins with 'Consensus:' after any leading markdown decoration — unordered/ordered list
-# markers, blockquote, heading hashes, emphasis ([-[:space:]>#*+._)0-9]) — a multi-round loop
-# supersedes earlier verdicts, and both the SELECT and VALIDATE greps share that decoration
-# prefix so a later '1. Consensus: disagreed' / '### Consensus: disagreed' can't be skipped to
-# let a stale 'agreed' win. It passes iff that line is 'Consensus: agreed' / 'Consensus: resolved'
-# followed only by non-alphanumeric decoration (punctuation, a ✅) — NO trailing word, which is
-# exactly where a negation like 'agreed to reject' would hide.
+CONSENSUS_FIELD_RE='^[-[:space:]>#*+._)0-9]*(✅|❌)?[[:space:]]*consensus:'
+CONSENSUS_SEALED_RE='^[-[:space:]>#*+._)0-9]*((✅|❌)[[:space:]]*)?consensus:[*_[:space:]]*(disagreed|agreed|resolved)[[:punct:][:space:]]*((✅|❌)[[:punct:][:space:]]*)?$'
+
+sealed_round_ok() {
+  local f="$1" count line
+  count="$(grep -icE "$CONSENSUS_FIELD_RE" -- "$f" || true)"
+  [ "$count" -eq 1 ] || return 1
+  line="$(awk 'NF { line=$0 } END { print line }' "$f")"
+  printf '%s\n' "$line" | grep -qiE "$CONSENSUS_FIELD_RE" || return 1
+  printf '%s\n' "$line" | grep -qiE "$CONSENSUS_SEALED_RE"
+}
+
+# Validate the entire canonical review namespace and print its latest round. Suffixes have a
+# minimum width of three digits and grow naturally after 999. Counting first and generating
+# expected names gives numeric, Bash-3-compatible ordering with no arbitrary round cap. Every
+# round from 001 must exist and be a sealed, nonempty, regular, nonsymlink, text file ≤64KB;
+# malformed reserved names fail rather than being ignored. The legacy singleton may coexist as
+# migration history, but it is never authoritative.
+review_series_latest() {
+  local d="$1" f base latest="" expected=1 round_count=0
+  for f in "$d"/codex-review*.md; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    base="${f##*/}"
+    case "$base" in
+      codex-review.md)
+        continue
+        ;;
+      *)
+        printf '%s\n' "$base" | grep -qE '^codex-review-[0-9]{3,}\.md$' || return 1
+        round_count=$((round_count + 1))
+        ;;
+    esac
+  done
+  while [ "$expected" -le "$round_count" ]; do
+    printf -v base 'codex-review-%03d.md' "$expected"
+    f="$d/$base"
+    [ ! -L "$f" ] && [ -f "$f" ] && [ -s "$f" ] || return 1
+    [ "$(wc -c < "$f")" -le 65536 ] || return 1
+    grep -Iq . -- "$f" || return 1
+    sealed_round_ok "$f" || return 1
+    latest="$f"
+    expected=$((expected + 1))
+  done
+  [ -n "$latest" ] || return 1
+  printf '%s\n' "$latest"
+}
+
+# A round carries a genuine positive consensus only when its one Consensus line is the final
+# nonblank line. Blank lines after it are harmless; appended prose means the round is not sealed.
+# Multiple such lines mean a later exchange was appended to the same document, which violates
+# the one-file-per-round contract. The positive-only whitelist avoids an unwinnable negation
+# lexicon and rejects trailing prose where "agreed to reject" could hide.
 consensus_ok() {
   local line
-  line="$(grep -iE '^[-[:space:]>#*+._)0-9]*consensus:' -- "$1" | tail -n1)"
-  [ -n "$line" ] || return 1
-  printf '%s\n' "$line" | grep -qiE '^[-[:space:]>#*+._)0-9]*consensus:[*_[:space:]]*(agreed|resolved)[^[:alnum:]]*$'
+  sealed_round_ok "$1" || return 1
+  line="$(awk 'NF { line=$0 } END { print line }' "$1")"
+  printf '%s\n' "$line" | grep -qiE '^[-[:space:]>#*+._)0-9]*(✅[[:space:]]*)?consensus:[*_[:space:]]*(agreed|resolved)[[:punct:][:space:]]*(✅[[:punct:][:space:]]*)?$'
 }
 
 p=""   # accumulated problems
@@ -91,12 +135,11 @@ for t in "${tasks[@]}"; do
   if [ -z "$gs" ]; then p="$p $t has no '## Gate status' section (required gate schema missing);"; continue; fi
   if ! printf '%s\n' "$gs" | grep -qE '^[[:space:]]*[-*+][[:space:]]+\[[ xX]\]'; then p="$p $t Gate status has no checkbox rows (prose cannot stand in for gates);"; continue; fi
   if printf '%s\n' "$gs" | grep -qE '^[[:space:]]*[-*+][[:space:]]+\[ \]'; then p="$p $t has unchecked task gates;"; fi
-  # Codex (GPT-5.5) adversarial review is a MANDATORY per-task phase, so require the
-  # codex-review.md artifact + a positive final consensus for EVERY registered task —
-  # unconditional, not keyed on a checkbox label (relabeling / omitting the box must not opt out).
+  # Codex (GPT-5.6 Sol) adversarial review is mandatory per task. Require a structurally valid
+  # numbered series and a positive consensus in its latest round, independent of checkbox labels.
   d="$(dirname -- "$t")"
-  if [ ! -s "$d/codex-review.md" ] || ! consensus_ok "$d/codex-review.md"; then
-    p="$p $t lacks a codex-review.md with a final agreed/resolved consensus (mandatory per task);"
+  if ! review="$(review_series_latest "$d")" || ! consensus_ok "$review"; then
+    p="$p $t lacks a valid latest codex-review-<NNN>.md with one agreed/resolved consensus (mandatory per task);"
   fi
 done
 

@@ -12,7 +12,10 @@ ASM="$REPO/claude/skills/codex-review/assemble-review.sh"
 SBX="$(mktemp -d)"; trap 'rm -rf "$SBX"' EXIT
 cd "$SBX"
 git init -q; git config user.email t@t.t; git config user.name t
-mkdir -p task; printf '# task\n' > task/task.md
+mkdir -p task; printf '# task\nTASK_SNAPSHOT_30\n' > task/task.md
+printf 'LEGACY_SINGLETON_HISTORY_33\n' > task/codex-review.md
+printf 'PRIOR_ROUND_ONE_31\n- Consensus: disagreed\n' > task/codex-review-001.md
+printf 'PRIOR_ROUND_TWO_32\n- Consensus: resolved\n' > task/codex-review-002.md
 
 printf 'SECRET_VALUE=leak-me-9931'    > auth.json            # named, but secret-deny must skip it
 printf 'NOVEL_SECRET=novel-7777'      > my-prod-creds.txt    # NOT in the allowlist → must be absent
@@ -33,6 +36,15 @@ if printf '%s' "$OUT" | grep -q 'novel-7777';   then fail "unnamed novel secret 
 # Safe content must appear.
 printf '%s' "$OUT" | grep -q 'OK-42'      || fail "allowlisted normal new file not included"
 printf '%s' "$OUT" | grep -q 'CHANGED-55' || fail "tracked change (scoped diff) not included"
+# Every prior round remains available to the reviewer, in ascending order, so a later review can
+# verify old fixes and decisions without losing safety context. The files remain separate on disk.
+printf '%s' "$OUT" | grep -q 'TASK_SNAPSHOT_30' || fail "task document snapshot missing"
+printf '%s' "$OUT" | grep -q 'LEGACY_SINGLETON_HISTORY_33' || fail "legacy migration history missing"
+printf '%s' "$OUT" | grep -q 'PRIOR_ROUND_ONE_31' || fail "first prior numbered review round missing"
+printf '%s' "$OUT" | grep -q 'PRIOR_ROUND_TWO_32' || fail "second prior numbered review round missing"
+p1="$(printf '%s\n' "$OUT" | grep -n 'PRIOR_ROUND_ONE_31' | cut -d: -f1)"
+p2="$(printf '%s\n' "$OUT" | grep -n 'PRIOR_ROUND_TWO_32' | cut -d: -f1)"
+[ "$p1" -lt "$p2" ] || fail "numbered review rounds were not assembled in ascending order"
 # Gates must be applied and listed.
 printf '%s' "$OUT" | grep -q 'auth.json (SKIPPED: secret-deny)'   || fail "secret not deny-skipped"
 printf '%s' "$OUT" | grep -q 'link-to-secret (SKIPPED: symlink)'  || fail "symlink not skipped"
@@ -89,4 +101,67 @@ done
 # The secret-named file, passed literally, is still denied (control).
 printf '%s' "$(bash "$ASM" task secret.key)" | grep -q 'secret.key (SKIPPED: secret-deny)' || fail "literal secret.key not deny-skipped"
 
-pass "codex-review assembler is fail-closed (allowlist-only; secret/symlink/binary/size gated; deletions emitted incl. subdir/git-rm; diff-size cap; newline+glob-pathspec neutralized)"
+# ---- Review-history integrity: tracked/unchanged docs remain FULL snapshots, while gaps,
+#      malformed names, empty rounds, and symlinks fail closed rather than silently dropping
+#      context and proceeding with a partial consensus record. ----
+git add task/task.md task/codex-review.md task/codex-review-001.md task/codex-review-002.md
+git commit -qm add-review-history
+OUTR="$(bash "$ASM" task)"
+printf '%s' "$OUTR" | grep -q 'TASK_SNAPSHOT_30' || fail "tracked unchanged task doc lost its full snapshot"
+printf '%s' "$OUTR" | grep -q 'PRIOR_ROUND_ONE_31' || fail "tracked unchanged first review round lost its full snapshot"
+printf '%s' "$OUTR" | grep -q 'PRIOR_ROUND_TWO_32' || fail "tracked unchanged latest review round lost its full snapshot"
+
+mkdir -p legacy-only; printf '# task\n' > legacy-only/task.md
+printf 'LEGACY_MIGRATION_CONTEXT_35\n' > legacy-only/codex-review.md
+OUTLEGACY="$(bash "$ASM" legacy-only)"
+printf '%s' "$OUTLEGACY" | grep -q 'LEGACY_MIGRATION_CONTEXT_35' \
+  || fail "legacy singleton was not carried into the first numbered migration round"
+
+mkdir -p bad-gap; printf '# task\n' > bad-gap/task.md
+printf 'one\nConsensus: disagreed\n' > bad-gap/codex-review-001.md
+printf 'three\nConsensus: disagreed\n' > bad-gap/codex-review-003.md
+if bash "$ASM" bad-gap >/dev/null 2>&1; then fail "gapped review history was accepted"; fi
+
+mkdir -p bad-name; printf '# task\n' > bad-name/task.md
+printf 'wrong\n' > bad-name/codex-review-1.md
+if bash "$ASM" bad-name >/dev/null 2>&1; then fail "malformed unpadded review round was accepted"; fi
+
+mkdir -p bad-empty; printf '# task\n' > bad-empty/task.md
+: > bad-empty/codex-review-001.md
+if bash "$ASM" bad-empty >/dev/null 2>&1; then fail "empty review round was accepted"; fi
+
+mkdir -p bad-link; printf '# task\n' > bad-link/task.md
+printf 'ROUND_LINK_TARGET_SECRET_34\n' > review-target.txt
+ln -s ../review-target.txt bad-link/codex-review-001.md
+OUTLINK="$(bash "$ASM" bad-link 2>&1 || true)"
+if printf '%s' "$OUTLINK" | grep -q 'ROUND_LINK_TARGET_SECRET_34'; then fail "symlinked review target leaked"; fi
+if bash "$ASM" bad-link >/dev/null 2>&1; then fail "symlinked review round was accepted"; fi
+
+# A sealed round ends on its sole canonical Consensus field. Blank lines after the field are
+# harmless, but appended prose means the same file was extended after sealing and must fail.
+mkdir -p sealed; printf '# task\n' > sealed/task.md
+printf '# round\nConsensus: agreed\n\n' > sealed/codex-review-001.md
+bash "$ASM" sealed >/dev/null || fail "blank lines after a final Consensus field were rejected"
+printf '# round\nConsensus: agreed\nBlocker remains unresolved.\n' > sealed/codex-review-001.md
+if bash "$ASM" sealed >/dev/null 2>&1; then fail "prose appended after Consensus was accepted"; fi
+printf '# round\nConsensus: agreed 미해결\n' > sealed/codex-review-001.md
+if bash "$ASM" sealed >/dev/null 2>&1; then fail "noncanonical Unicode consensus suffix was accepted"; fi
+
+# The sequence is not capped at 999. Minimum-three-digit names widen naturally, and assembly
+# remains numeric across the lexical 999→1000 boundary.
+mkdir -p wide; printf '# task\n' > wide/task.md
+n=1
+while [ "$n" -le 1001 ]; do
+  printf -v round 'wide/codex-review-%03d.md' "$n"
+  printf 'ROUND_%04d\nConsensus: disagreed\n' "$n" > "$round"
+  n=$((n + 1))
+done
+WIDE_OUT="$SBX/wide.out"
+bash "$ASM" wide > "$WIDE_OUT" || fail "contiguous review history beyond round 999 was rejected"
+p999="$(grep -n 'ROUND_0999' "$WIDE_OUT" | cut -d: -f1)"
+p1000="$(grep -n 'ROUND_1000' "$WIDE_OUT" | cut -d: -f1)"
+p1001="$(grep -n 'ROUND_1001' "$WIDE_OUT" | cut -d: -f1)"
+[ "$p999" -lt "$p1000" ] && [ "$p1000" -lt "$p1001" ] \
+  || fail "review rounds were not assembled numerically across 999→1000"
+
+pass "codex-review assembler is fail-closed (allowlist-only; task + separate full-history snapshots; uncapped contiguous numeric review history; final-line sealing; legacy migration; secret/symlink/binary/size gated; deletions emitted incl. subdir/git-rm; diff-size cap; newline+glob-pathspec neutralized)"

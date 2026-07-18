@@ -29,7 +29,14 @@ assert_matches 'Goal gate'                              "$fc"   # the Stop-hook-
 assert_matches '<NN-task>/|task folder'                 "$fc"   # task FOLDERS, not single files
 assert_matches '[Mm]ilestone E2E|milestone-level E2E'   "$fc"   # G3: milestone E2E
 assert_matches 'Goal E2E|Goal-level E2E'                "$fc"   # G4: final Goal E2E (loop end)
-assert_matches 'codex-review\.md'                       "$fc"   # review goes to a separate file
+assert_matches 'codex-review-<NNN>\.md'                 "$fc"   # every consensus round gets a new file
+assert_not_matches 'separate `codex-review\.md`'        "$fc"   # the old accumulating singleton is gone
+assert_matches 'workflow artifacts.*English'            "$fc"   # internal docs use English
+assert_matches 'small illustrative'                      "$fc"
+assert_matches 'code/pseudocode.*ASCII'                  "$fc"   # example may be code or a structure sketch
+assert_matches "only the reviewer's opinion.*not a patch to copy" "$fc"
+assert_matches 'until.*consensus|until.*agreed|until.*resolved' "$fc"
+assert_not_matches 'three autonomous rounds|3 autonomous rounds|at most three' "$fc"
 
 # The Stop hook must mechanically enforce the Goal gate (scan GOAL.md too, not only tasks).
 gate=claude/hooks/fullcycle-gate.sh
@@ -40,12 +47,18 @@ inj=claude/hooks/fullcycle-inject.sh
 assert_matches 'codex-research|Codex research'          "$inj"
 assert_matches 'GOAL\.md'                               "$inj"
 assert_matches 'Goal E2E|milestone'                     "$inj"
+assert_matches 'codex-review-<NNN>\.md'                 "$inj"
+assert_matches 'user.*Korean.*artifacts.*English'       "$inj"   # injected language boundary
+assert_matches 'code/pseudocode/ASCII.*reviewer-opinion.*not a patch to copy' "$inj"
 assert_not_matches '\(if uncertain\) deep-research'     "$inj"   # old conditional research gone
 cm=claude/CLAUDE.md
 assert_matches 'Codex research'                         "$cm"
 assert_matches 'GOAL\.md'                               "$cm"
-assert_matches 'codex-review\.md'                       "$cm"
+assert_matches 'codex-review-<NNN>\.md'                 "$cm"
 assert_matches 'Goal E2E|milestone E2E'                 "$cm"
+assert_matches 'user.*Korean'                           "$cm"    # direct user interaction
+assert_matches 'workflow artifacts.*English'            "$cm"    # task/review/research docs
+assert_matches 'between agents or models.*English'      "$cm"    # delegation + reports
 assert_not_matches 'in-document consensus'              "$cm"    # review now in a separate file
 
 pass "full-cycle skill contract"

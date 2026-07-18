@@ -36,6 +36,19 @@ assert_matches '[Uu]ntrusted'                codex/AGENTS.md   # prompt-injectio
 assert_matches '[Rr]ead-only'                codex/AGENTS.md   # security: read-only constraint
 assert_matches '[Ss]ecret'                   codex/AGENTS.md   # security: never pipe secrets
 assert_matches 'GPT verdict|verdict:'        codex/AGENTS.md   # review output contract
+assert_matches 'user.*Korean'                codex/AGENTS.md   # direct user interaction language
+assert_matches 'research and review.*English' codex/AGENTS.md  # delegated artifact language
+assert_matches 'agent or model.*English'     codex/AGENTS.md   # inter-agent/model language
+assert_matches 'Suggested direction'         codex/AGENTS.md   # each finding proposes a rough fix path
+assert_matches 'Illustrative example'        codex/AGENTS.md   # a small concrete shape accompanies it
+assert_matches 'partial code or pseudocode'  codex/AGENTS.md
+assert_matches 'ASCII structure/flow'        codex/AGENTS.md
+assert_matches "only the reviewer's opinion" codex/AGENTS.md   # example is explicitly non-authoritative
+assert_matches 'not a patch to copy verbatim' codex/AGENTS.md
+assert_matches 'Verification'                codex/AGENTS.md   # each finding says how to verify it
+assert_matches 'newly discovered.*issue|new issue' codex/AGENTS.md # later rounds may still catch real gaps
+assert_not_matches 'three autonomous rounds|3 autonomous rounds|at most three' codex/AGENTS.md
+assert_not_matches '[가-힣]' codex/AGENTS.md
 assert_contains .gitignore '!/codex/AGENTS.md'
 assert_matches '^codex/AGENTS\.md\|\.codex/AGENTS\.md\|link$' install.sh
 # Intent over text: the allow line must actually win — no deny rule may shadow it.
