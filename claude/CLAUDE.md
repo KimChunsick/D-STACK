@@ -138,3 +138,19 @@ If you genuinely think a convention is harmful, surface it. Don't fork silently.
 "Completed" is wrong if anything was skipped silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
+
+## 한국어 작성 규칙
+한국어로 쓰는 모든 글(설명, 의견 표현, 코드 주석 등)은 영어를 그대로 옮긴 번역투가 아니라
+일상적으로 쓰는 자연스러운 한국어로 쓴다.
+- 주석과 문서는 동료에게 슬랙으로 설명하듯 쓴다. 논문체·보고서체 금지.
+- 영어 개념어 음차 금지 (예: 카논, 레짐, 내로잉, 인바리언트, 페일라우드).
+  정착된 외래어(커밋, 머지, 캐시, 렌더링, 엣지 케이스)는 허용.
+  정착 안 된 용어는 영어 알파벳 그대로 두거나 우리말로 풀어쓴다.
+- 번역투 교체:
+  - "발화한다" → "조건에 걸리면 실행된다"
+  - "도달 불가 상태다" → "여기까지 올 수 없다"
+  - "fail-loud로 내로잉" → "조용히 넘기지 말고 바로 에러를 던진다"
+  - "~를 필요로 한다" → "~가 필요하다"
+  - "~하는 것을 가능하게 한다" → "~할 수 있게 한다"
+- em dash(—) 금지. "즉,", "궁극적으로", "포괄적인", "견고한", "원활한" 자제.
+- 짧은 내용에 헤더·불릿 남발 금지. 그냥 문장으로 쓴다.
