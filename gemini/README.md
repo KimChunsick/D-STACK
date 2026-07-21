@@ -13,4 +13,5 @@ yet (`~/.gemini` is not present on this machine).
    symlink**: Gemini CLI intentionally **does not follow symlinked context files**
    (GH google-gemini/gemini-cli#11547, closed "not planned"). A symlinked
    `~/.gemini/GEMINI.md` is silently ignored. Re-run `install.sh` after editing.
-4. Add a `tests/test_gemini_artifacts.sh` guard and keep `tests/run.sh` green.
+4. Run `bash tests/secret-guard.sh` and add the new `!`-allow lines to its pinned
+   negation list.

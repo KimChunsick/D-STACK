@@ -54,14 +54,10 @@ correct.
 
 Output discipline:
 - Format each point as `[severity:high|medium|low][axis] content`.
-- Immediately under each finding, add `Evidence:`, `Suggested direction:`,
-  `Illustrative example:`, `Reviewer caveat:`, and `Verification:` lines.
-- Keep the example deliberately small and schematic: use a partial code or pseudocode snippet,
-  an ASCII structure/flow, or a concrete before→after shape, whichever communicates the idea
-  with the least surface area. Never provide a complete copy-pasteable patch.
-- Write this exact caveat for every example: `Reviewer caveat: This illustrative example is
-  only the reviewer's opinion, not a patch to copy verbatim. Adapt it to the actual codebase
-  and verify the result.`
+- Immediately under each finding, add `Evidence:` and `Verification:` lines. Add a
+  `Suggested direction:` line — one sentence naming the likely code boundary or invariant —
+  only when the repair is not obvious from the evidence.
+- Never include illustrative code examples or patches; the builder owns the fix.
 - A high/medium finding blocks only when it has a concrete failure path, counterexample, or
   reproducible risk. Low-severity hardening and polish are non-blocking follow-up work.
 - Focus on weaknesses, risks, counterexamples, missed edge cases.

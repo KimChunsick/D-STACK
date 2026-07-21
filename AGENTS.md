@@ -39,8 +39,10 @@ that follow symlinks) every machine sees the change.
    (e.g. `!/claude/skills/<new-skill>/`) — nothing is tracked until explicitly named.
    **Residual:** files *inside* a named skill dir are wholesale (so skills can grow
    files freely); the secret-name deny list is their backstop — never put a secret
-   inside a skill dir. After any change run `bash tests/run.sh` — the secret-scan
-   guard (incl. a nested-unknown probe battery) must stay green.
+   inside a skill dir. After any change run `bash tests/secret-guard.sh` — the
+   secret-scan guard (incl. a nested-unknown probe battery) must stay green. The
+   guard checks names/trackability, not file contents: never paste a credential
+   into an allowlisted (tracked) file.
 2. **Only the maintainer's *own authored* artifacts.** Third-party / marketplace /
    plugin skills are out (e.g. anything namespaced `ckm:`, `ui-ux-pro-max`,
    `anthropic-frontend-design`, plugin-provided skills). Back up what you wrote,
@@ -68,9 +70,12 @@ Running against your real home is a deliberate, manual step. Review
    (`!/gemini/`) if not already present.
 2. Put only authored artifacts in it; keep secrets out.
 3. Add its entries to the `install.sh` map with the correct mode (`link` or `copy`).
-4. Add/extend a `tests/test_<agent>_artifacts.sh` guard and keep `tests/run.sh` green.
+4. Keep `bash tests/secret-guard.sh` green — update its pinned negation list in the
+   same change as the new `.gitignore` `!`-allow lines.
 
 ## Tests
 
-`bash tests/run.sh` runs every `tests/test_*.sh` (plain bash, no external deps).
-All tests must pass before committing.
+The repo keeps exactly one meta check: `bash tests/secret-guard.sh` (plain bash, no
+external deps) — the secret-trackability guard. Run it before every commit; it must
+pass. Its pinned negation list must be updated in the same change as any `.gitignore`
+allowlist edit.

@@ -1,0 +1,34 @@
+CONTEXT
+- A bash "Stop" hook enforces a workflow gate. It reads a plain-text registry file
+  `.fullcycle-active` (one work-doc path per line) in the repo, and BLOCKS the session
+  from ending while any registered doc has unchecked gate checkboxes / a missing review
+  artifact. The file is shared by all concurrent processes (multiple terminal tabs) in the
+  same repo.
+- PROBLEM: the gate is repo-wide. When tab A finishes but tab B's registered docs are still
+  incomplete, tab A's Stop hook blocks on tab B's work. We want per-session isolation.
+- PROPOSED FIX: tag each registry line with the owning session id
+  (`$CLAUDE_CODE_SESSION_ID`, a string, stable within a session but changes on `/clear`).
+  Format `"<session_id>\t<docpath>"`. The Stop hook reads its own `$CLAUDE_CODE_SESSION_ID`
+  and only enforces lines it owns. Untagged (legacy) lines and the case where the id is
+  empty are treated fail-closed = enforced by everyone.
+- This is internal dev tooling: a single bash hook on one machine, not a distributed system.
+  Concurrency is a handful of processes sharing one file on a local FS.
+
+RESEARCH BOTH SIDES (tight, cite current sources)
+1. Established patterns + pitfalls for ownership-tagged shared registry / lock files across
+   concurrent processes: PID/owner-scoped locks, stale-owner detection, what happens to
+   orphan/garbage entries when an owner dies without cleaning up. How do mature tools
+   (systemd, git index.lock, flock-based locks, pidfiles, tmux/screen session tracking)
+   record and reclaim owner identity? Known failure modes.
+2. FOR vs AGAINST per-owner scoping vs one global lock, specifically for a GATE that must
+   fail-closed. When does per-owner scoping silently drop enforcement it should keep?
+3. Does identity-based filtering of a shared enforcement file weaken enforcement — i.e. can
+   the guarded party trivially bypass by forging/omitting its own owner tag? (Note: the
+   threat model here is a self-attesting agent, not a malicious external attacker, and a
+   documented escape hatch — deleting the line — already exists.)
+4. Concurrency correctness of concurrent appends/reads/rewrites to one small text file from
+   multiple processes (interleaved writes, torn lines, TOCTOU) and the simplest robust
+   approach for THIS scale.
+5. The simplest robust design given the /clear-changes-the-id caveat (orphan lines that no
+   live session owns). Is "just leave orphans" acceptable, or is stale-owner reclamation
+   worth the complexity at this scale?

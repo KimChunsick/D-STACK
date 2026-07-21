@@ -4,7 +4,7 @@
 Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation → **per-Goal Codex research**
 (`codex-research` skill — both-sides evidence; `deep-research` only as fallback) → deep interview (no obvious questions)
 → **one Goal** + milestone + PR-sized task decomposition → `docs/<goal>/GOAL.md` + task folders
-(`<milestone>/<NN-task>/task.md`) → Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
+(`<milestone>/<NN-task>/task.md`) → conditional design consult → Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
 one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-task + per-milestone + final Goal E2E**
 → final report.
 

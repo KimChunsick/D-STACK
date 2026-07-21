@@ -14,7 +14,7 @@ back into it via `install.sh`.
 AGENTS.md / CLAUDE.md   # this repo's own agent guide (CLAUDE.md → @AGENTS.md)
 install.sh              # symlink/copy the configs into ~/.claude, ~/.codex, …
 claude/  codex/  gemini/  # backed-up authored configs, per agent
-tests/                  # plain-bash guards (secret-scan, structure, install)
+tests/                  # single secret-scan guard (run before committing)
 docs/                   # full-cycle plan + per-task docs
 ```
 
@@ -44,7 +44,9 @@ move its backup back, e.g.
 
 ## Safety
 
-Public repo. Secrets and runtime state (`auth.json`, `config.toml`, `*.sqlite`,
-history, sessions, per-project memory) are never tracked — enforced by an allowlist
-`.gitignore` and `tests/test_gitignore_secret_guard.sh`. Run `bash tests/run.sh`
-before every commit.
+Public repo. Secret-named files and runtime state (`auth.json`, `config.toml`,
+`*.sqlite`, history, sessions, per-project memory) are never trackable — enforced by
+an allowlist `.gitignore` and `tests/secret-guard.sh`. Run `bash tests/secret-guard.sh`
+before every commit. The guard checks names/trackability, not file *contents* — never
+paste a credential into an allowlisted file (GitHub secret scanning is the only
+content-level backstop).

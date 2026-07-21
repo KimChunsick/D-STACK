@@ -5,7 +5,7 @@
   "permissions": {
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "fable",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -32,6 +32,7 @@
     "type": "command",
     "command": "sh $HOME/.claude/statusline-command.sh"
   },
+  "language": "한국어",
   "autoCompactWindow": 563000,
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,

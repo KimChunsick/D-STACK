@@ -29,7 +29,7 @@ target project's conventions unless the user explicitly requires a language.
 4. Deep interview
 5. Goal + milestone + task decomposition (exactly **one Goal**)
 6. docs/ scaffold (GOAL.md + task folders)
-7. Per-task TDD (Red → Green → Refactor)
+7. Per-task TDD (conditional design consult first, then Red → Green → Refactor)
 8. Per-task documentation
 9. Codex (GPT-5.6 Sol) adversarial review → new `codex-review-<NNN>.md` per round + consensus loop
 10. Per-task E2E capture
@@ -83,7 +83,8 @@ but ask all of it. Continue until the intent is fully pinned down.
 There is **exactly one Goal** (the single Why). Under it, break the work into **milestones**
 (each ≈ one feature), and each milestone into **tasks**. **Correct task size = roughly one
 human-reviewable PR** (a bit larger is fine). Number milestones and tasks. The priority is
-splitting the problem small.
+splitting the problem small. Smaller tasks converge in fewer review rounds; a task that
+mixes several concerns multiplies its review surface and its round count.
 
 ## Phase 6 — docs/ scaffold (GOAL.md + task folders)
 Under the project root, create one Goal directory holding a `GOAL.md` and a **folder per task**:
@@ -133,7 +134,17 @@ enforced until removed — appending a tagged line does not convert it, and `unr
 registering, keep only the tagged (TAB-bearing) lines:
 `t=$(mktemp); grep -F "$T" .fullcycle-active > "$t" 2>/dev/null || true; mv "$t" .fullcycle-active`.
 
-## Phase 7 — Per-task TDD
+## Phase 7 — Per-task TDD (after a conditional design consult)
+**Design consult (conditional, before any code):** if the task hits any trigger —
+new architecture or module boundaries; API contracts; persistence or logging consistency;
+cursor/idempotency semantics; partitioning; rendering boundaries; sanitization applied
+across multiple paths — run ONE `codex exec` design review of the intended approach
+(GPT-5.6 Sol, xhigh, read-only, English design brief; same hardened invocation shape as
+`codex-review`, no consensus loop) before implementing, and record its outcome in
+`task.md`. No trigger → record `Design consult: Skipped — no trigger` there instead.
+A structural mistake caught here costs one invocation; the same mistake caught in
+Phase 9 costs a multi-round review loop.
+
 For every task, follow strict TDD: **Red** (write a failing test that encodes *why*
 the behavior matters) → **Green** (minimum code to pass) → **Refactor** (clean up,
 tests stay green). Then tick the TDD checkbox in `task.md`.
@@ -154,11 +165,13 @@ On every re-review, first verify unresolved findings, claimed fixes/rebuttals, a
 caused by those fixes, then continue checking the supplied task scope for newly discovered
 concrete defects. Do not suppress a real issue merely because it appeared in a later round;
 accuracy and safety take priority. Do not repeat a closed point without materially new
-evidence. Every finding must include evidence, a rough suggested direction, a small illustrative
-example (partial code/pseudocode, ASCII structure or flow, or a concrete before→after shape),
-the explicit caveat that the example is only the reviewer's opinion and not a patch to copy
-verbatim, and a verification method. The builder must adapt the idea to the actual implementation
-and verify it instead of treating the example as authoritative code.
+evidence. Every finding carries evidence and a verification method; a one-sentence suggested
+direction appears only when the repair is not obvious from the evidence, and findings never
+include illustrative code examples or patches — the builder owns the fix. Before every
+invocation (round 1 and each re-review), run the codex-review skill's mandatory pre-review
+defect-class self-sweep with class-wide fixes and record it in `task.md`. A round whose
+remaining findings are all low-severity closes in that same round, with the lows recorded
+as non-blocking follow-ups.
 
 Continue with a new numbered file until the latest round reaches **agreed** (both sides agree)
 or **resolved** (every blocking finding is fixed, disproved, or explicitly disposed by a user
