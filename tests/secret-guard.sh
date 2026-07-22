@@ -162,6 +162,7 @@ done
 extra=""
 while IFS= read -r -d '' path; do
   [ "$path" = "claude/agents/frontend-dev.md" ] && continue
+  [ "$path" = "claude/agents/general-dev.md" ] && continue
   extra="$extra $(printf '%q' "$path")"
 done < <(git -c core.excludesFile=/dev/null ls-files -o --exclude-standard -z claude/agents/)
 [ -z "$extra" ] || fail "unexpected addable files under claude/agents/:$extra"
@@ -172,7 +173,7 @@ done < <(git -c core.excludesFile=/dev/null ls-files -o --exclude-standard -z cl
 # battery or the addable scan to trip on) — fails until the pin is deliberately
 # updated in the same reviewed change. (b) The negation set is additionally pinned
 # line-by-line below for a readable diff in the common allowlist-edit case.
-GITIGNORE_SHA_PIN='0abd02e152011b091d60a0b263a8f1727ae92758ccc8728cfe9e4336023889b9'
+GITIGNORE_SHA_PIN='ba365567cb836e736821f198c1c8d1508f194c1af13cbe3e58a4e6d34c1fa244'
 got_sha="$(shasum -a 256 .gitignore | awk '{print $1}')"
 [ "$got_sha" = "$GITIGNORE_SHA_PIN" ] \
   || fail ".gitignore content drifted from the pinned hash — review the change, then update GITIGNORE_SHA_PIN in tests/secret-guard.sh in the same commit (got $got_sha)"
@@ -207,6 +208,7 @@ expected_negations='!/.gitignore
 !/claude/skills/codex-research/
 !/claude/agents/
 !/claude/agents/frontend-dev.md
+!/claude/agents/general-dev.md
 !/codex/.gitkeep
 !/codex/AGENTS.md
 !/codex/instructions.md

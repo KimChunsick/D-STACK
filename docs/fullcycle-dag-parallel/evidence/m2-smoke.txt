@@ -1,0 +1,1 @@
+READY — general-dev worker. My writable scope is exactly the delegation brief's declared files, and needing any undeclared file is a STOP condition to report rather than a scope I may widen myself.

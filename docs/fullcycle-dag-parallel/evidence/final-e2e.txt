@@ -1,0 +1,23 @@
+=== FINAL E2E capture (2026-07-22 07:19) ===
+--- [T01] skill-schema suite (incl. real YAML parse of all 3 blocks):
+ok   yaml parses: b1.yaml
+ok   yaml parses: b2.yaml
+ok   yaml parses: b3.yaml
+== all checks passed
+--- [T02] checker suite, brew bash then /bin/bash 3.2:
+== all checks passed
+== all checks passed
+--- [T02] self-host: checker vs this goal's real GOAL.md:
+PARALLEL: T01 T04
+rc=0
+SERIAL: T02 not ready — dep T01 incomplete
+rc=1
+--- [T03] inject hook emits DAG directive; [quick] stays silent:
+DAG-scheduled execution (serial default; review rounds of different tasks overlap by default; worker fan-out via general-dev/frontend-dev in git worktrees only on a check-parallel.sh PARALLEL verdict, scope-checked before review and merge; INVALID declarations mean fix the decomposition)
+       0
+--- [T04] installer idempotence + live link + agent registration:
+  = up to date: .claude/agents/general-dev.md
+Summary: linked=0 copied=0 backed-up=0 up-to-date=15 skipped=0
+smoke: READY — general-dev worker. My writable scope is exactly the delegation brief's declared files, and needing any undeclared file is a STOP condition to report rather than a scope I may widen myself.
+--- secret guard:
+  ✓ PASS: secret guard

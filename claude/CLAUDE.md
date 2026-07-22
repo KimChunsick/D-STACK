@@ -3,10 +3,17 @@
 **Every implementation / change / bugfix / refactor / configuration / build task starts with the `full-cycle` skill.**
 Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation → **per-Goal Codex research**
 (`codex-research` skill — both-sides evidence; `deep-research` only as fallback) → deep interview (no obvious questions)
-→ **one Goal** + milestone + PR-sized task decomposition → `docs/<goal>/GOAL.md` + task folders
-(`<milestone>/<NN-task>/task.md`) → conditional design consult → Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
+→ **one Goal** + milestone + PR-sized task decomposition **with per-task `deps`/`files`
+declarations in GOAL.md** → `docs/<goal>/GOAL.md` + task folders
+(`<milestone>/<NN-task>/task.md`) → conditional design consult → **DAG-scheduled execution**
+(serial by default; review rounds of different tasks overlap; worker fan-out —
+`general-dev`/`frontend-dev` subagents in git worktrees — only on a `check-parallel.sh`
+PARALLEL verdict, with `scope` containment checks before review and merge) →
+Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
 one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-task + per-milestone + final Goal E2E**
-→ final report.
+→ final report. The SKILL.md is the structured authority (YAML phase/scheduling schema):
+the LLM proposes dependencies, the deterministic checker verdicts — `INVALID` means fix
+the decomposition, never "just go serial".
 
 - **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
 - **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or task doc
