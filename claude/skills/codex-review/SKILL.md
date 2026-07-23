@@ -153,6 +153,18 @@ follow-ups in the maintainer response and seal with a positive consensus;
 never open another round solely for low-severity polish or a cleaner verdict. Every extra
 round costs real wall-clock and buys no safety the recorded follow-ups don't already hold.
 
+**Wind-down rule (Round 4+):** Rounds 1–3 keep the strict medium=0 bar above. From Round 4
+onward, raise the closure bar toward shipping: close the round with a positive consensus as
+soon as there is **no unresolved high-severity finding and no unresolved *concrete* medium**
+(a medium carrying a real failure path, counterexample, or reproducible risk). Everything
+else still open — low-severity items and non-blocking mediums (no concrete failure path) — is
+recorded as non-blocking follow-ups in the maintainer response and NOT carried into another
+round; do not spin a Round 5+ solely to clear nitpicks or chase a cleaner verdict. A concrete
+high or a concrete medium still keeps the loop open past Round 4 — this rule trims tail rounds
+on minor findings, it is not a hard cap and it never lowers the bar on a real blocker. The
+reasoning-effort pin stays xhigh for every round (Step 2); Round 4 changes only *when the loop
+may close*, never *how hard Codex thinks*.
+
 After a rejecting round, fix valid findings, record evidence-backed rebuttals, rebuild the
 bundle with all sealed prior rounds, and invoke Codex again into the next numbered file.
 Continue until genuine consensus or resolution; there is no arbitrary round cap, because
