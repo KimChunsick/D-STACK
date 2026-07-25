@@ -339,6 +339,11 @@ finished, what was verified, what changed, follow-ups — and deregister `GOAL.m
 ## Intent / Why
 <what this task achieves and why it matters to the Goal>
 
+## Deployment context
+<where it runs, who uses it, expected scale, data criticality, what is out of scope by
+construction — the reviewer reads this as the declared operating envelope, so state it
+honestly; it right-sizes findings but never waives a concrete defect>
+
 ## Design consult
 <outcome, or "Skipped — no trigger">
 

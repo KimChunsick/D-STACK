@@ -43,6 +43,10 @@
 !/codex/rules/
 /codex/rules/*
 !/codex/rules/default.rules
+!/codex/skills/
+/codex/skills/*
+!/codex/skills/adversarial-review/
+!/codex/skills/adversarial-research/
 /gemini/*
 !/gemini/.gitkeep
 !/gemini/README.md

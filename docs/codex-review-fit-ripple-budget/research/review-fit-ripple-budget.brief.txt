@@ -1,0 +1,120 @@
+# Research brief — bounding and re-scoping an LLM adversarial code-review loop
+
+## Context (facts, not assumptions)
+
+A solo maintainer runs a "full-cycle" delivery pipeline in Claude Code. After each
+PR-sized task passes TDD, an adversarial review round is delegated to Codex CLI
+(`codex exec`, GPT-5.6 Sol, reasoning effort xhigh, read-only sandbox). One round =
+one immutable markdown file `codex-review-<NNN>.md` containing the reviewer's findings,
+the maintainer's point-by-point response, carried decisions, and a single sealed
+`Consensus:` line. The loop repeats into a new numbered file until consensus.
+
+The review input bundle is assembled by a fail-closed allowlist shell script and piped
+on stdin. The bundle for round N contains:
+  - the task doc (full snapshot)
+  - EVERY sealed prior round 1..N-1 (full snapshot, numeric order)
+  - scoped git diffs of the explicitly allowlisted changed files
+  - the goal's research artifacts
+
+Measured growth in this maintainer's own repo: a task that ran 10 rounds accumulated
+~65 KB of prior-round text alone; round-1 files run 9-12 KB and later rounds 4-7 KB.
+The assembler hard-fails (FATAL) on any single snapshot over 64 KB, but there is no cap
+on the assembled bundle total, which grows quadratically in round count.
+
+Current reviewer output discipline (already in place, verbatim rules):
+  - each finding's first line is `[severity:high|medium|low][axis] content`
+  - followed by `Evidence:` and `Verification:` lines
+  - an optional one-line `Suggested direction:` ONLY when the repair is non-obvious
+  - "Never include illustrative code examples or patches; the builder owns the fix."
+  - "Consolidate findings by root cause. No praise or summary."
+  - closure rules: a round whose remaining findings are all low-severity closes in the
+    same round; from round 4 onward it closes as soon as no unresolved high and no
+    unresolved *concrete* medium remain.
+  - review axes: (1) security (2) technical correctness (3) UI/UX & DX
+    (4) software structure/design (5) does it satisfy the real Why in the task doc,
+    plus "challenge the research's assumptions".
+
+## The three problems to research
+
+### P1 — Right-sizing / appropriate technology
+The reviewer sometimes demands infrastructure far beyond the project's real deployment
+context (example given by the maintainer: proposing database replication / multi-node
+concerns for a project that only ever runs locally on one machine). The maintainer wants
+over-engineering itself to become a first-class, reportable review finding, and wants
+findings scaled to the actual deployment context.
+
+Research questions:
+ - How do real code-review guidelines (Google's eng-practices, Microsoft/Meta review
+   guides, published static-analysis and LLM-review papers) encode "scale/context fit"
+   so a reviewer does not demand capacity the system will never need? Is YAGNI /
+   over-engineering treated as a reportable defect class anywhere, with a severity model?
+ - What is the strongest argument AGAINST telling a reviewer "this project is small /
+   local-only"? Specifically: does supplying a scale/deployment context to an LLM reviewer
+   measurably suppress legitimate correctness or security findings (a reviewer that stops
+   raising a real concurrency or injection bug because it was told the project is small)?
+   Look for empirical evidence, benchmark results, or documented failure reports.
+ - How should the deployment context be conveyed — a declared field in the task doc that
+   the reviewer reads as data, or a static clause in the reviewer prompt? Any prior art on
+   "context cards"/"project profile" blocks for LLM reviewers, and their failure modes?
+ - Is there evidence on whether an LLM reviewer instructed to flag over-engineering starts
+   producing false "this is over-engineered" findings against deliberate, justified
+   hardening (a real risk here, since this repo's code IS deliberately hardened)?
+
+### P2 — Blast radius / ripple reporting
+Today a finding typically says "change file A". The maintainer wants each finding to also
+name the sibling sites (B, C, ...) that must change with it, or that should be factored
+into shared code, so one round fixes a whole defect class instead of exposing the next
+instance in the following round. The maintainer additionally asked for a SHORT code sketch
+"when needed" — which directly contradicts the existing "never include illustrative code
+examples or patches" rule.
+
+Research questions:
+ - Evidence on whether requiring an LLM reviewer to enumerate affected sibling sites
+   ("class-wide" or "blast radius" reporting) actually reduces review iteration count, and
+   on its cost: false ripple claims, hallucinated call sites, and reviewer scope creep.
+ - Prior art on reviewers proposing "commonize / extract shared helper" and the known
+   failure mode of premature abstraction (contrast with the rule-of-three / AHA guidance,
+   and with this maintainer's standing "Simplicity First / Surgical Changes" rules that
+   forbid unrequested refactoring). Where is the line?
+ - The code-sketch question, both sides: does including a short illustrative snippet in a
+   review finding improve fix accuracy, or does it anchor the implementer onto the
+   reviewer's (possibly wrong) design and reduce independent verification? Look for
+   empirical studies on anchoring in code review, on LLM-suggested patches being accepted
+   uncritically, and on automated-fix-suggestion acceptance rates and their defect rates
+   (e.g. GitHub Copilot / Codex review suggestions, SapFix/Getafix-style literature).
+ - If a bounded sketch is allowed, what bound is defensible (line count, "shape only, no
+   working code", pseudocode vs real code) and how do published guidelines phrase it?
+
+### P3 — Bounding review length / bundle growth
+Review files keep growing, and re-feeding all prior rounds makes the Codex CLI input blow
+up in later rounds.
+
+Research questions:
+ - Documented context-window and input limits relevant to `codex exec` with GPT-5.6 Sol
+   (or the closest documented Codex CLI / GPT-5.x figures): total context, stdin handling,
+   any documented truncation or compaction behavior in Codex CLI itself. Cite the primary
+   docs and their dates. What concretely fails first — a hard input rejection, silent
+   truncation, or degraded attention?
+ - "Lost in the middle" / long-context degradation evidence: at what input sizes does
+   recall of mid-bundle content measurably degrade for current frontier models? Does
+   carrying 65 KB of prior review rounds plausibly hurt review quality, not just cost?
+ - Prior art and both-sides evidence on multi-round agent-loop history compaction:
+   carrying only a decision log / "carried decisions" summary of older rounds versus the
+   full transcript. What is provably lost — specifically, the risk that dropping an older
+   round's full text lets a previously accepted risk or user decision be silently
+   reopened, or lets an unverified "claimed fix" go unchecked?
+ - Techniques for capping an LLM reviewer's OUTPUT without suppressing real defects:
+   maximum finding counts, per-finding word budgets, severity-ordered reporting with tail
+   truncation, "report the top N by severity and state how many were omitted". Evidence
+   for and against each. Is there measured evidence that output caps cause a reviewer to
+   drop high-severity findings, or that they mainly trim low-value noise?
+ - Any published guidance on the right unit of compaction for an immutable audit trail
+   (this maintainer treats every sealed round as a permanent record; compaction must not
+   rewrite history, only change what is re-fed to the model).
+
+## Output requirements
+
+Cite current primary sources with URLs and dates. Explicitly mark what you could not
+verify — especially any Codex CLI or GPT-5.6 Sol limit figures. Where the evidence is
+thin or absent, say so plainly rather than generalizing from unrelated work. Give the
+strongest argument AGAINST each of the three changes, not just support for them.

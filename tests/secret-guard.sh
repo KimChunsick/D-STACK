@@ -173,7 +173,7 @@ done < <(git -c core.excludesFile=/dev/null ls-files -o --exclude-standard -z cl
 # battery or the addable scan to trip on) — fails until the pin is deliberately
 # updated in the same reviewed change. (b) The negation set is additionally pinned
 # line-by-line below for a readable diff in the common allowlist-edit case.
-GITIGNORE_SHA_PIN='ba365567cb836e736821f198c1c8d1508f194c1af13cbe3e58a4e6d34c1fa244'
+GITIGNORE_SHA_PIN='52b56e69dbf1395c2279763197acdfa9556c128aa03d95b5363192c42ddcacc6'
 got_sha="$(shasum -a 256 .gitignore | awk '{print $1}')"
 [ "$got_sha" = "$GITIGNORE_SHA_PIN" ] \
   || fail ".gitignore content drifted from the pinned hash — review the change, then update GITIGNORE_SHA_PIN in tests/secret-guard.sh in the same commit (got $got_sha)"
@@ -214,6 +214,9 @@ expected_negations='!/.gitignore
 !/codex/instructions.md
 !/codex/rules/
 !/codex/rules/default.rules
+!/codex/skills/
+!/codex/skills/adversarial-review/
+!/codex/skills/adversarial-research/
 !/gemini/.gitkeep
 !/gemini/README.md'
 got_negations="$(grep '^!' .gitignore)"

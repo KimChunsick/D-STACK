@@ -31,6 +31,8 @@ claude/agents/general-dev.md|.claude/agents/general-dev.md|link
 codex/AGENTS.md|.codex/AGENTS.md|link
 codex/instructions.md|.codex/instructions.md|link
 codex/rules/default.rules|.codex/rules/default.rules|link
+codex/skills/adversarial-review|.codex/skills/adversarial-review|link
+codex/skills/adversarial-research|.codex/skills/adversarial-research|link
 "
 
 # Timestamp for backup names (overridable for deterministic tests).

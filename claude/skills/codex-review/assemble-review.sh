@@ -18,6 +18,36 @@ TASK_DIR="${1:?usage: assemble-review.sh TASK_DIR FILE...}"; shift || true
 
 DENY='(^|/)(auth\.json|config\.toml|credentials\.json|id_rsa|.*\.(key|pem|p12|token)|\.env.*|.*\.sqlite.*|.*\.db|history\.jsonl|\.npmrc|\.netrc)$'
 MAX=65536
+# Round N used to re-feed rounds 1..N-1 in full, so history grew quadratically in round
+# count. Only the two most recent rounds are sent verbatim now — enough to verify the last
+# round's findings and the round that produced the fix being claimed. Older rounds are replaced
+# by a companion file the orchestrator writes when it seals the round. Sealed rounds on disk
+# are never touched; this changes what the model is fed, not the audit trail.
+#
+# The companion is a SEPARATE FILE on purpose. Deriving the carried-decisions section by
+# reading the round's Markdown was tried and abandoned across six review rounds: a round
+# quotes other documents constantly — including this contract — so a heading inside a fence or
+# an HTML comment can impersonate the real section, and no amount of fence tracking or
+# delimiter counting settles it (a '```' line inside an open '```text' fence defeats both).
+# A file whose entire content IS the carried state cannot be impersonated by its own contents.
+# Its name deliberately does not match the codex-review*.md round namespace validated below.
+FULL_ROUNDS=2
+# The prompt tells the reviewer it may name an older round and get it back in full; this is how
+# that is honoured. It names ROUNDS, not a count: raising a count would drag in every newer
+# round too, which can overrun the bundle budget and make the promise unkeepable exactly when
+# history is long. It also cannot shrink the two-round floor, so no value here can compact a
+# round the contract guarantees in full.
+EXTRA_FULL="${REVIEW_FULL_ROUND_IDS:-}"
+carried_path() { printf '%s/carried-%s' "${1%/*}" "${1##*codex-review-}"; }
+# The per-file cap above never bounded the bundle: a task naming many files could assemble an
+# order of magnitude more than the whole review history. The budget catches that runaway, and
+# nothing else — set it from the smallest documented window, not from caution. The bundled CLI
+# catalog reports gpt-5.6-sol at context_window 272000 (the public model spec lists a larger
+# 1.05M); 512KB is roughly 128K tokens, under half that conservative figure, leaving room for
+# reasoning and output. A tighter cap would reject bundles the model can plainly read, and the
+# remedies below (narrowing the allowlist) cost review coverage — so the guard must fire only
+# when the bundle is genuinely out of scale.
+MAX_BUNDLE=524288
 CONSENSUS_FIELD_RE='^[-[:space:]>#*+._)0-9]*(✅|❌)?[[:space:]]*consensus:'
 CONSENSUS_SEALED_RE='^[-[:space:]>#*+._)0-9]*((✅|❌)[[:space:]]*)?consensus:[*_[:space:]]*(disagreed|agreed|resolved)[[:punct:][:space:]]*((✅|❌)[[:punct:][:space:]]*)?$'
 
@@ -40,6 +70,65 @@ emit_snapshot() {
   validate_snapshot "$f"
   echo "--- $f (full snapshot) ---"
   cat -- "$f"
+}
+
+# Decides whether a round's companion may stand in for the round itself. Nothing here reads the
+# round's Markdown body — that derivation is what six review rounds each defeated — but the two
+# unambiguous ends ARE checked, because a companion that stands in for a round while disagreeing
+# with it is worse than no compaction at all.
+carried_ok() {
+  local c="$1" n="$2" f="$3" last round_last body round_lines boundary
+  validate_snapshot "$c" >/dev/null 2>&1 || return 1
+  # Self-identifying: names the round it stands for, so a companion copied or misfiled into
+  # another round's slot is rejected rather than silently replacing that round's state.
+  head -n 1 -- "$c" | grep -qiE "^##[[:space:]]+carried decisions[[:space:]]*—[[:space:]]*round[[:space:]]+0*$n[[:space:]]*\$" || return 1
+  last="$(awk 'NF { line = $0 } END { print line }' "$c")"
+  printf '%s\n' "$last" | grep -qiE "$CONSENSUS_SEALED_RE" || return 1
+  # Bound to its round's verdict: a truncated write cannot reach this line, and a companion
+  # claiming a different consensus than the round it replaces is a contradiction, not a summary.
+  round_last="$(awk 'NF { line = $0 } END { print line }' "$f")"
+  [ "$last" = "$round_last" ] || return 1
+  # Bound to its round's TEXT: everything after the companion's identifying first line must be
+  # exactly the round's own last lines, AND that block must begin exactly where the round's
+  # carried-decisions section begins. Suffix equality alone is not enough — the companion picks
+  # its own length, so one holding nothing but a consensus line matches the round's final line
+  # and passes while carrying no decisions at all. Anchoring the boundary takes it away: the
+  # round's line immediately above the block must be the carried-decisions heading. That line is
+  # read at a COMPUTED position, never searched for, so a heading quoted elsewhere in the round
+  # cannot move it — searching is the derivation six earlier rounds were spent failing at.
+  # The heading must be UNIQUE in the round. Otherwise the companion still picks the boundary:
+  # with two headings it simply chooses the length that lands on the second one and drops
+  # everything under the first. Searching to REFUSE is safe; searching to SELECT is the
+  # derivation six earlier rounds were spent failing at, and this never selects.
+  [ "$(grep -ciE '^##[[:space:]]+carried decisions[[:space:]]*$' "$f")" -eq 1 ] || return 1
+  body="$(( $(wc -l < "$c") - 1 ))"
+  [ "$body" -ge 1 ] || return 1
+  round_lines="$(wc -l < "$f")"
+  boundary="$(( round_lines - body ))"
+  [ "$boundary" -ge 1 ] || return 1
+  awk -v n="$boundary" 'NR == n { print; exit }' "$f" \
+    | grep -qiE '^##[[:space:]]+carried decisions[[:space:]]*$' || return 1
+  tail -n +2 -- "$c" | diff -q - <(tail -n "$body" -- "$f") >/dev/null 2>&1
+}
+
+emit_round_compact() {
+  local f="$1" n="$2" c
+  c="$(carried_path "$f")"
+  # A missing or unconvincing companion means we do not know this round's carried state, so the
+  # round goes out whole. Falling back to too much is a cost; dropping real carried state is a
+  # defect. Legacy rounds sealed before companions existed simply never compact, which is
+  # correct rather than merely tolerated.
+  if ! carried_ok "$c" "$n" "$f"; then
+    if [ -e "$c" ] || [ -L "$c" ]; then
+      echo "--- $f (full snapshot; ${c##*/} is not a complete carried-state companion) ---"
+    else
+      echo "--- $f (full snapshot; no ${c##*/} companion) ---"
+    fi
+    cat -- "$f"
+    return
+  fi
+  echo "--- $f (COMPACTED — carried state below is ${c##*/}; the full sealed round is on disk at the path above, name the round if you need it re-sent) ---"
+  cat -- "$c"
 }
 
 sealed_round_ok() {
@@ -127,21 +216,75 @@ while [ "$expected" -le "$round_count" ]; do
   expected=$((expected + 1))
 done
 
-# Every automatic read goes through the strict snapshot gates. Prior rounds remain separate
-# files but are all carried in numeric order so a later reviewer can verify the complete record.
-echo "=== TASK DOC ==="; emit_snapshot "$TASK_DIR/task.md"
-if [ -e "$TASK_DIR/codex-review.md" ] || [ -L "$TASK_DIR/codex-review.md" ]; then
-  echo; echo "=== LEGACY REVIEW HISTORY (read-only migration context) ==="
-  emit_snapshot "$TASK_DIR/codex-review.md"
+# A malformed request must not degrade quietly into "no rounds requested" — the reviewer asked
+# for specific history and would get a compacted round back with no sign the ask was dropped.
+_extra=""
+# Split on commas ONLY (not whitespace), so an empty or whitespace-only field survives to be
+# rejected instead of vanishing: ' ' between two commas names no round, and dropping it turns a
+# malformed request into a silently smaller one. set -f keeps '[1]' a fatal id, not a glob.
+# IFS splitting drops a TRAILING empty field, so '1,' has to be caught before the loop.
+case "$EXTRA_FULL" in *,) echo "FATAL: REVIEW_FULL_ROUND_IDS has an empty field: '$EXTRA_FULL'" >&2; exit 1 ;; esac
+_ifs="$IFS"; IFS=','; set -f
+for r in ${EXTRA_FULL:+$EXTRA_FULL}; do
+  r="${r#"${r%%[![:space:]]*}"}"; r="${r%"${r##*[![:space:]]}"}"   # trim, so '1, 2' still works
+  case "$r" in *[!0-9]*|'') echo "FATAL: REVIEW_FULL_ROUND_IDS must be round numbers, got '$r'" >&2; exit 1 ;; esac
+  # Bound the width before any arithmetic: $((10#…)) is fixed-width, so a huge literal wraps and
+  # can land inside the valid range, turning an invalid id into a silent selection of some real
+  # round. No task has a seven-digit round.
+  [ "${#r}" -le 6 ] || { echo "FATAL: REVIEW_FULL_ROUND_IDS value out of range: '$r'" >&2; exit 1; }
+  # Canonicalise before matching: '001' and '1' name the same round, and the emission test
+  # compares decimal strings. Validating one form and matching another is how an explicit
+  # request gets accepted and then quietly dropped.
+  r=$((10#$r))
+  if [ "$r" -lt 1 ] || [ "$r" -gt "$round_count" ]; then
+    echo "FATAL: REVIEW_FULL_ROUND_IDS names round $r; this task has rounds 1..$round_count" >&2
+    exit 1
+  fi
+  _extra="$_extra $r"
+done
+IFS="$_ifs"; set +f
+EXTRA_FULL="${_extra# }"
+
+# Every automatic read goes through the strict snapshot gates. Every round is still validated
+# above; only how much of an older round is EMITTED changes. Buffer the bundle so its total
+# size can be checked before the caller ships it to the model.
+BUNDLE="$(mktemp)"; chmod 600 "$BUNDLE"; trap 'rm -f "$BUNDLE"' EXIT
+{
+  echo "=== TASK DOC ==="; emit_snapshot "$TASK_DIR/task.md"
+  if [ -e "$TASK_DIR/codex-review.md" ] || [ -L "$TASK_DIR/codex-review.md" ]; then
+    echo; echo "=== LEGACY REVIEW HISTORY (read-only migration context) ==="
+    emit_snapshot "$TASK_DIR/codex-review.md"
+  fi
+  echo; echo "=== PRIOR NUMBERED REVIEW ROUNDS ==="
+  round_total="${#REVIEW_ROUNDS[@]}"
+  if [ "$round_total" -eq 0 ]; then
+    echo "(none)"
+  else
+    echo "(the $FULL_ROUNDS most recent rounds appear in full${EXTRA_FULL:+, as do rounds $EXTRA_FULL by request}; each older round is compacted to its carried decisions and consensus line WHERE ITS COMPANION ALLOWS, and sent whole otherwise — every entry below says which)"
+    idx=0
+    for review in "${REVIEW_ROUNDS[@]}"; do
+      idx=$((idx + 1))
+      if [ "$((round_total - idx))" -lt "$FULL_ROUNDS" ] || printf ' %s ' "$EXTRA_FULL" | grep -q " $idx "; then
+        emit_snapshot "$review"
+      else
+        emit_round_compact "$review" "$idx"
+      fi
+    done
+  fi
+  echo; echo "=== ALLOWLISTED CHANGES + RESEARCH ==="
+  for f in "$@"; do emit_file "$f"; done
+} > "$BUNDLE"
+
+bundle_size="$(wc -c < "$BUNDLE" | tr -d '[:space:]')"
+if [ "$bundle_size" -gt "$MAX_BUNDLE" ]; then
+  echo "FATAL: review bundle is $bundle_size bytes, over the $MAX_BUNDLE-byte budget." >&2
+  echo "       Narrow the allowlist to this task's own changed files, or split the task." >&2
+  echo "       This is a policy limit, not a measured CLI ceiling — the exact stdin cap and" >&2
+  echo "       overflow behaviour are undocumented. Failing here gives you a measurement" >&2
+  echo "       instead of a mystery." >&2
+  exit 1
 fi
-echo; echo "=== PRIOR NUMBERED REVIEW ROUNDS ==="
-if [ "${#REVIEW_ROUNDS[@]}" -eq 0 ]; then
-  echo "(none)"
-else
-  for review in "${REVIEW_ROUNDS[@]}"; do emit_snapshot "$review"; done
-fi
-echo; echo "=== ALLOWLISTED CHANGES + RESEARCH ==="
-for f in "$@"; do emit_file "$f"; done
+cat -- "$BUNDLE"
 # NOTE (accepted residual): gates are name/type/size-based, not content-based — an explicitly
 # allowlisted benign-named file could still contain a secret. This matches the repo's own
 # name-based secret model; the allowlist is the control (only name task deliverables, never
