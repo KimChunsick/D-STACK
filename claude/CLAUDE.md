@@ -7,9 +7,14 @@ Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation �
 declarations in GOAL.md** → `docs/<goal>/GOAL.md` + a `task.md` per **review unit** (the folder
 whose doc is registered, reviewed and gated — a task folder by default, a milestone folder when
 the user sets milestone granularity) → conditional design consult → **DAG-scheduled execution**
-(serial by default; review rounds of different units overlap; worker fan-out —
-`general-dev`/`frontend-dev` subagents in git worktrees — only on a `check-parallel.sh`
-PARALLEL verdict, with `scope` containment checks before review and merge) →
+(implementation delegated to `general-dev`/`frontend-dev` workers in git worktrees whenever the
+task's declaration is complete, its write set is determined and isolating it is worth the setup —
+NOT because two tasks could run at once; a `check-parallel.sh` PARALLEL verdict now decides only
+whether delegated tasks run concurrently. What stays with the orchestrator: exploratory work,
+anything touching `docs/` or a pipeline skill, and review fixes — except a fix sitting inside a
+single task's declaration, which goes back to that task's worker. §0.2 OUTRANKS that entire list
+for frontend code: it goes to `frontend-dev` whether or not the work is exploratory. `scope`
+containment checks run before review and merge) →
 Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
 one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-review-unit + per-milestone + final Goal E2E**
 → final report. The SKILL.md is the structured authority (YAML phase/scheduling schema):

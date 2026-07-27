@@ -326,10 +326,20 @@ git -C "$wdir" rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1 \
 git -C "$wdir" merge-base --is-ancestor "$base" HEAD 2>/dev/null \
   || invalid "recorded base is not an ancestor of HEAD"
 
+# Render a path on ONE line, reversibly. Git filenames may contain newlines, tabs and control
+# bytes, and every verdict below interpolates a path into stdout — so an undeclared file named
+# "x<LF>PASS" emitted a second line that read exactly like a pass verdict. The exit status was
+# still 1, but the one-line stdout contract is what callers read. `cat -v`-style escaping keeps
+# the name recognisable while making it a single line.
+esc() { printf '%s' "$1" | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/\t/\\t/g' | LC_ALL=C awk 'BEGIN{ORS=""} {if(NR>1) printf "\\n"; print}'; }
+
 check_contained() { # $1 actual repo-relative committed path
   local p="$1" f body seg rest acc contained=1 via_dir=0
   case "$p" in
-    /*|*'..'*) printf 'VIOLATION: suspicious actual path %s\n' "$p"; exit 1 ;;
+    /*) printf 'VIOLATION: suspicious actual path %s\n' "$(esc "$p")"; exit 1 ;;
+  esac
+  case "/$p/" in
+    */../*|*/./*|*//*) printf 'VIOLATION: non-canonical component in actual path %s\n' "$(esc "$p")"; exit 1 ;;
   esac
   rest="$p"; acc=""
   while [ -n "$rest" ]; do
@@ -337,7 +347,7 @@ check_contained() { # $1 actual repo-relative committed path
     case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
     acc="${acc:+$acc/}$seg"
     if [ -L "$wdir/$acc" ] && [ "$acc" != "$p" ]; then
-      printf 'VIOLATION: %s traverses a symlink component (%s)\n' "$p" "$acc"; exit 1
+      printf 'VIOLATION: %s traverses a symlink component (%s)\n' "$(esc "$p")" "$(esc "$acc")"; exit 1
     fi
   done
   for f in ${filess[$ti]}; do
@@ -350,27 +360,42 @@ check_contained() { # $1 actual repo-relative committed path
     esac
   done
   if [ "$contained" -ne 0 ]; then
-    printf 'VIOLATION: %s is not in %s declaration\n' "$p" "$tid"; exit 1
+    printf 'VIOLATION: %s is not in %s declaration\n' "$(esc "$p")" "$tid"; exit 1
   fi
   # Directory ownership grants files, never link indirection: a symlink created
   # under (or as) a declared directory can route later writes outside the tree
   # invisibly to git — reject it. An EXACT-path declaration may be a symlink
   # (the owner named that path knowingly).
   if [ "$via_dir" -eq 1 ] && [ -L "$wdir/$p" ]; then
-    printf 'VIOLATION: %s is a symlink under directory ownership\n' "$p"; exit 1
+    printf 'VIOLATION: %s is a symlink under directory ownership\n' "$(esc "$p")"; exit 1
   fi
 }
 
 # Enumerations fail CLOSED: a git error is INVALID, never a silent PASS.
 dtmp="$(mktemp)"; stmp="$(mktemp)"; trap 'rm -f "$dtmp" "$stmp"' EXIT
-git -C "$wdir" diff --name-only -z --no-renames "$base" HEAD > "$dtmp" 2>/dev/null \
-  || invalid "git diff enumeration failed in $wdir"
+# The UNION of every commit's changed paths, not the net base..HEAD tree diff. A two-tree
+# comparison only reports paths whose CONTENT DIFFERS between the endpoints, so a worker that
+# commits an out-of-scope file and removes it in a later commit produces identical trees for that
+# path and vanishes from the check — while the file, and whatever was in it, stays in the branch
+# history that gets merged. Containment has to be a statement about what the branch DID, not about
+# where it ended up.
+#
+# `-m` shows a merge commit against each parent instead of the empty default; that over-reports
+# for merges, which is the safe direction for a containment check. `--no-commit-id` keeps commit
+# ids out of the NUL-separated path stream. Every step fails CLOSED.
+: > "$dtmp"
+revs="$(git -C "$wdir" rev-list "$base..HEAD" 2>/dev/null)" \
+  || invalid "git rev-list enumeration failed in $wdir"
+for c in $revs; do
+  git -C "$wdir" diff-tree -r -m --no-commit-id --name-only -z --no-renames "$c" >> "$dtmp" 2>/dev/null \
+    || invalid "git diff-tree enumeration failed for $c in $wdir"
+done
 git -C "$wdir" status --porcelain=v1 -z --no-renames --untracked-files=all > "$stmp" 2>/dev/null \
   || invalid "git status enumeration failed in $wdir"
 # Clean-tree requirement: reviewed identity is base..HEAD only.
 if [ -s "$stmp" ]; then
-  first="$(tr '\0' '\n' < "$stmp" | head -1)"
-  printf 'VIOLATION: worktree not clean (uncommitted/untracked): %s\n' "${first:3}"
+  first="$(LC_ALL=C awk 'BEGIN{RS="\0"} NR==1{print; exit}' "$stmp")"
+  printf 'VIOLATION: worktree not clean (uncommitted/untracked): %s\n' "$(esc "${first:3}")"
   exit 1
 fi
 while IFS= read -r -d '' p; do

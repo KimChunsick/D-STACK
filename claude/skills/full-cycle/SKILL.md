@@ -147,9 +147,64 @@ scheduling:
       post-seal-rule: sealing ends the freeze, not accountability — any later change to
         a file inside a SEALED bundle, before that unit's milestone closes, reopens that
         unit's review (see worktree-lifecycle reopen)
-    worker-fanout:
-      requires:                   # ALL must hold; any doubt → serial (fail-closed)
-        - checker plan verdict PARALLEL for the exact candidate set
+    worker-fanout:              # DELEGATION — no longer the same question as parallelism
+      # This gate used to require a PARALLEL plan verdict. That keys on the wrong property:
+      # whether two tasks can run at the SAME TIME says nothing about whether one task's
+      # implementation transcript belongs in the orchestrator's context, and that context is
+      # what delegation exists to protect. Parallelism is now a separate, later question
+      # (`parallel-when` below) — a delegated task may well be the only one running.
+      delegate-when:              # ALL must hold; any doubt → orchestrator (fail-closed)
+        - the declaration is COMPLETE — the checker returns non-INVALID for this task and its
+          `files` list is non-empty. An empty list declares no ownership, so `scope` can contain
+          nothing and the worker has no boundary to cross. "Non-empty" is not a weak test here —
+          files-grammar already makes globs, absolute paths, `..`, whitespace and shell
+          metacharacters INVALID, so it cannot be satisfied by `src/**` or `.`.
+        - the WRITE SET IS DETERMINED — task.md states the intended behaviour and the declaration
+          states where it lands, so the worker is implementing a decision rather than making one.
+          The test is what is still UNDECIDED, never what happens in what order — "write, compile,
+          adjust, re-run" is ordinary implementation and stays eligible, because feedback-driven
+          execution is not exploration. A task is ineligible when the behaviour, the structure, or
+          the set of files to touch is still being discovered. A task named "find out why startup is
+          intermittent" owning `src/startup/` has an objective AND a non-empty declaration and is
+          still exploration, because its first necessary act is diagnosis. If eligibility needs
+          inference, it is not eligible.
+        - there is a POSITIVE ISOLATION BENEFIT, decided from the declaration and the task doc
+          rather than from a feeling — the task declares MORE THAN ONE file, or its own
+          verification produces output the orchestrator would otherwise carry (a build, a test
+          run, a generated artifact). A single declared file with no verification run of its own
+          is a quick targeted change and stays in the orchestrator. Ties go to the orchestrator,
+          like every other doubt here.
+          Eligibility is necessary, not sufficient. "Correct one typo in `src/x.ts`", declared for
+          exactly that file, satisfies every predicate above and would still pay agent startup,
+          worktree creation, bootstrap, commit, verification, fan-in and a retained checkout to
+          save a few hundred tokens. Quick targeted changes stay in the orchestrator, which is
+          also what the platform's own delegation guidance says.
+      keep-in-the-orchestrator:   # not a fallback — these are WRONG to delegate
+        - exploratory work, by the definition above
+        - anything writing `docs/` or this pipeline's own skill files, which no worker may touch
+        - review-fix rounds, EXCEPT where «P9 findings attribution» assigns one back to the
+          worker that already owns it. State that exception here rather than only there, because without
+          an explicit precedence rule this list and the attribution rule both claim a finding
+          whose fix sits inside one declaration, and routing is undefined.
+      frontend-takes-precedence: section 0.2 of `CLAUDE.md` delegates ALL frontend code work
+        to `frontend-dev` unconditionally, exploratory or not, and it OUTRANKS `delegate-when`.
+        The two authorities meet only on a task whose declaration mixes frontend and
+        non-frontend files, and that task is ineligible for both — `worker binding` below
+        already calls a mixed set ineligible, and the resolution is to split it at
+        P5-decompose, not to pick an owner.
+      requires:                   # ALL must hold; any doubt → orchestrator (fail-closed)
+        - BASE IDENTITY IS VERIFIED, never assumed. The worktree's base must be the integrated
+          head that already contains every closed dependency of this task, and the orchestrator
+          checks that rather than trusting a default. Claude Code's own worktree setting
+          `worktree.baseRef` defaults to `fresh`, which branches from the DEFAULT BRANCH, not
+          from current HEAD — verified in the installed client, whose enum declares the value as
+          `baseRef ?? "fresh"` over options `["fresh","head"]`. So a subagent worktree created
+          with worktree isolation lands on the default branch by default. A task whose
+          predecessor changed a signature would then branch from before that change and produce
+          a scope-VALID but incompatible implementation. Create the worktree explicitly from the
+          recorded base (`worktree-lifecycle.create`) and confirm the resulting HEAD, or set
+          `worktree.baseRef` to `head` and still confirm. Documenting the unsafe default is not
+          enough; the check is the requirement.
         - the review unit is EXACTLY ONE TASK. An integration head for a wider unit carries
           every task that unit owns, so no single declaration contains it and `scope` can
           never pass; the checker has no union mode and this file does not pretend otherwise.
@@ -163,17 +218,102 @@ scheduling:
         - declared-path cleanliness — no uncommitted changes under any candidate's
           declared paths and no merge/rebase in progress (docs/ and the registry are
           orchestrator-owned and never declared, so routine pipeline writes don't block)
-        - resource isolation — repo-specific shared runtime resources (ports, test
-          databases, dev servers, caches) demonstrably isolated per worktree, else serial
-      per-task: one worker subagent in its own worktree; the delegation brief carries
-        the task.md intent, the declared files, constraints, discovered repo
+      parallel-when:              # ALL must hold, and only for CONCURRENT execution
+        - a checker plan verdict of PARALLEL for the exact candidate set
+        - resource isolation — repo-specific shared runtime resources (ports, test databases,
+          dev servers, caches) demonstrably isolated per worktree. This lives HERE, not in
+          `requires`, because it is a statement about contention — a single delegated task whose
+          tests bind a fixed port has no competitor for it. Leaving it as a delegation
+          precondition kept the coupling this whole change removes, just one level down.
+          Both items are a SCHEDULING decision over already-delegated tasks, never a precondition
+          for delegating at all — which is the point of the split above.
+      honest-scope: what `scope` gives you is COMMITTED-DELIVERABLE containment, not write
+        confinement — and only since the checker enumerates the UNION of every commit's changed
+        paths. While it compared endpoints, a file committed and then deleted was invisible to it
+        while staying in the history that gets merged, so the claim would have been false. A worker can still touch an ignored file, a shared database, or anything
+        outside the repository, and pass every check. Narrowing that further needs a filesystem
+        sandbox or a write audit, and this pipeline has neither. Do not read a PASS as "the
+        worker only touched its files".
+      per-task: one worker subagent in the worktree the ORCHESTRATOR created; the delegation
+        brief carries the task.md intent, the declared files, constraints, discovered repo
         conventions, AND the worktree identity — worktree path, task branch, recorded
-        base commit — which the worker must verify before any write; the worker runs
-        P7-tdd inside its worktree and reports back in English; a worker NEVER
-        mutates the registry, docs/, or any path outside its declaration
+        base commit. The worker's ACTUAL working directory must BE the verified checkout, and
+        only a mechanism that BINDS it will do. A path in a brief does not bind — a subagent
+        spawned without platform worktree isolation starts in the PARENT working directory. And
+        an orchestrator-made `git worktree add` tree is not bound either, nor bootstrapped, since
+        `.worktreeinclude` applies only to worktrees the platform itself creates. Combining the
+        two is the worst of both — platform isolation makes its own, different checkout and
+        leaves the hand-made one unused.
+        THE MECHANISM IS THE `WorktreeCreate` HOOK. It emits the worktree path, the platform
+        adopts that path for the subagent (verified in the installed client 2.1.220, which logs
+        `Created hook-based worktree at:` and screens the emitted path for dot segments and for
+        symlinks below the checkout root). Retention is the ORCHESTRATOR's job, not the hook's —
+        `WorktreeRemove` fires when a subagent is torn down and cannot block, so it can notify or
+        archive but can never hold a worktree until a review closes. The orchestrator removes the
+        worktree explicitly after closure — see `worktree-lifecycle.cleanup`. It is configured in `settings.json`, and
+        because the hook creates the tree, the platform's own `.worktreeinclude` bootstrap does
+        not apply — which is a feature here, not a loss, because the hook copies exactly the fixtures it
+        copies, so bootstrap becomes an explicit list of GENERATED or independently attested
+        secret-free files rather than a pattern language resolving to whatever it resolves to.
+        The hook receives a NAME and returns a path; it is handed no base commit, branch or
+        fixture list. So the orchestrator writes a durable intent record under `.dstack/` keyed by
+        exactly that name — recorded base SHA, task branch, fixture list — BEFORE spawning, and the
+        hook reads it, creates the tree from that base on that branch, and verifies what it made.
+        Three consequences follow, none of them optional.
+        (a) The KEY must be one the orchestrator chooses, not one the platform generates, or the
+        record cannot be written in advance. Launch the worker with an explicit worktree name equal
+        to the task branch's slug and use that as the key.
+        (b) Creation is hook-only. `worktree-lifecycle.create`'s `git worktree add` is what the
+        orchestrator runs when it is doing the work ITSELF, serially, with no subagent involved —
+        not a second path to a worker's tree. Making one tree by hand and letting the platform make
+        another is the "worst of both" case above.
+        (c) The hook fires for EVERY worktree in the repository and has no matcher, so a hook that
+        emits nothing on a missing record would break an ordinary `claude --worktree feature`. No
+        record means NOT A PIPELINE WORKTREE, so fall through to the platform's normal creation. Fail
+        closed only when a record EXISTS and does not match, which is the case that actually
+        endangers the review.
+        The worker's identity report (`pwd -P`, `git rev-parse --git-common-dir`,
+        `--abbrev-ref HEAD`, `HEAD`) stays, demoted to a TRIPWIRE the orchestrator checks against
+        that record — never the binding itself.
+        NOT YET RUN in this pipeline, and that is a statement about evidence, not a prohibition —
+        the first real fan-out confirms base identity, cwd binding, bootstrap, branch naming and
+        retention together, and records the result. Until it does, treat a fan-out failure as
+        expected and fall back to serial for that task — do not treat serial as the permanent
+        answer, which would make the mechanism unfalsifiable.
+        Any mismatch voids the delegation — the work is redone, not accepted and re-pointed.
+        The worker runs P7-tdd inside that worktree and reports back in English; a worker NEVER
+        mutates the registry, docs/, or any path outside its declaration.
   worktree-lifecycle:             # explicit and orchestrator-owned, never worker-owned
     create: record the fan-out base commit; unique branch `fullcycle/<goal>/<task>`;
-      `git worktree add` from that base
+      `git worktree add` from that base — explicitly, because the platform's own worktree
+      creation defaults to the default branch (see `requires`, BASE IDENTITY). Confirm the new
+      worktree's HEAD equals the recorded base before briefing the worker.
+    bootstrap: a worktree is a fresh checkout, so gitignored fixtures a build needs are absent.
+      Claude Code copies them from a `.worktreeinclude` manifest (it enumerates with
+      `git ls-files --others --ignored --exclude-standard` and refuses symlinks and destinations
+      that escape the worktree). "List individual fixtures" is NOT sufficient discipline, because
+      the manifest's entries are not literal filenames — they reach
+      `git ls-files --others --ignored --exclude-standard --directory` as PATHSPECS, so one entry
+      can expand to many files. Gitignored is exactly where `.env`, local credentials, tokens and
+      service-account keys live, so an entry meant for one fixture can hand a credential to every
+      worker that never needed it. The manifest is an ALLOWLIST OF NON-SECRETS under three rules —
+      RESOLVE FIRST, then require the resolved set to be exactly the one anchored path that entry
+      was meant to name, then check that path against the repository's secret deny list. Validating
+      the entry TEXT is not enough and the reason is that the syntax is not settled from the outside
+      — the client is documented as gitignore syntax, where a bare basename matches at every depth,
+      while the installed binary passes entries to
+      `git ls-files --others --ignored --exclude-standard --directory`. Under either reading a
+      metacharacter-free `config.json` can select a second, credential-bearing `cache/config.json`
+      whose NAME is on no deny list. Comparing the resolved set to one expected path is the check
+      that does not depend on knowing which reading is right. Better still, avoid the manifest
+      entirely by creating the worktree from a `WorktreeCreate` hook that copies a named list of
+      generated or attested secret-free fixtures.
+      Dependency installs and per-tree runtime isolation are the other real costs — budget them,
+      because with delegation decoupled from parallelism they are now paid on serial work too.
+      Recorded alternative, not taken — one long-lived worktree per execution lane, reused across
+      serial tasks, pays the checkout and install once. It satisfies the same containment as long
+      as the base SHA is recorded and the tree is verified clean at every handoff. Per-task
+      worktrees were kept by explicit user decision; revisit if bootstrap cost dominates.
     work: the worker COMMITS its result on the task branch and leaves the tree CLEAN
       — uncommitted work never leaves a worktree, and an unclean tree cannot enter
       review
@@ -205,8 +345,13 @@ scheduling:
     reopen: a merge conflict, a manual post-merge edit, or a post-seal change to a
       sealed bundle reopens review for the affected set — EVERY review unit whose
       declared paths or sealed bundle intersect the touched paths (can exceed one)
-    cleanup: remove a worktree only after its merge is verified and its owning unit
-      deregistered
+    cleanup: the ORCHESTRATOR removes a worktree, explicitly, only after its merge is verified,
+      its owning unit's REVIEW HAS CLOSED, and the unit is deregistered. Not `WorktreeRemove` —
+      that hook fires at subagent teardown and cannot block, so it can archive or notify but can
+      never hold a tree open until a review closes. Merge-then-clean is not enough once findings can
+      route back to a worker — a resumed agent keeps its conversation but not its checkout, so
+      cleaning at integration leaves it with decisions it cannot act on. The branch and its base
+      metadata outlive integration and die with the review unit.
   fan-in:
     integration-defense: P11 milestone E2E is mandatory and is the semantic-integration
       gate. File disjointness is an ELIGIBILITY check, not an independence proof —
@@ -381,8 +526,17 @@ Semantics worth knowing, because they differ from the old line format:
 
 **Milestone-boundary session handoff.** A Goal does not have to live in one session. When a
 milestone's E2E is captured and its gates are ticked, every piece of durable state is in
-`GOAL.md` and the task documents — nothing important lives only in the conversation. So `/clear`
-there, then resume with `"$HOME/.claude/bin/dstack" status`, `"$HOME/.claude/bin/dstack" reclaim` on the records the id rotation
+`GOAL.md` and the task documents — nothing important lives only in the conversation.
+
+**Not while a review unit's loop is open, though.** `/clear` empties the SendMessage pin map and
+rebuilds the agent-name registry from surviving tasks only, aborting the non-backgrounded ones as
+it goes — so clearing mid-loop takes out the ordinary foreground workers this rule depends on.
+Backgrounded tasks do survive that sweep; the claim is "the warm workers you are about to route
+fixes to", not "every subagent". Either way each remaining fix falls back to the orchestrator or a
+cold rebrief. The handoff happens AFTER
+the unit closes, which is also when its worktrees may be cleaned. These two mechanisms —
+resumable workers and a clean session boundary — were designed independently and do fight; the
+resolution is ordering, not cleverness. So `/clear` then resume with `"$HOME/.claude/bin/dstack" status`, `"$HOME/.claude/bin/dstack" reclaim` on the records the id rotation
 orphaned, and a read of `GOAL.md`. Prefer this to letting one session run a multi-day Goal: the
 context grows monotonically and every later turn pays for the whole history of the earlier ones.
 
@@ -416,6 +570,70 @@ that. Continue until the latest round reaches `agreed` or `resolved`; a real pro
 choice goes to the user in Korean (user-input wait) and the review resumes after. When the
 round budget is reached with blockers still open, escalate to the user rather than
 downgrading a finding or grinding on. Then tick the Codex box in the unit's `task.md`.
+
+*Findings attribution — who FIXES a finding once implementation lives in a worker.* The
+orchestrator always OWNS the review: it assembles the bundle, records the round, judges the
+findings and seals. What is delegable is the fix.
+
+- **Inside one task's declaration AND the worker still holds the reviewed code → back to that
+  worker**, resumed rather than respawned. A resumed subagent keeps its prior conversation
+  including tool calls, and its transcript is unaffected by the orchestrator's own compaction, so
+  the worker already holds why it wrote what it wrote. Respawning throws that away and pays the
+  cold brief again. Containment alone is NOT enough: a merge resolution or a post-merge edit can
+  replace what the worker wrote, and `reopen` already says both of those reopen a review. So route
+  to a worker only when what it holds still equals what was reviewed. Spell that out per mode,
+  because "the reviewed commit" does not always exist: in `committed` mode it is literal — the
+  worker's branch head must equal the recorded review head. In SERIAL mode the reviewed artifact is
+  a working-tree diff against HEAD and has no commit id at all, so there is nothing to compare and
+  the predicate FAILS CLOSED: the fix is the orchestrator's. Delegated work is reviewed in
+  `committed` mode for exactly this reason; a serial round is the orchestrator reviewing its own
+  uncommitted work, where there is no worker to route to anyway. Anything authored during
+  integration belongs to whoever authored it — the orchestrator.
+- **Crossing declarations, or touching `docs/` or a pipeline skill file → the orchestrator.**
+  This is the exception named in `keep-in-the-orchestrator`; the two rules are one rule read from
+  two ends.
+- **Attribution is a REVOCABLE ASSIGNMENT, not a one-time choice.** It is decided from a
+  finding's text before the fix exists, and a fix routinely needs a file the finding never named
+  — trace an invalid value far enough and it lands in a schema another task owns. So the states
+  are explicit, including the unhappy ones the prose implies. The ordinary path is
+  `assigned` → `verified` → `closed`; a fix that needs more room goes
+  `assigned` → `expansion-requested` → `reassigned` (same worker, new declaration version) and
+  rejoins at `verified`. `tainted` (an unapproved out-of-scope write surfaced), `resume-failed`
+  (the worker is gone) and `verification-failed` all route to `recalled`, which means the
+  orchestrator takes the fix — and `recalled` then rejoins the ordinary path,
+  `recalled` → `verified` → `closed`. A failed orchestrator verification is not a new state: it
+  stays `recalled` and the fix is redone, because there is nobody further to hand it to. An earlier draft wrote expansion into the only path to `verified`,
+  which left a clean in-scope fix with no transition at all.
+- **The declaration is a WRITE CAPABILITY, not a hint.** Reads are wider than writes, NOT
+  unbounded: a worker may read repository material outside its declaration, and the secret deny
+  list outranks that permission unconditionally — no `.env`, no credential file, no key, no local
+  service configuration, declared or not. Gitignored is exactly where those live, and a read is not
+  harmless when the bytes land in a transcript that persists for 30 days. A worker that believes it
+  needs one asks instead. Having established that, the worker must stop
+  before its first out-of-scope WRITE and emit a scope-expansion request naming the paths and the
+  reason. The orchestrator then checks ownership overlap, dependency state, forbidden trees and
+  open review freezes, and either versions the declaration (if the widened fix is still one
+  coherent task) or recalls the whole fix and takes it itself. The worker resumes only against
+  the approved declaration version and the recorded base. An unapproved out-of-scope write that
+  reaches a COMMIT taints the worktree, and narrowing a later commit does not launder it, because
+  `scope` reads every commit in the range rather than the endpoints. Be precise about the rest,
+  because `honest-scope` already admits there is no sandbox and no write audit — a tracked file
+  edited and restored before any commit, an ignored file, a database, anything outside the
+  repository: none of that is detectable here. For those the stop-before-writing rule is
+  SELF-REPORTED POLICY, not an enforced boundary, and a worker that reports one is doing the rule's
+  job. Recovery when it surfaces late: discard the worktree, re-create from the recorded base, and
+  re-run the fix — never keep a tree whose history you cannot account for. That recovers
+  REPOSITORY taint and nothing else. An external side effect — a shared database, a cache, a
+  service, anything outside the checkout — survives every worktree operation, so it is a separate
+  disposition, needing proven cleanup or reprovisioning; until it has one the unit carries an
+  unresolved blocker and does not seal. Conflating the two is how a "recovered" tree ships
+  alongside a mutated database.
+- **Resumption is an OPTIMIZATION, never a correctness dependency.** An agent can be lost,
+  evicted, or fail to resume, and `/clear` drops the resume scope outright. Everything a
+  successor needs — declaration version, base and head commits, decisions, what was verified,
+  handoff status — lives in the unit's `task.md` and `.dstack/`, never only in an agent's
+  conversation. If a worker cannot be resumed, the fix falls to the orchestrator; that is a cost,
+  not a failure.
 
 **P10-unit-e2e.** Verify the review unit hands-on (invoke `verify` / `run` skills as
 fitting): Web → drive a headless browser, capture, confirm the behavior in the capture;
