@@ -38,6 +38,60 @@ FULL_ROUNDS=2
 # history is long. It also cannot shrink the two-round floor, so no value here can compact a
 # round the contract guarantees in full.
 EXTRA_FULL="${REVIEW_FULL_ROUND_IDS:-}"
+# The commit the reviewed identity starts from. Empty means "working tree vs HEAD", which is the
+# serial case. Under worker fan-out the reviewed identity is the COMMITTED `base..HEAD` range the
+# worktree lifecycle records, and diffing against HEAD there yields nothing at all — the review
+# would be handed a bundle with no implementation in it and could approve on that basis. Set
+# REVIEW_BASE to the recorded base commit for that case. It is validated before use.
+# The PHYSICAL repository root. Every path this script reads must resolve beneath it. Checking
+# only the final component for a symlink was not enough: with `docs/unit` a symlink, a perfectly
+# innocent-looking `docs/unit/task.md` passed the leaf test and then `cat` followed the parent to
+# an external target, sending whatever it found to Codex.
+ROOT_P="$(git rev-parse --show-toplevel 2>/dev/null)" \
+  && ROOT_P="$(cd -- "$ROOT_P" && pwd -P)" \
+  || { echo "assemble-review: cannot resolve the repository root physically" >&2; exit 1; }
+
+# EXPLICIT mode, no silent default. A worker review that forgot to set the range used to fall back
+# to `git diff HEAD`, which on a clean integration checkout emits zero implementation bytes and
+# labels changed files "no change" — no SKIPPED marker, so nothing stopped the launch and the
+# round reviewed a bundle with none of the code in it.
+REVIEW_MODE="${REVIEW_MODE:-}"
+case "$REVIEW_MODE" in
+  serial|committed) : ;;
+  *) echo "assemble-review: set REVIEW_MODE=serial (working tree vs HEAD) or REVIEW_MODE=committed (REVIEW_BASE..REVIEW_HEAD). It is mandatory: guessing it is how a worker review ships with no implementation in the bundle." >&2; exit 1 ;;
+esac
+REVIEW_BASE="${REVIEW_BASE:-}"
+REVIEW_HEAD="${REVIEW_HEAD:-}"
+DIFF_ARGS=""            # empty => working tree vs HEAD (serial mode)
+if [ "$REVIEW_MODE" = "serial" ]; then
+  { [ -z "$REVIEW_BASE" ] && [ -z "$REVIEW_HEAD" ]; } \
+    || { echo "assemble-review: REVIEW_MODE=serial takes no REVIEW_BASE/REVIEW_HEAD" >&2; exit 1; }
+else
+  [ -n "$REVIEW_BASE" ] && [ -n "$REVIEW_HEAD" ] \
+    || { echo "assemble-review: REVIEW_MODE=committed requires both REVIEW_BASE and REVIEW_HEAD — a base alone diffs a commit against the WORKING TREE, which is not the identity that gets merged" >&2; exit 1; }
+  for r in "$REVIEW_BASE" "$REVIEW_HEAD"; do
+    git rev-parse --verify --quiet "$r^{commit}" >/dev/null \
+      || { echo "assemble-review: '$r' is not a commit in this repository" >&2; exit 1; }
+  done
+  git merge-base --is-ancestor "$REVIEW_BASE" "$REVIEW_HEAD" \
+    || { echo "assemble-review: REVIEW_BASE is not an ancestor of REVIEW_HEAD" >&2; exit 1; }
+  # The recorded head must be what is actually checked out, and the tree must be CLEAN. Otherwise
+  # the bundle describes one identity while the merge later carries another — a probe measured
+  # 14,200 bytes base-to-working-tree against 12,024 base-to-HEAD on the same checkout.
+  cur="$(git rev-parse --verify --quiet HEAD)" \
+    || { echo "assemble-review: cannot resolve HEAD" >&2; exit 1; }
+  want="$(git rev-parse --verify --quiet "$REVIEW_HEAD^{commit}")" \
+    || { echo "assemble-review: cannot resolve REVIEW_HEAD" >&2; exit 1; }
+  [ "$cur" = "$want" ] \
+    || { echo "assemble-review: HEAD is $cur but REVIEW_HEAD is $want — check out the reviewed commit before assembling" >&2; exit 1; }
+  st="$(git status --porcelain)" \
+    || { echo "assemble-review: cannot read worktree status" >&2; exit 1; }
+  [ -z "$st" ] \
+    || { echo "assemble-review: worktree is not clean; the reviewed identity must be exactly $REVIEW_BASE..$REVIEW_HEAD" >&2; exit 1; }
+  # TWO-TREE diff. `git diff <commit> -- <path>` compares that commit with the WORKING TREE, so a
+  # base alone never produced the committed range it claimed to.
+  DIFF_ARGS="$REVIEW_BASE $REVIEW_HEAD"
+fi
 carried_path() { printf '%s/carried-%s' "${1%/*}" "${1##*codex-review-}"; }
 # The per-file cap above never bounded the bundle: a task naming many files could assemble an
 # order of magnitude more than the whole review history. The budget catches that runaway, and
@@ -51,6 +105,19 @@ MAX_BUNDLE=524288
 CONSENSUS_FIELD_RE='^[-[:space:]>#*+._)0-9]*(✅|❌)?[[:space:]]*consensus:'
 CONSENSUS_SEALED_RE='^[-[:space:]>#*+._)0-9]*((✅|❌)[[:space:]]*)?consensus:[*_[:space:]]*(disagreed|agreed|resolved)[[:punct:][:space:]]*((✅|❌)[[:punct:][:space:]]*)?$'
 
+# Physical containment for ANY path this script reads. `-L` on the final component says nothing:
+# `-f`, `wc`, `grep` and `cat` all follow PARENT symlinks, so `docs/unit/task.md` with `docs/unit`
+# linked elsewhere reads an external file. Resolve the parent and require it under the physical
+# repository root. Residual, stated: resolution and the read are still two steps, so a parent
+# swapped in between is not caught — closing that needs openat/O_NOFOLLOW, which is not available
+# to a shell. This bounds the mistake case, not a racing attacker with write access to the repo.
+contained() {
+  local d
+  d="$(cd -- "$(dirname -- "$1")" 2>/dev/null && pwd -P)" || return 1
+  case "$d/" in "$ROOT_P"/*|"$ROOT_P/") return 0 ;; esac
+  return 1
+}
+
 # Task/review records are context, not changes under review. Emit them as full snapshots even
 # after they are tracked and unchanged; a diff-only read would silently drop the task contract
 # or the prior consensus on a resumed review.
@@ -59,6 +126,10 @@ validate_snapshot() {
   case "$f" in *$'\n'*|*$'\r'*) echo "FATAL: control character in snapshot filename" >&2; return 1 ;; esac
   if printf '%s' "$f" | grep -qiE "$DENY"; then echo "FATAL: secret-denied snapshot path" >&2; return 1; fi
   if [ -L "$f" ]; then echo "FATAL: symlinked snapshot is not reviewable: $f" >&2; return 1; fi
+  # SAME containment as emit_file. Round 9 fixed the allowlisted-change path and left the
+  # automatic task/round snapshots reading through a symlinked parent — the exact sibling miss
+  # this file keeps warning about. One helper, called from both.
+  contained "$f" || { echo "FATAL: snapshot resolves outside the repository: $f" >&2; return 1; }
   if [ ! -f "$f" ]; then echo "FATAL: snapshot is not a regular file: $f" >&2; return 1; fi
   if [ ! -s "$f" ]; then echo "FATAL: empty snapshot is not reviewable: $f" >&2; return 1; fi
   if [ "$(wc -c < "$f")" -gt "$MAX" ]; then echo "FATAL: snapshot exceeds 64KB: $f" >&2; return 1; fi
@@ -149,13 +220,26 @@ emit_file() {
   # secret-name deny stays FIRST — even a deletion diff of a secret-named file would leak it.
   if printf '%s' "$f" | grep -qiE "$DENY"; then echo "--- $f (SKIPPED: secret-deny) ---"; return; fi
   if [ -L "$f" ];                          then echo "--- $f (SKIPPED: symlink) ---"; return; fi
+  # PHYSICAL CONTAINMENT, not just a leaf-symlink test. `-f`, `wc`, `grep` and `cat` all follow
+  # PARENT symlinks, so `docs/unit/task.md` with `docs/unit` linked elsewhere read an external
+  # file and put it in the bundle. Resolve the parent and require it under the physical root.
+  contained "$f" || { echo "--- $f (SKIPPED: resolves outside the repository via a symlinked parent) ---"; return; }
 
   # Scoped diff computed up front. The ':(literal)' pathspec magic forces git to treat $f as a
   # literal filename, NOT a glob/pathspec — otherwise an arg like '*', 'secret.*', or ':/' (which
   # the literal-name DENY above doesn't catch) would expand inside git to secret-named tracked
   # files and leak their diffs. It stays cwd-relative, so a non-empty diff also detects a staged
   # deletion (`git rm`) invoked from a subdirectory.
-  local diff; diff="$(git diff HEAD -- ":(literal)$f" 2>/dev/null || true)"
+  # FAIL CLOSED on a diff error. `|| true` swallowed every failure, and an empty result then took
+  # the "tracked, no change vs HEAD" branch — so a git that exited 128 (a corrupt object, an
+  # unreadable index, a bad GIT_DIR) presented CHANGED code to the reviewer as unchanged, and the
+  # mandatory review gate could approve without ever seeing the implementation.
+  local diff dstatus=0
+  diff="$(git diff ${DIFF_ARGS:-HEAD} -- ":(literal)$f" 2>/dev/null)" || dstatus=$?
+  if [ "$dstatus" -ne 0 ]; then
+    echo "--- $f (SKIPPED: git diff failed with status $dstatus — cannot establish what changed) ---"
+    return
+  fi
   if git ls-files --error-unmatch -- ":(literal)$f" >/dev/null 2>&1 || [ -n "$diff" ]; then
     # Tracked → SCOPED diff, capped on the DIFF's size (not the working-tree file's). A deleted
     # tracked file (no longer on disk) is emitted here too — its removal is a reviewable change.

@@ -36,6 +36,9 @@
 /claude/agents/*
 !/claude/agents/frontend-dev.md
 !/claude/agents/general-dev.md
+!/claude/bin/
+/claude/bin/*
+!/claude/bin/dstack
 /codex/*
 !/codex/.gitkeep
 !/codex/AGENTS.md

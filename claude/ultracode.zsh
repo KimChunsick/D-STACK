@@ -22,4 +22,21 @@
 # must support xhigh effort, and workflows must not be disabled (a user/managed
 # "disableWorkflows" setting removes ultracode's orchestration even when the alias
 # passes the flag).
+#
+# THE GAP THIS ALIAS DOES NOT COVER. The dividing line is whether ~/.zshrc runs at all, not
+# which flags you type. A NON-INTERACTIVE zsh does not source ~/.zshrc, so this file is never
+# sourced, so the alias does not exist: a script, a CI step, a `zsh -c` invocation, a launch by
+# other tooling. Verified — `zsh -c 'alias claude'` finds nothing while an interactive shell
+# finds it. Those sessions start WITHOUT ultracode; xhigh effort and workflow orchestration are
+# silently absent and nothing announces it, while everything in ~/.claude/settings.json (model,
+# hooks, statusline, subagent model) still applies — which is exactly why it is easy to miss:
+# the session looks configured. When launching that way, pass it: `claude --effort ultracode …`.
+# NOT part of the gap, despite looking like it: `claude -p '…'` typed in an interactive shell
+# DOES get the alias. Aliases expand on the command word, so later arguments are irrelevant.
+# Subagents: do not overstate this. A subagent's reasoning EFFORT defaults to inheriting the
+# session's (its frontmatter `effort` field overrides, and the docs say "Default: inherits from
+# session"), so a subagent spawned from an ultracode session is not automatically dropped to a
+# lower effort. What does not transfer is ultracode as a session MODE — the workflow
+# orchestration, and session-level behaviours keyed on it. Nothing this alias does reaches a
+# subagent either way; the alias only decides how the SESSION starts.
 alias claude='claude --effort ultracode'

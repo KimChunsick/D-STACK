@@ -1,6 +1,6 @@
 ---
 name: full-cycle
-description: MANDATORY delivery pipeline for ANY implementation or change task — features, bugfixes, refactors, configuration, anything that edits files or builds something. Invoke at the START of such work. Drives intent capture, security/UX&DX/technical tri-axis evaluation, per-Goal Codex research (both-sides evidence; deep-research only as fallback), deep interview, one-Goal + milestone + PR-sized task decomposition with declared task dependencies and file ownership, GOAL.md + task-folder docs, DAG-scheduled conditional parallelism (deterministic disjointness checks, worker subagents in git worktrees), Red-Green-Refactor TDD, adversarial Codex (GPT-5.6 Sol) review in one new codex-review-<NNN>.md per round with a consensus loop, per-task + per-milestone + final Goal E2E capture, and a final report. Skip ONLY when the user wrote [quick], or the request is pure Q&A / lookup / conversation with no file changes.
+description: MANDATORY delivery pipeline for ANY implementation or change task — features, bugfixes, refactors, configuration, anything that edits files or builds something. Invoke at the START of such work. Drives intent capture, security/UX&DX/technical tri-axis evaluation, per-Goal Codex research (both-sides evidence; deep-research only as fallback), deep interview, one-Goal + milestone + PR-sized task decomposition with declared task dependencies and file ownership, GOAL.md plus a task.md per review unit (a task folder by default, a milestone folder at milestone granularity), DAG-scheduled conditional parallelism (deterministic disjointness checks, worker subagents in git worktrees), Red-Green-Refactor TDD, adversarial Codex (GPT-5.6 Sol) review in one new codex-review-<NNN>.md per round with a consensus loop, per-review-unit + per-milestone + final Goal E2E capture, and a final report. Skip ONLY when the user wrote [quick], or the request is pure Q&A / lookup / conversation with no file changes.
 ---
 
 # Full-Cycle Delivery
@@ -17,9 +17,15 @@ in the prompt, this skill does not apply — answer directly.
 A bash Stop hook (`fullcycle-gate.sh`) independently enforces gates by parsing the WORK
 DOCS this pipeline produces — never this file. The hook-parsed surfaces are byte-frozen
 (see «Hook contract»). Do not mark a gate checkbox until that gate is *actually*
-satisfied — while any registered doc has an unchecked `- [ ]` box, the Stop hook blocks
-the turn from ending. Ticking without doing the work is exactly the
-"completed-but-skipped" failure the user forbids.
+satisfied — while any registered doc has an unchecked `- [ ]` box, the Stop hook STATES
+that incomplete work once per user turn and then lets the turn end. Ticking without doing
+the work is exactly the "completed-but-skipped" failure the user forbids.
+
+Read that literally: the gate is not a wall that keeps you producing turns. It honours
+`stop_hook_active`, so a continuation is never blocked a second time, and `waits.external`
+below depends on that — a turn that could never end could never be re-entered when a long
+external run finishes, which is the failure this whole arrangement exists to remove. When
+work is genuinely incomplete and you are waiting on something, end the turn.
 
 ## Language boundary
 
@@ -35,25 +41,49 @@ conventions unless the user explicitly requires a language.
 pipeline: full-cycle
 version: 2
 skip: ["[quick] in the prompt", "pure Q&A / lookup / conversation with no file changes"]
+# SCOPE `review-unit` IS THE PARAMETER, NOT A SYNONYM FOR `task`. P7-P10 run once per REVIEW
+# UNIT — the folder whose task.md is registered, reviewed, and gated (see «P6-scaffold» for the
+# granularity table). At the default per-task granularity a review unit IS a task and this
+# reads exactly as before. At milestone granularity the unit is the milestone folder: its
+# task.md carries the gates, its folder carries the codex-review series, and the subordinate
+# <NN-task>/task.md files are unregistered documentation the unit doc points at.
+# Hard-coding `per: task` here made the schema unsatisfiable for a milestone-granularity Goal —
+# it demanded per-task gate boxes, per-task review series, and per-task deregistration for
+# documents that by construction have none.
 # `needs` semantics — scope-instance rules:
-#   bare id                → the SAME instance's phase (this goal / milestone / task)
-#   "<id>@deps-done"       → the named phase is complete for EVERY declared predecessor task
-#   "<id>@all-tasks"       → every task of THIS milestone has passed the named phase
+#   bare id                → the SAME instance's phase (this goal / milestone / review unit)
+#   "<id>@deps-done"       → resolve every declared predecessor task to its OWNING review unit,
+#                            DROP this unit itself, and require the named phase on what is left.
+#                            Dropping self is not a convenience: at milestone granularity a task's
+#                            predecessors usually live in the SAME unit (M1's T03 depends on T01
+#                            and T02, all three inside M1), so a naive reading made P7 wait on
+#                            P10 of its own unit — P7→P10→P9→P8→P7, a cycle that can never
+#                            resolve. Intra-unit `deps` edges are execution ORDER inside P7, not
+#                            gate edges between phases.
+#   "<id>@all-units"       → every review unit of THIS milestone has passed the named phase
+#                            (at milestone granularity that is the single unit: the milestone)
 #   "<id>@all-milestones"  → every milestone of THIS goal has passed the named phase
 phases:
-  - {id: P1-intent,         per: goal,      needs: [],                                      gate: none}
-  - {id: P2-triaxis,        per: goal,      needs: [P1-intent],                             gate: none}
-  - {id: P3-research,       per: goal,      needs: [P2-triaxis],                            gate: research artifact + GOAL.md summary}
-  - {id: P4-interview,      per: goal,      needs: [P3-research],                           gate: interview record in GOAL.md}
-  - {id: P5-decompose,      per: goal,      needs: [P4-interview],                          gate: milestone/task rows with deps+files}
-  - {id: P6-scaffold,       per: goal,      needs: [P5-decompose],                          gate: docs tree + registration}
-  - {id: P7-tdd,            per: task,      needs: [P6-scaffold, "P10-task-e2e@deps-done"], gate: task.md TDD box}
-  - {id: P8-taskdoc,        per: task,      needs: [P7-tdd],                                gate: task.md sections filled}
-  - {id: P9-review,         per: task,      needs: [P8-taskdoc],                            gate: sealed positive latest round + task.md Codex box}
-  - {id: P10-task-e2e,      per: task,      needs: [P9-review],                             gate: merged + evidence + task.md E2E box + deregistration}
-  - {id: P11-milestone-e2e, per: milestone, needs: ["P10-task-e2e@all-tasks"],              gate: GOAL.md M<n> E2E box}
-  - {id: P12-goal-e2e,      per: goal,      needs: ["P11-milestone-e2e@all-milestones"],    gate: GOAL.md GOAL E2E box + final report + deregistration}
+  - {id: P1-intent,         per: goal,        needs: [],                                    gate: none}
+  - {id: P2-triaxis,        per: goal,        needs: [P1-intent],                           gate: none}
+  - {id: P3-research,       per: goal,        needs: [P2-triaxis],                          gate: research artifact + GOAL.md summary}
+  - {id: P4-interview,      per: goal,        needs: [P3-research],                         gate: interview record in GOAL.md}
+  - {id: P5-decompose,      per: goal,        needs: [P4-interview],                        gate: milestone/task rows with deps+files}
+  - {id: P6-scaffold,       per: goal,        needs: [P5-decompose],                        gate: docs tree + registration of every review unit}
+  - {id: P7-tdd,            per: review-unit, needs: [P6-scaffold, "P10-unit-e2e@deps-done"], gate: unit task.md TDD box}
+  - {id: P8-taskdoc,        per: review-unit, needs: [P7-tdd],                              gate: unit task.md sections filled}
+  - {id: P9-review,         per: review-unit, needs: [P8-taskdoc],                          gate: sealed positive latest round + unit task.md Codex box}
+  - {id: P10-unit-e2e,      per: review-unit, needs: [P9-review],                           gate: merged + evidence + unit task.md E2E box + deregistration}
+  - {id: P11-milestone-e2e, per: milestone,   needs: ["P10-unit-e2e@all-units"],            gate: GOAL.md M<n> E2E box}
+  - {id: P12-goal-e2e,      per: goal,        needs: ["P11-milestone-e2e@all-milestones"],  gate: GOAL.md GOAL E2E box + final report + deregistration}
 ```
+At milestone granularity P10-unit-e2e and P11-milestone-e2e cover the same folder, and they are
+still two gates: P10 is "this unit's own change works, merged, with evidence", P11 is the
+semantic-integration gate over everything the milestone brought together. **They are recorded in
+different files, and that is the hook contract, not a style choice.** P10's evidence and box live
+in the unit's `task.md`; P11's evidence and its `M<n> E2E` box live in `GOAL.md`. Writing P11 into
+`task.md` leaves the machine-enforced Goal-gate box untouched, so the gate stays shut while the
+work looks recorded.
 
 ## Scheduling (task DAG)
 
@@ -107,18 +137,25 @@ scheduling:
     serial: default — the main loop implements, one task at a time. Parallelism is an
       optimization applied only when its preconditions hold; when in doubt, serial.
     review-overlap:               # the cheapest real wall-clock win
-      rule: when rounds for multiple tasks are review-ready, run them concurrently BY
-        DEFAULT — serializing them is the exception and needs a stated reason; rounds
-        of the SAME task stay strictly serial (codex-review contract)
+      rule: when rounds for multiple REVIEW UNITS are review-ready, run them concurrently
+        BY DEFAULT — serializing them is the exception and needs a stated reason; rounds
+        of the SAME unit stay strictly serial (codex-review contract). At milestone
+        granularity there is one unit per milestone, so overlap is across milestones.
       freeze-rule: every file inside an OPEN review bundle is immutable until that round
-        seals — work that would touch a frozen file is deferred, whatever task it
+        seals — work that would touch a frozen file is deferred, whatever unit it
         belongs to. This, not disjointness, is what keeps overlap safe.
       post-seal-rule: sealing ends the freeze, not accountability — any later change to
-        a file inside a SEALED bundle, before that task's milestone closes, reopens that
-        task's review (see worktree-lifecycle reopen)
+        a file inside a SEALED bundle, before that unit's milestone closes, reopens that
+        unit's review (see worktree-lifecycle reopen)
     worker-fanout:
       requires:                   # ALL must hold; any doubt → serial (fail-closed)
         - checker plan verdict PARALLEL for the exact candidate set
+        - the review unit is EXACTLY ONE TASK. An integration head for a wider unit carries
+          every task that unit owns, so no single declaration contains it and `scope` can
+          never pass; the checker has no union mode and this file does not pretend otherwise.
+          Milestone-granularity review therefore runs SERIAL — the same fail-closed default
+          as every other unmet precondition. Build the union mode first if that ever needs
+          to change.
         - worker binding resolves from the target repo's OWN frontend classification
           (its declared frontend roots/rules) — all-frontend → frontend-dev, none →
           general-dev, mixed or unclassifiable → ineligible (split at P5-decompose or
@@ -146,16 +183,30 @@ scheduling:
       base and the committed HEAD — record both commit ids in the round file; the
       reviewed identity is exactly that base..head diff plus the main-owned task.md,
       never an unpinned working state.
-    merge: after that task's review consensus, verify the branch HEAD still EQUALS
-      the sealed reviewed HEAD (any commit or tree change after sealing reopens the
-      review — declared-scope or not), re-run checker scope, then the orchestrator
-      merges in dependency (topological) order. Merge precedes P10 completion — a
-      task is not done, and successors are not ready, until its branch is merged and
-      post-merge evidence is captured.
+    doc-snapshot: workers never touch `docs/`, and the recorded base predates this
+      unit's `task.md`, so a bundle assembled inside the integration worktree would
+      read an absent or stale unit document. The orchestrator-owned document is
+      supplied from the MAIN checkout — it is not integration content and must never
+      be committed onto the integration branch to make the assembler find it.
+    integrate: ONE integration candidate per review unit, and integrating is NOT
+      gated on review — that ordering is what made an earlier draft cyclic (sealing
+      waited on merges that waited on sealing). The orchestrator merges the unit's
+      worker branch into an integration branch off the recorded base, running checker
+      scope before it goes in. What that produces IS the unit's reviewed identity —
+      exactly `base..<integration head>`, committed, on a clean tree.
+    merge: LANDING that integration head on the mainline is what the unit's review
+      consensus gates. Verify the integration head still EQUALS the sealed reviewed
+      head (any commit or tree change after sealing reopens the review — declared-scope
+      or not) and re-run checker scope against the task's declaration — which fits because
+      fan-out only runs when the unit IS one task — then land it.
+      Merge precedes P10 completion — a task is not done, and successors are not
+      ready, until its unit's integration head is landed and post-merge evidence is
+      captured.
     reopen: a merge conflict, a manual post-merge edit, or a post-seal change to a
-      sealed bundle reopens review for the affected set — EVERY task whose declaration
-      or sealed bundle intersects the touched paths (can exceed one)
-    cleanup: remove a worktree only after its merge is verified and its task deregistered
+      sealed bundle reopens review for the affected set — EVERY review unit whose
+      declared paths or sealed bundle intersect the touched paths (can exceed one)
+    cleanup: remove a worktree only after its merge is verified and its owning unit
+      deregistered
   fan-in:
     integration-defense: P11 milestone E2E is mandatory and is the semantic-integration
       gate. File disjointness is an ELIGIBILITY check, not an independence proof —
@@ -168,24 +219,62 @@ scheduling:
       and post-seal bundle changes.
   waits:
     external: long external runs (codex research/review rounds, CI) keep every doc
-      registered — background the run and act on its completion notification; never
-      deregister to end the turn, and never block the session with a foreground wait
-      loop
-    user-input: to pause for a decision only the user can make, deregister that doc's
-      line and re-register on resume. This is a manual escape hatch and is honestly a
-      hole in the tripwire while it is open — use it for user input, nothing else.
+      registered — background the run, END THE TURN, and act on the completion
+      notification. The gate states incomplete work once per user turn and then lets the
+      turn end, precisely so this path works; a turn that cannot end also cannot be
+      re-invoked on background completion. Never deregister to end the turn, never arm a
+      foreground wait loop, and never emit "still running" turns — each one re-sends the
+      entire conversation and learns nothing.
+    user-input: to pause for a decision only the user can make, `"$HOME/.claude/bin/dstack" unreg` that doc (the CLI is at `$HOME/.claude/bin/dstack`; nothing puts it on PATH)
+      and re-register on resume. This is a manual escape hatch and is honestly a hole in
+      the tripwire while it is open — use it for user input, nothing else.
 ```
+
+## Concurrent streams in one repository
+
+The DAG above coordinates tasks *within* one Goal. It does nothing across Goals, so two terminal
+tabs running different Goals in the same repository coordinate nothing at all. A cross-session
+path lock was designed and deliberately dropped: a `PreToolUse` hook only observes tool calls, so
+a migration CLI, a code generator, or any `Bash` command writing files is invisible to it — it
+would have missed the exact collisions that motivated it. What replaces it:
+
+- **Never number migration files sequentially.** `0007_*` from two branches is a guaranteed
+  collision that neither git nor a worktree prevents. Use `<UTC-timestamp>_<slug>` — what Rails
+  moved to, for this exact reason. But a timestamp *reduces* collisions, it does not remove
+  them: two streams that generate a name within the same timestamp unit produce the identical
+  path, which clobbers inside one worktree and recreates the merge conflict across branches. So
+  pin the precision (seconds at minimum) and **create the file with atomic exclusive
+  creation** — `set -o noclobber` with `>`, `open(..., O_CREAT|O_EXCL)`, `ln`, whichever the
+  generator's language offers — then treat `EEXIST` as "pick the next name" and retry. Testing
+  for the path and then writing it is a check-then-write race: both streams see it absent, both
+  write, the later one wins silently. This is the same lesson `dstack reg` learned the hard way,
+  where a `rename()` publish let two sessions each believe they owned one document; the
+  filesystem's atomic-create primitive is the only thing that actually decides. Ordering is
+  still a declared dependency, never an artifact of the name — timestamps decide neither schema
+  dependencies nor out-of-order application.
+- **Reach for a worktree when a stream is long-lived, not by default.** A worktree isolates file
+  edits, but it costs a dependency install, and it only helps once the repo's shared runtime
+  resources (ports, test databases, dev servers, caches) are isolated per tree — which is
+  usually the expensive part. For a stream measured in one sitting, serial is cheaper than the
+  setup.
+- **When two streams must touch one file anyway, say so out loud.** `"$HOME/.claude/bin/dstack" status` shows what
+  every session currently holds; there is no enforcement behind it, and pretending otherwise
+  would be worse than the honest gap.
 
 ## Hook contract (byte-frozen — fullcycle-gate.sh parses these in the WORK DOCS)
 
 ```yaml
 hook-contract:
-  registry-file: .fullcycle-active            # "<owner-session-id><TAB><docpath>" lines
+  registry-dir: .dstack/active/               # one JSON record per doc: {v,session,doc,ts};
+                                              # written ONLY by `dstack`, never by hand
   goal-gate-heading: '## Goal gate'           # in GOAL.md; must contain a 'GOAL E2E' box
   milestone-coupling: every ATX 'M<n>' heading in GOAL.md requires a ticked 'M<n> E2E' box
-  task-gate-heading: '## Gate status'         # in task.md; checkbox rows required
+  task-gate-heading: '## Gate status'         # in the review-unit task.md; checkbox rows required
+  review-unit-doc: task.md                    # the registered doc in a review-unit folder;
+                                              # assemble-review.sh binds to this exact name too
   review-series: codex-review-<NNN>.md        # contiguous from 001; latest round carries
                                               # exactly one positive sealed Consensus line
+  legacy-cutover: a non-empty .fullcycle-active makes the gate refuse outright — run `"$HOME/.claude/bin/dstack" migrate`
 ```
 Never rephrase these headings/labels in generated docs; the hook is a tripwire over
 them. It cannot prove work happened — a ticked box is self-attested. Honest use is the
@@ -230,39 +319,72 @@ a task that mixes several concerns multiplies its review surface and round count
 ```
 docs/<goal>/GOAL.md
 docs/<goal>/research/<topic>.md
-docs/<goal>/<MN-milestone>/<NN-task>/task.md
-docs/<goal>/<MN-milestone>/<NN-task>/codex-review-<NNN>.md   # P9 rounds, 001…
+docs/<goal>/<review-unit>/task.md                  # the REGISTERED, gated, reviewed document
+docs/<goal>/<review-unit>/codex-review-<NNN>.md    # P9 rounds, 001… — same folder, always
 ```
-Register `GOAL.md` AND every task.md the moment it becomes active (multiple concurrent
-task lines during fan-out are expected). Registry mutation is orchestrator-only, via
-these exact-match, idempotent, lock-serialized helpers (a real TAB separates id and
-path; `reg` is safe to re-run; `unreg` targets only your own line; the `mkdir` lock —
-portable, no `flock` needed — serializes the read-modify-write so a concurrent `unreg`
-can't drop a simultaneous `reg`):
+**`<review-unit>` is the one thing to get right here.** It is the folder whose `task.md` is
+registered, gated, and reviewed, and it is decided once per Goal at P5:
+
+| Granularity | `<review-unit>` is | Subordinate docs |
+|---|---|---|
+| per task (default) | `<MN-milestone>/<NN-task>/` | none |
+| per milestone (user's choice) | `<MN-milestone>/` | `<MN-milestone>/<NN-task>/task.md` — written for the record, **not registered, not gated, not reviewed** |
+
+The document is named `task.md` at whichever level it sits, because both `fullcycle-gate.sh` and
+`assemble-review.sh` bind to that exact name. Registering the wrong level is not a cosmetic
+error: register the subordinate task docs under milestone granularity and the milestone's own
+gate and review series go unenforced, which is silent, so state the granularity in GOAL.md and
+register only that level.
+Register `GOAL.md` AND every review-unit document the moment it becomes active (multiple
+concurrent registrations during fan-out are expected). Registry mutation is
+orchestrator-only and goes through the `dstack` CLI — never hand-rolled:
+`install.sh` links the CLI to `~/.claude/bin/dstack`, and **nothing puts that directory on
+`PATH`** — so invoke it by absolute path. A bare `dstack` works only if the user happens to have
+added it, and it fails silently-ish in exactly the non-interactive contexts where a shell rc
+file never runs:
 ```bash
-T=$(printf '\t'); L=.fullcycle-active.lock
-_lock()   { local n=0; until mkdir "$L" 2>/dev/null; do n=$((n+1)); [ $n -ge 100 ] && return 1; sleep 0.05; done
-            trap '_unlock' EXIT; trap '_unlock; exit 130' INT; trap '_unlock; exit 143' TERM; }  # signal ⇒ unlock THEN abort (no mutate-after-unlock)
-_unlock() { rmdir "$L" 2>/dev/null; trap - EXIT INT TERM; }
-reg()   { _lock || return 1; local l="$CLAUDE_CODE_SESSION_ID$T$1" rc=0
-          grep -qxF -- "$l" .fullcycle-active 2>/dev/null || { printf '%s\n' "$l" >> .fullcycle-active || rc=1; }
-          _unlock; return $rc; }                                   # rc reflects the append, not _unlock
-unreg() { _lock || return 1; local l="$CLAUDE_CODE_SESSION_ID$T$1" t rc=0; t=$(mktemp) || { _unlock; return 1; }
-          grep -vxF -- "$l" .fullcycle-active > "$t" 2>/dev/null; [ $? -ge 2 ] && rc=1  # grep 1=no-match ok, ≥2=read error
-          if [ $rc -eq 0 ]; then mv "$t" .fullcycle-active || rc=1; else rm -f "$t"; fi   # never clobber on a read error
-          _unlock; return $rc; }
-reg docs/<goal>/GOAL.md || echo "WARN: registration failed — Goal is UNGATED" >&2
-reg docs/<goal>/<MN-milestone>/<NN-task>/task.md || echo "WARN: registration failed — task is UNGATED" >&2
+DS="$HOME/.claude/bin/dstack"
+"$DS" reg docs/<goal>/GOAL.md               || echo "WARN: failed — Goal is UNGATED" >&2
+"$DS" reg docs/<goal>/<review-unit>/task.md || echo "WARN: failed — unit is UNGATED" >&2
+"$DS" status                   # what is registered, who owns it, what runs are stored
+"$DS" unreg <doc>              # release (the pause escape hatch)
+"$DS" reclaim <doc>...         # adopt another session's record, explicitly
+"$DS" migrate                  # one-time cutover from a legacy .fullcycle-active
 ```
-Fail-closed semantics: an untagged line, or an empty `$CLAUDE_CODE_SESSION_ID`, is
-enforced by EVERY session; the hook dedupes double-registered lines. Accepted caveats at
-this scale (a few human-paced tabs, not a distributed system): `/clear` rotates the
-session id, stranding orphan lines that block nobody — `unreg` with the old id or
-hand-edit to clear them; a hard kill (SIGKILL / power loss) mid-mutation can strand the
-lock dir — recover with `rm -rf .fullcycle-active.lock`; a legacy *untagged* line stays
-globally enforced until removed — migrate a repo once, while no other tab is
-registering, by keeping only the TAB-bearing lines:
-`t=$(mktemp); grep -F "$T" .fullcycle-active > "$t" 2>/dev/null || true; mv "$t" .fullcycle-active`.
+This used to be ~25 lines of bash written out here for the model to reproduce each run, and
+that was a mistake twice over. It stranded a `.fullcycle-active.tmp` at one repo root when an
+interrupted deregistration left its temp file behind, and — worse — **the skill loader
+substitutes positional-parameter references (a dollar sign followed by a digit) with the
+skill's own name before you ever read this file**, so the old helper's argument reference became
+the literal string `full-cycle`, and a model following the text verbatim registered that instead
+of a document path: ungated, and silent about it. Note this paragraph therefore cannot quote the
+offending token directly — writing it would corrupt this sentence the same way. A deterministic
+transform belongs in code that can be run and checked.
+
+Semantics worth knowing, because they differ from the old line format:
+
+- **One document, one owner.** `reg` claims the key atomically; a second session gets a loud
+  exit-3 naming the holder rather than silently replacing it. Taking over is `reclaim`, and it
+  requires explicit document paths — there is no liveness signal, so nothing can distinguish
+  "abandoned" from "another live tab's work", and a command that swept would steal both.
+- **Fail-closed attribution.** A record with an empty owner, a record that will not parse, or an
+  empty `$CLAUDE_CODE_SESSION_ID` is enforced by EVERY session. Uncertainty blocks.
+- **`/clear` rotates the session id**, stranding records no live session owns. They block nobody
+  — that is the accepted orphan cost, and it is what makes the milestone-boundary handoff below
+  safe. `"$HOME/.claude/bin/dstack" reclaim <doc>...` adopts them deliberately.
+- **Cutover is fail-loud.** While a non-empty legacy `.fullcycle-active` exists the gate refuses
+  to run at all, and every mutating command exits 4 **except `migrate` itself** — it is the
+  documented recovery, so it is necessarily the one command the cutover state must let through
+  (`status` also runs, read-only). `migrate` refuses anything it cannot carry over losslessly
+  (untagged lines, one document with two owners, malformed rows) rather than picking a winner
+  and quietly weakening the gate.
+
+**Milestone-boundary session handoff.** A Goal does not have to live in one session. When a
+milestone's E2E is captured and its gates are ticked, every piece of durable state is in
+`GOAL.md` and the task documents — nothing important lives only in the conversation. So `/clear`
+there, then resume with `"$HOME/.claude/bin/dstack" status`, `"$HOME/.claude/bin/dstack" reclaim` on the records the id rotation
+orphaned, and a read of `GOAL.md`. Prefer this to letting one session run a multi-day Goal: the
+context grows monotonically and every later turn pays for the whole history of the earlier ones.
 
 **P7-tdd.** *Design consult (conditional, before any code):* if the task hits any
 trigger — new architecture or module boundaries; API contracts; persistence or logging
@@ -285,24 +407,31 @@ never touch docs/.
 **P9-review.** Invoke the `codex-review` skill (material-assembly allowlist, hardened
 invocation, mandatory pre-review defect-class self-sweep, one new `codex-review-<NNN>.md`
 per round, rebuttal rules, consensus and closure rules — all defined there). Scheduling
-here: same task serial; different tasks may overlap; the freeze-rule above governs every
-open bundle. Continue until the latest round reaches `agreed` or `resolved`; a real
-product/risk choice goes to the user in Korean (user-input wait) and the review resumes
-after. Then tick the Codex box in `task.md`.
+here: **serialization is per REVIEW UNIT, not per task.** Rounds of the same unit are
+strictly serial; different units may overlap; the freeze-rule above governs every open
+bundle. This matters at milestone granularity, where several tasks share ONE unit: reading
+it as "different tasks may overlap" would let two rounds of the same unit allocate the same
+`codex-review-<NNN>.md` filename — the allocator is check-then-write and cannot survive
+that. Continue until the latest round reaches `agreed` or `resolved`; a real product/risk
+choice goes to the user in Korean (user-input wait) and the review resumes after. When the
+round budget is reached with blockers still open, escalate to the user rather than
+downgrading a finding or grinding on. Then tick the Codex box in the unit's `task.md`.
 
-**P10-task-e2e.** Verify the task hands-on (invoke `verify` / `run` skills as fitting):
-Web → drive a headless browser, capture, confirm the behavior in the capture; Desktop →
-screen capture, confirm it behaves; CLI/library/config → run it, confirm the output.
-Under worker-fanout this runs against the MERGED state (merge precedes completion).
-Save the evidence into `task.md`, tick the E2E box, tick the task's row checkbox in
-GOAL.md — that row is the completion signal the checker trusts, and it flips HERE,
-nowhere else — and, with all of that task's gates ticked, deregister that task's
-line. Never claim it works without direct evidence.
+**P10-unit-e2e.** Verify the review unit hands-on (invoke `verify` / `run` skills as
+fitting): Web → drive a headless browser, capture, confirm the behavior in the capture;
+Desktop → screen capture, confirm it behaves; CLI/library/config → run it, confirm the
+output. Under worker-fanout this runs against the MERGED state (merge precedes
+completion). Save the evidence into the unit's `task.md`, tick its E2E box, tick the
+GOAL.md row checkbox of every task the unit covers — those rows are the completion signal
+the checker trusts, and they flip HERE, nowhere else — and, with all of that unit's gates
+ticked, deregister the unit document. Never claim it works without direct evidence. At
+milestone granularity the unit covers several GOAL.md task rows; tick each of them.
 
-**P11-milestone-e2e.** When every task of a milestone is done: one milestone-level E2E
-exercising those tasks *together*, not in isolation — this is the integration gate that
-parallel work leans on. Record the evidence in `GOAL.md` and tick that milestone's
-`M<n> E2E` box in the Goal gate.
+**P11-milestone-e2e.** When every review unit of a milestone is done: one milestone-level
+E2E exercising those units' work *together*, not in isolation — this is the integration
+gate that parallel work leans on. At milestone granularity that is still a separate pass
+from P10: P10 asked "does this change work", P11 asks "does the milestone hold together".
+Record the evidence in `GOAL.md` and tick that milestone's `M<n> E2E` box in the Goal gate.
 
 **P12-goal-e2e.** When every milestone is done: one final Goal-level E2E across the
 whole Goal; tick `GOAL E2E`. Only when every Goal-gate box is ticked may the loop end.

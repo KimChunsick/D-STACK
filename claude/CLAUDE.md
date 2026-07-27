@@ -4,26 +4,34 @@
 Pipeline: intent capture → security/UI·UX&DX/technical tri-axis evaluation → **per-Goal Codex research**
 (`codex-research` skill — both-sides evidence; `deep-research` only as fallback) → deep interview (no obvious questions)
 → **one Goal** + milestone + PR-sized task decomposition **with per-task `deps`/`files`
-declarations in GOAL.md** → `docs/<goal>/GOAL.md` + task folders
-(`<milestone>/<NN-task>/task.md`) → conditional design consult → **DAG-scheduled execution**
-(serial by default; review rounds of different tasks overlap; worker fan-out —
+declarations in GOAL.md** → `docs/<goal>/GOAL.md` + a `task.md` per **review unit** (the folder
+whose doc is registered, reviewed and gated — a task folder by default, a milestone folder when
+the user sets milestone granularity) → conditional design consult → **DAG-scheduled execution**
+(serial by default; review rounds of different units overlap; worker fan-out —
 `general-dev`/`frontend-dev` subagents in git worktrees — only on a `check-parallel.sh`
 PARALLEL verdict, with `scope` containment checks before review and merge) →
 Red-Green-Refactor TDD → `codex-review` (GPT-5.6 Sol adversarial review recorded in
-one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-task + per-milestone + final Goal E2E**
+one new `codex-review-<NNN>.md` per round, with a consensus loop) → **per-review-unit + per-milestone + final Goal E2E**
 → final report. The SKILL.md is the structured authority (YAML phase/scheduling schema):
 the LLM proposes dependencies, the deterministic checker verdicts — `INVALID` means fix
 the decomposition, never "just go serial".
 
 - **Skip**: writing `[quick]` in the prompt skips this workflow. Pure questions / lookups / conversation may also skip it.
-- **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or task doc
-  (`## Gate status`) has an unchecked `- [ ]` box, the Stop hook blocks the turn from ending. The hook is a *tripwire*
-  (section-scoped, milestone-tied, one-Goal, schema-required, Codex-artifact-gated, **per-session-scoped**), not a
-  sandbox — only check a gate when it is *actually* complete; faking a checkbox is exactly the "lie that it's done" the
-  user forbids. **Per-session:** each registry line in `.fullcycle-active` is tagged with the owning session id
-  (`$CLAUDE_CODE_SESSION_ID`), and a Stop enforces only the lines its own session owns, so concurrent terminal tabs
-  don't cross-block; untagged / unknown-id lines stay fail-closed (enforced by everyone). To pause for user input,
-  remove that doc's line from `.fullcycle-active`.
+- **Mandatory gate**: while any active `GOAL.md` (Goal gate: every milestone E2E + the final Goal E2E) or
+  review-unit doc (`## Gate status`) has an unchecked `- [ ]` box, the Stop hook says so. The hook is a
+  *tripwire* (section-scoped, milestone-tied, one-Goal, schema-required, Codex-artifact-gated,
+  **per-session-scoped**), not a sandbox — only check a gate when it is *actually* complete; faking a
+  checkbox is exactly the "lie that it's done" the user forbids.
+- **State lives in `.dstack/active/`**, one JSON record per registered document, written only by
+  `"$HOME/.claude/bin/dstack"` (nothing puts that directory on `PATH`, so always call it by absolute
+  path). `reg` / `unreg` / `status` / `reclaim` / `migrate`. A non-empty legacy `.fullcycle-active`
+  makes the gate refuse outright until `dstack migrate` runs. To pause a doc for user input:
+  `"$HOME/.claude/bin/dstack" unreg <doc>`.
+- **The gate states incomplete work once per user turn, then lets the turn end** (it honours
+  `stop_hook_active`). That is deliberate: a turn that can never end also can never be re-invoked when
+  a background command finishes. So for a long external run — a Codex round, CI — background it and
+  END THE TURN. Never arm a foreground wait loop, and never emit "still running" turns; each one
+  re-sends the whole conversation and learns nothing.
 
 ## 0.1 Language boundary (mandatory)
 

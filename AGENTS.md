@@ -64,6 +64,35 @@ intentionally ignores symlinked context files** (GH google-gemini/gemini-cli#115
 Running against your real home is a deliberate, manual step. Review
 `./install.sh --dry-run` first; existing files are backed up to `*.bak`.
 
+## Runtime state lives in `.dstack/`, never at a repo root
+
+Config is what this repo *authors* (`claude/`, `codex/`, `gemini/`, linked into the live agent
+dirs). Runtime state is what the pipeline *writes while running*, and it belongs in exactly one
+place: a `.dstack/` directory at the root of whichever repository the work is happening in.
+Keep that line sharp — it is why this stopped being a scatter of `.fullcycle-*` dotfiles.
+
+`claude/bin/dstack` owns that directory; nothing else writes it. **Invoke it by absolute path**
+— `install.sh` links it to `~/.claude/bin/dstack` and nothing puts that directory on `PATH`, so a
+bare `dstack` resolves only if you added it yourself and never resolves in a non-interactive
+shell.
+
+```
+.dstack/
+  .gitignore     a single `*`, so no target repo's tracked .gitignore is ever edited
+  version        schema marker
+  active/<sha1>  one-line JSON record per registered document: {v, session, doc, ts}
+  runs/<sid>/…   capture storage for long external runs, mode 700, swept on capture creation
+                 (`find -mtime +7` truncates to whole days, so removal starts at 8 complete days)
+```
+
+- `"$HOME/.claude/bin/dstack" reg|unreg <doc>` claim and release; `reclaim <doc>…` takes over from another session
+  **explicitly** (there is no liveness signal, so it never sweeps); `status` lists everything;
+  `migrate` converts a legacy `.fullcycle-active` and **refuses** anything it cannot represent
+  losslessly.
+- Being gitignored is not confidentiality. Backups, sync folders, and snapshots all see
+  `runs/`, which is why it is mode 700 and short-lived.
+- Requires `jq`, `git`, and `shasum`/`sha1sum` (bash cannot compute SHA-1 itself).
+
 ## How to add a new agent
 
 1. Create a top-level folder (e.g. `gemini/`) and add it to `.gitignore`'s allowlist
@@ -72,6 +101,29 @@ Running against your real home is a deliberate, manual step. Review
 3. Add its entries to the `install.sh` map with the correct mode (`link` or `copy`).
 4. Keep `bash tests/secret-guard.sh` green — update its pinned negation list in the
    same change as the new `.gitignore` `!`-allow lines.
+
+## No TDD, no new tests in this repo
+
+This repo holds agent *configuration* — bash hooks, skill Markdown, an installer — not
+application code. Red-Green-Refactor buys nothing here, so it is off by policy and
+overrides the global full-cycle rule for this repo only.
+
+- Do not run Red-Green-Refactor cycles, and do not add new test files.
+- The rest of the full-cycle pipeline still applies. Its TDD step (P7) is replaced by
+  **direct verification**: run the thing — `./install.sh --dry-run`, a hook against a
+  crafted stdin fixture, `check-parallel.sh` against a sample declaration — and record
+  the actual output in `task.md` as evidence. Word that task's Gate-status row for what
+  you really did, e.g. `- [ ] Verification: behavior confirmed by direct run (repo
+  policy: no TDD)`. The Stop hook parses checkbox rows, not their labels, so the wording
+  is free; the honesty rule is not.
+- Existing checks stay and keep being run: `bash tests/secret-guard.sh` before every
+  commit, and `claude/skills/full-cycle/tests/*.test.sh` when the thing they cover
+  changes. Don't delete them, don't grow the set.
+- To be unambiguous, because "no tests" and "run the test scripts" read as a contradiction:
+  what is banned is **authoring** — new test files, and Red-Green-Refactor cycles. What is
+  required is **running** the two pinned checks above. Editing an assertion inside one of them
+  because the thing it pins was deliberately removed is maintenance of an existing check, not a
+  new test; the set must not grow either way.
 
 ## Tests
 

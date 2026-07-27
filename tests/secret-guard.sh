@@ -51,9 +51,10 @@ policy_entry_ok tests/secret-guard.sh \
   || fail "tests/secret-guard.sh index entry is not a single stage-0 regular file (symlink/gitlink/unmerged staged?)"
 git show :tests/secret-guard.sh 2>/dev/null | cmp -s - tests/secret-guard.sh \
   || fail "tests/secret-guard.sh content differs between index and working tree (or is not tracked) — stage the guard itself before trusting its verdict"
-# Exactly one ignore file may exist: the root .gitignore. A nested one takes
-# precedence for its subtree and can reopen protected paths without touching the
-# pinned root text — in the worktree or already staged.
+# Effectively one ignore file may exist: the root .gitignore (plus the single
+# close-only exemption spelled out below). A nested one takes precedence for its
+# subtree and can reopen protected paths without touching the pinned root text —
+# in the worktree or already staged.
 # Case-insensitive on purpose: on a case-insensitive filesystem git's lookup of
 # ".gitignore" resolves ".GITIGNORE"/".GitIgnore" too, so any ASCII-case variant is
 # an ignore source there — reject them everywhere so commits transfer across machines.
@@ -62,6 +63,23 @@ git show :tests/secret-guard.sh 2>/dev/null | cmp -s - tests/secret-guard.sh \
 nested_wt=""
 while IFS= read -r -d '' path; do
   [ "$path" = "./.gitignore" ] && continue
+  # ONE exemption: dstack's runtime store isolates itself with a nested ignore file
+  # (the pattern pytest uses for .pytest_cache), so a blanket refusal cannot stand.
+  # The hazard a nested .gitignore poses is REOPENING a protected path, and reopening
+  # requires a negation — a file whose entire content is `*` can only ever close. So
+  # this exact path is exempt only while it stays exactly that, byte for byte, and is
+  # not a symlink. Any other content, any case variant, any other nested path: still
+  # fails. It must also never be staged; the index scan below is deliberately left
+  # strict, so `git add -f .dstack/.gitignore` is still caught.
+  # BYTE-exact: `$(cat)` strips every trailing newline, so `*`, `*\n` and `*\n\n\n` all compared
+  # equal to `*`. The exemption is only for the one file whose entire content is the isolation
+  # pattern; anything else nested is still refused.
+  # `-f` as well as `! -L`: a FIFO passes the not-a-symlink test, and `wc`/`cat` on one BLOCK
+  # until something writes — the guard would hang instead of refusing.
+  if [ "$path" = "./.dstack/.gitignore" ] && [ ! -L "$path" ] && [ -f "$path" ] \
+     && [ "$(wc -c < "$path" | tr -d ' ')" = "2" ] && [ "$(cat "$path")" = '*' ]; then
+    continue
+  fi
   nested_wt="$nested_wt $(printf '%q' "$path")"
 done < <(find . -iname .gitignore -not -path './.git/*' -print0 2>/dev/null)
 [ -z "$nested_wt" ] || fail "nested or case-variant .gitignore in working tree (can reopen protected paths):$nested_wt"
@@ -173,7 +191,7 @@ done < <(git -c core.excludesFile=/dev/null ls-files -o --exclude-standard -z cl
 # battery or the addable scan to trip on) — fails until the pin is deliberately
 # updated in the same reviewed change. (b) The negation set is additionally pinned
 # line-by-line below for a readable diff in the common allowlist-edit case.
-GITIGNORE_SHA_PIN='52b56e69dbf1395c2279763197acdfa9556c128aa03d95b5363192c42ddcacc6'
+GITIGNORE_SHA_PIN='694f115e9b0708c8b3947faa507b96d69c730ba28aeab52bcdbc4f9fd5b2e95f'
 got_sha="$(shasum -a 256 .gitignore | awk '{print $1}')"
 [ "$got_sha" = "$GITIGNORE_SHA_PIN" ] \
   || fail ".gitignore content drifted from the pinned hash — review the change, then update GITIGNORE_SHA_PIN in tests/secret-guard.sh in the same commit (got $got_sha)"
@@ -209,6 +227,8 @@ expected_negations='!/.gitignore
 !/claude/agents/
 !/claude/agents/frontend-dev.md
 !/claude/agents/general-dev.md
+!/claude/bin/
+!/claude/bin/dstack
 !/codex/.gitkeep
 !/codex/AGENTS.md
 !/codex/instructions.md

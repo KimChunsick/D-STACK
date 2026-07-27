@@ -1,0 +1,979 @@
+#!/bin/bash
+# dstack — per-repository runtime state for the full-cycle pipeline.
+#
+# WHY THIS EXISTS. This state used to be ad-hoc dotfiles at each target repo root
+# (`.fullcycle-active`, a `mkdir` mutex, a stranded `.fullcycle-active.tmp`), mutated by ~25
+# lines of bash embedded in a skill Markdown file that the orchestrating model had to reproduce
+# correctly every run. Two things that actually happened: an interrupted deregistration left a
+# zero-byte temp file nobody cleaned up, and the skill loader expands `$1` inside the Markdown
+# to the skill's own name, so a model following the file verbatim registered the literal string
+# `full-cycle` instead of a document path. A deterministic transform belongs in code.
+#
+# LAYOUT (all under <repo>/.dstack, never committed):
+#   .gitignore          a single `*` — self-isolating, so no target repo's tracked .gitignore
+#                       is ever edited (the pattern pytest uses for .pytest_cache)
+#   version             schema marker; refuse anything we do not understand
+#   active/<sha1>       one-line JSON record: {v, session, doc, ts}
+#   active/<sha1>.lock  transient per-key mutex, only for read-then-write operations
+#   runs/<session>/<label>/   capture storage for long external runs (mode 700)
+#
+# CONCURRENCY. The global read-modify-write is gone: one record per document means distinct
+# documents never contend. That is not the same as "no locks", and a design review was right to
+# say so. `reg` claims a key with `ln` (create-if-absent, atomic — it fails when the name
+# exists), so two sessions racing to register one document cannot both believe they won; the
+# loser is told. `unreg` and `reclaim` genuinely read then write, so they take a per-KEY lock.
+# Distinct keys still never contend, which is the property that mattered.
+#
+# NOT PROVIDED (accepted residuals, not oversights): crash durability — no fsync of file or
+# directory, because bash cannot express it cleanly and this state is reconstructible from the
+# work documents; Unicode-normalisation variants of a path on case-insensitive APFS; and any
+# confidentiality guarantee from being gitignored (backups, sync folders, and snapshots all see
+# these bytes — hence mode 700 and bounded retention for run captures).
+set -u
+LC_ALL=C; export LC_ALL
+
+PROG=dstack
+RUN_RETENTION_DAYS=7
+SCHEMA=1
+
+die()  { printf '%s: %s\n' "$PROG" "$1" >&2; exit "${2:-1}"; }
+# Any value interpolated into a command a human may COPY AND RUN goes through this. `canon`
+# accepts quotes, semicolons, `$` and spaces (they are legal in a filename), so rendering a doc
+# inside bare single quotes let `docs/x'; touch PWN; echo '.md` close the quote and append a
+# command to whatever the reader pasted. `%q` emits a form the shell re-reads as one word.
+q() { printf '%q' "$1"; }
+note() { printf '%s\n' "$*"; }
+
+# ── environment ───────────────────────────────────────────────────────────────
+# Help must work anywhere, including outside a git repository and on a machine missing a
+# dependency — otherwise `dstack --help` fails in exactly the situation where someone reaches
+# for it. Everything below is skipped for a help-only invocation.
+case "${1:-}" in -h|--help|help) HELP_ONLY=1 ;; *) HELP_ONLY=0 ;; esac
+
+# Arity is validated HERE, before dependency and repository discovery — the same reason help is.
+# It used to sit in the dispatch at the bottom, so `dstack status extra` outside a git repo said
+# "not inside a git repository", which is true but not the mistake the caller made. A usage error
+# is knowable from the argument vector alone; nothing about the environment can change it.
+if [ "$HELP_ONLY" -eq 0 ]; then
+  case "${1:-}" in
+    '')       printf '%s: usage: %s <reg|unreg|reclaim|status|migrate|run-dir|rm-run|prune> [args]  (--help for detail)\n' "$PROG" "$PROG" >&2; exit 1 ;;
+    reg)      [ "$#" -eq 2 ] || die "usage: $PROG reg <doc>" ;;
+    unreg)    [ "$#" -eq 2 ] || die "usage: $PROG unreg <doc>" ;;
+    reclaim)  [ "$#" -ge 2 ] || die "usage: $PROG reclaim <doc>..." ;;
+    status)   [ "$#" -eq 1 ] || die "usage: $PROG status (takes no arguments)" ;;
+    migrate)  [ "$#" -eq 1 ] || die "usage: $PROG migrate (takes no arguments)" ;;
+    run-dir)  [ "$#" -le 2 ] || die "usage: $PROG run-dir [label]" ;;
+    rm-run)   [ "$#" -ge 2 ] || die "usage: $PROG rm-run <label>..." ;;
+    prune)    [ "$#" -eq 1 ] || die "usage: $PROG prune (takes no arguments)" ;;
+    *)        die "unknown command '${1}' — try '$PROG --help'" ;;
+  esac
+fi
+
+if [ "$HELP_ONLY" -eq 0 ]; then
+command -v jq  >/dev/null 2>&1 || die "jq is required"
+command -v git >/dev/null 2>&1 || die "git is required"
+if   command -v shasum  >/dev/null 2>&1; then SHA1TOOL='shasum -a 1'
+elif command -v sha1sum >/dev/null 2>&1; then SHA1TOOL='sha1sum'
+else die "need shasum or sha1sum (bash cannot compute SHA-1 itself)"; fi
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || ROOT=""
+[ -n "$ROOT" ] || die "not inside a git repository"
+ROOT="$(cd -- "$ROOT" && pwd -P)" || ROOT=""
+[ -n "$ROOT" ] || die "could not resolve the repository root physically — refusing to place state relative to nothing"
+case "$ROOT" in /*) : ;; *) die "resolved repository root is not absolute: $ROOT" ;; esac
+
+SID="${CLAUDE_CODE_SESSION_ID:-}"
+# The session id becomes a directory name under runs/, so an unexpected slash, `..`, newline, or
+# empty value could redirect writes. Grammar is pinned rather than sanitised: a value we do not
+# recognise is a bug worth surfacing, not something to quietly rewrite.
+case "$SID" in
+  '')                       SID_OK=0 ;;
+  *[!A-Za-z0-9_-]*)         SID_OK=0 ;;
+  *)                        SID_OK=1 ;;
+esac
+
+STORE="$ROOT/.dstack"; ACTIVE="$STORE/active"; RUNS="$STORE/runs"
+LEGACY="$ROOT/.fullcycle-active"
+# The mutex the OLD protocol used for its read-modify-write. `migrate` takes it so a legacy
+# writer still following that protocol cannot append mid-cutover.
+LEGACY_LOCK="$LEGACY.lock"
+# Every path out of `migrate` goes through this, not only the archival one. The EXIT trap does
+# remove the directory, but silently — a failure there left a stale lock while the command
+# reported success, and the next `migrate` then waited 10 seconds and refused.
+release_legacy_lock() {
+  # Disarm BEFORE the rmdir, not after. The old order published the lock pathname as free while
+  # the traps were still armed, so a signal arriving in that window ran a trap that removed
+  # whatever now sat at that path — by then possibly a DIFFERENT process's freshly acquired
+  # lock, letting a third enter mid-migration. Traps carry no ownership, so the only fix is to
+  # not have one armed once the name can belong to someone else. Accepted residual: a signal
+  # between the disarm and the rmdir leaves the lock behind. A stale lock blocks and says so; a
+  # stolen lock silently corrupts.
+  trap - EXIT INT TERM
+  if ! rmdir "$LEGACY_LOCK" 2>/dev/null && { [ -e "$LEGACY_LOCK" ] || [ -L "$LEGACY_LOCK" ]; }; then
+    printf '%s: WARNING: the legacy registry lock %s could not be removed; remove it with: rmdir -- %s\n' "$PROG" "$LEGACY_LOCK" "$(q "$LEGACY_LOCK")" >&2
+  fi
+}
+fi   # end HELP_ONLY guard
+
+# The key is derived from the LOWERCASED path. macOS APFS is case-insensitive by default, so
+# `Docs/A.md` and `docs/a.md` are one physical file; hashing the exact spelling would give them
+# two keys and let two sessions each "own" the same document. Folding is collision-conservative
+# — on a case-sensitive volume two genuinely distinct files would share a key and the second
+# registration is refused rather than silently allowed — which is the same stance
+# check-parallel.sh already takes on declared file overlap. The exact spelling still lives in
+# the record; only the key is folded.
+H2='[0-9a-f][0-9a-f]'; H10="$H2$H2$H2$H2$H2"; HEX40="$H10$H10$H10$H10"   # a case-glob, used unquoted
+# Returns the key on stdout, or 1 with no output. Never dies, so the hook-shaped callers can
+# report instead of aborting; `sha1` below is the fail-loud wrapper the CLI uses.
+sha1_try() {
+  local raw h
+  # NOT one pipeline into `cut`: a pipeline's status is its LAST command's, so a digest tool that
+  # printed 40 hex characters and THEN failed was accepted, and one that failed outright was
+  # indistinguishable from one that printed nothing. Capture the tool's own status first.
+  # Every fallible stage gets its own status. `printf | tr | digest` reported only the digest's
+  # status, so a missing or failing `tr` still produced the perfectly valid SHA-1 of an EMPTY
+  # stream — one constant key that every document would collide on.
+  local folded
+  folded="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" || return 1
+  [ -n "$folded" ] || return 1
+  raw="$(printf '%s' "$folded" | $SHA1TOOL)" || return 1
+  h="${raw%% *}"
+  case "$h" in $HEX40) printf '%s\n' "$h"; return 0 ;; esac
+  return 1
+}
+sha1() {
+  local h
+  # An empty or malformed digest would make a record path collapse onto active/ itself, which
+  # the callers would then read as "already present". Fail rather than compute a wrong key.
+  h="$(sha1_try "$1")" || die "digest tool failed or returned a non-40-hex value — refusing to derive a key from it"
+  printf '%s\n' "$h"
+}
+# Byte-exact digest of a FILE. Deliberately separate from `sha1_try`: that one lowercases,
+# because it derives document keys on a case-insensitive filesystem. Reused as a snapshot it made
+# `OwnerA<TAB>docs/X.md` -> `ownera<TAB>docs/x.md` produce an IDENTICAL digest, so a case-only
+# rewrite of the authority passed the unchanged check. Every stage's status is checked.
+digest_file() {   # $1 = path; prints 40 hex, or returns 1
+  local raw h
+  raw="$($SHA1TOOL < "$1")" || return 1
+  h="${raw%% *}"
+  case "$h" in $HEX40) printf '%s\n' "$h"; return 0 ;; esac
+  return 1
+}
+# Both arguments have already been through `canon`, which returns the real on-disk spelling, so
+# authorization compares them EXACTLY. The old case-folding version meant that on a
+# case-SENSITIVE volume `unreg docs/a.md` satisfied the identity check against a record for
+# `docs/A.md` — a different file — and removed its claim. Case folding is correct for deriving
+# the KEY (one physical file, one key on APFS) and wrong for deciding who may act on a record.
+same_doc() { [ "$1" = "$2" ]; }
+
+require_sid() {
+  [ "$SID_OK" -eq 1 ] || die "CLAUDE_CODE_SESSION_ID is empty or not [A-Za-z0-9_-]+ — refusing to write state that cannot be attributed"
+}
+
+# ── store namespace ───────────────────────────────────────────────────────────
+# Refuse an occupied namespace rather than merging with it. Following a pre-existing `.dstack`
+# symlink could write or delete outside the repository; a tracked `.dstack` means somebody
+# committed runtime state and the ignore file will not retroactively untrack it.
+# EVERY store component, not just the top one. Checking `.dstack` alone says nothing about
+# `.dstack/active`, `.dstack/runs`, `version`, or the legacy file — any of which can redirect a
+# read, a write, or a run capture outside the repository. `version` matters as much as the rest:
+# it is read and its content echoed in an error message. This helper exists so the guard cannot
+# drift out of sync between components again.
+require_plain() {   # $1 path, $2 expected type: dir|file
+  [ -L "$1" ] && die "'$1' is a symlink — refusing to read or write state through one"
+  if [ -e "$1" ]; then
+    case "$2" in
+      dir)  [ -d "$1" ] || die "'$1' exists and is not a directory" ;;
+      file) [ -f "$1" ] || die "'$1' exists and is not a regular file" ;;
+    esac
+  fi
+  return 0
+}
+
+ensure_store() {
+  local tracked tstatus ig ign vraw
+  require_plain "$STORE" dir
+  # `$(… | head -1)` reported the status of `head`, so a git that FAILED looked exactly like a
+  # git that found nothing — and "cannot prove it is untracked" was silently read as "untracked".
+  # No pipeline, and the status is checked before the content.
+  # `:(icase)` because APFS resolves ASCII-case variants to ONE object: an exact-case
+  # `ls-files -- .dstack` reported a tracked `.DStack` as untracked, and this then created state
+  # inside somebody's committed directory. Verified on this checkout: `ls-files -- agents.md`
+  # finds nothing while `:(icase)agents.md` finds AGENTS.md.
+  tracked="$(git -C "$ROOT" ls-files -- ':(literal,icase).dstack' 2>/dev/null)" || tstatus=$?
+  [ "${tstatus:-0}" -eq 0 ] || die "git ls-files failed (status $tstatus) — cannot prove .dstack is untracked, refusing to write state"
+  [ -n "$tracked" ] && die ".dstack is tracked by git — untrack it before using this store"
+  # Check BEFORE creating. `mkdir -p` through a symlink whose target does not exist would
+  # create that target — outside the repository — and only then would a later check notice.
+  require_plain "$ACTIVE" dir
+  require_plain "$RUNS" dir
+  require_plain "$STORE/.gitignore" file
+  require_plain "$STORE/version" file
+  mkdir -p "$ACTIVE" "$RUNS" || die "cannot create $STORE"
+  # A failed chmod used to be swallowed. These directories hold full code diffs in plaintext and
+  # the whole claim for `runs/` is "mode 700"; if that cannot be set, say so instead of creating
+  # state under weaker permissions than documented.
+  chmod 700 "$STORE" "$ACTIVE" "$RUNS" || die "cannot set mode 700 on the store — refusing to create state with weaker permissions than documented"
+  # The store's self-isolation is the ENTIRE reason no target repo's tracked .gitignore is
+  # touched. Existence was not enough: an empty or edited `.dstack/.gitignore` leaves every
+  # record visible to `git status`, which contradicts the "never committed" guarantee while
+  # looking correctly set up. Require the exact content, and fail on a write that did not land.
+  if [ -f "$STORE/.gitignore" ]; then
+    ign="$(wc -c < "$STORE/.gitignore" | tr -d ' ')" || die "cannot read $STORE/.gitignore"
+    ig="$(cat -- "$STORE/.gitignore")" || die "cannot read $STORE/.gitignore"
+    # BYTE-exact, like the version marker: `$(cat)` strips all trailing newlines, so `*\n\n\n`
+    # and a file with junk after a blank run both compared equal to `*`.
+    { [ "$ign" = "2" ] && [ "$ig" = '*' ]; } || die "$STORE/.gitignore must be exactly '*' plus one newline (it isolates the store from git) — found $ign bytes; fix or delete it"
+  else
+    printf '*\n' > "$STORE/.gitignore" || die "cannot write $STORE/.gitignore — refusing to create state git would see"
+  fi
+  if [ -e "$STORE/version" ] || [ -L "$STORE/version" ]; then
+    version_ok || die "$VERSION_WHY"
+  else
+    printf '%s\n' "$SCHEMA" > "$STORE/version" || die "cannot write $STORE/version"
+  fi
+}
+
+# The schema marker is a prerequisite for READING the store, not just for mutating it. It used to
+# be checked only in `ensure_store`, so a `version` of 2 made every mutation die while the Stop
+# hook and `status` cheerfully reported an empty store — the two paths that decide whether work is
+# gated disagreed with the one that writes it.
+# Exact BYTES, not `$(cat)`: command substitution strips ALL trailing newlines, so "1\n\n\n"
+# compared equal to "1" and a marker with junk appended passed as a clean match.
+version_ok() {   # 0 = this build can read the store; 1 = VERSION_WHY says why not
+  local raw n want=$((${#SCHEMA} + 1))
+  VERSION_WHY=""
+  if [ -L "$STORE/version" ]; then VERSION_WHY="$STORE/version is a symlink — refusing to read state through one"; return 1; fi
+  [ -f "$STORE/version" ] || { VERSION_WHY="$STORE/version is missing or not a regular file — the store's schema cannot be established"; return 1; }
+  n="$(wc -c < "$STORE/version" | tr -d ' ')" || { VERSION_WHY="cannot read $STORE/version"; return 1; }
+  [ "$n" -eq "$want" ] || { VERSION_WHY="$STORE/version is $n bytes; a clean marker is exactly '$SCHEMA' plus one newline"; return 1; }
+  raw="$(cat -- "$STORE/version")" || { VERSION_WHY="cannot read $STORE/version"; return 1; }
+  [ "$raw" = "$SCHEMA" ] || { VERSION_WHY="state schema marker is '$raw', this build speaks '$SCHEMA'"; return 1; }
+  return 0
+}
+
+# A half-migrated repository has two candidate sources of truth. Reading both would make it
+# impossible to say which is authoritative, so every mutating command stops until `migrate` runs.
+require_cutover() {
+  require_plain "$LEGACY" file
+  [ -s "$LEGACY" ] && die "legacy .fullcycle-active is still present and non-empty — run \"$HOME/.claude/bin/$PROG\" migrate first" 4
+  return 0
+}
+
+# ── path identity ─────────────────────────────────────────────────────────────
+# One document must map to exactly one key, whatever spelling reached us: `doc.md`, `./doc.md`,
+# an absolute path, a path from another working directory, or one reached through a symlinked
+# parent. Directory components are resolved physically (`pwd -P`) so every spelling converges;
+# the final component must not itself be a symlink, matching what the Stop hook enforces.
+canon() {
+  local p="$1" d b dp abs
+  [ -n "$p" ] || die "empty document path"
+  # Refuse any byte outside printable ASCII. Three separate defects collapse into this one check:
+  #  - A newline ANYWHERE, not merely at the end, is eaten by the command substitutions below
+  #    (`$(dirname …)` strips trailing newlines), so a path under a directory whose name ends in
+  #    a newline would canonicalise through a DIFFERENT, newline-free directory. The earlier
+  #    trailing-only test could not see that.
+  #  - Other control characters have the same silent-rewrite problem.
+  #  - A non-ASCII path cannot be case-folded correctly here: this script runs under LC_ALL=C, so
+  #    `tr '[:upper:]' '[:lower:]'` is ASCII-only, while case-insensitive APFS folds Unicode. `É`
+  #    and `é` are the SAME file on such a volume yet would hash to two different keys. Portable
+  #    Unicode case folding in bash 3.2 is not on the table, so refusing the input is the honest
+  #    move — claiming an identity guarantee we cannot keep is what this whole store exists to
+  #    avoid. Documentation paths are ASCII in practice; a non-ASCII one gets a clear error, not
+  #    a wrong key.
+  # (The record format is JSON for schema evolution and safe escaping of the paths this accepts —
+  # that was never a claim to accept every byte string a filesystem allows.)
+  case "$p" in *[!\ -~]*) die "document path contains a control or non-ASCII character — refusing: its identity cannot be guaranteed (see canon())" ;; esac
+  d="$(dirname -- "$p")"; b="$(basename -- "$p")"
+  case "$b" in ''|.|..) die "not a document path: $p" ;; esac
+  dp="$(cd -- "$d" 2>/dev/null && pwd -P)" || die "no such directory: $d"
+  # Resolve the real on-disk spelling of the final component. Lowercasing only the KEY left the
+  # stored spelling as whatever the caller typed, and the gate classifies Goals by matching
+  # `GOAL.md` — so `goal.md` on case-insensitive APFS registered as a task instead of the Goal.
+  # One physical file must have exactly one stored identity.
+  if [ -e "$dp/$b" ]; then
+    # Only go looking for a different spelling when the caller's own is NOT the on-disk one. On a
+    # case-SENSITIVE volume holding both `A.md` and `a.md`, `ls | grep -ixF | head -1` returned
+    # whichever sorted first, so registering `a.md` could silently rewrite it to `A.md` — a
+    # different file. Ask whether the exact spelling is present first; it usually is.
+    local real names lstatus=0
+    # ONE listing, its own status checked. `ls | grep | head` reported `head`'s status, so a
+    # failed listing looked like "no case-variant found" and the caller's wrong-case spelling was
+    # published as the record's identity — a record no command could then address.
+    # `-a`. Plain `ls -1` omits dot-prefixed names, so `reg docs/.task.md` fell through this
+    # block with the caller's spelling intact while the Stop hook — which requires an exact
+    # match from the SAME listing — could not find it and blocked the record as wrongly spelled.
+    # Two tools disagreeing about one file is the failure this function exists to prevent, so
+    # both listings gained `-a` in the same change.
+    names="$(cd -- "$dp" 2>/dev/null && ls -1a 2>/dev/null)" || lstatus=$?
+    [ "$lstatus" -eq 0 ] || die "cannot list $dp to resolve the on-disk spelling of $b"
+    if ! printf '%s\n' "$names" | grep -qxF -- "$b"; then
+      # We only get here when `-e "$dp/$b"` succeeded, so the file IS there under some spelling.
+      # A miss now means the listing and the existence test disagree — fail loudly instead of
+      # falling through with an unresolved spelling, which is what `[ -n "$real" ] && …` did.
+      real="$(printf '%s\n' "$names" | grep -ixF -- "$b")" || real=""
+      [ -n "$real" ] || die "'$b' exists in $dp but no listed entry matches it in any case — refusing to store a spelling that addresses nothing"
+      [ "$(printf '%s\n' "$real" | wc -l | tr -d ' ')" = "1" ] \
+        || die "'$b' matches more than one on-disk spelling in $dp — refusing to guess which file was meant"
+      b="$real"
+    fi
+  fi
+  abs="$dp/$b"
+  [ -L "$abs" ] && die "document is a symlink — refusing: $p"
+  case "$abs" in
+    "$ROOT"/*) : ;;
+    *) die "document is outside this repository: $p" ;;
+  esac
+  local rel="${abs#"$ROOT"/}"
+  # The Stop hook honours only docs/ paths. Registering anything else would produce a record the
+  # gate silently ignores, which is the "ungated but looks registered" failure this replaces.
+  case "$rel" in
+    docs/*) : ;;
+    *) die "only paths under docs/ can be registered (got $rel)" ;;
+  esac
+  printf '%s\n' "$rel"
+}
+
+rec_field() { jq -r --arg k "$2" '.[$k] // empty' < "$1" 2>/dev/null; }
+
+# Never publish a record without reading back what was actually written. `jq -cn` exiting 0 is
+# not proof it emitted the object asked for; a status-zero jq printing `not-json` used to be
+# linked straight into the namespace, where every later reader reports it as corrupt.
+written_record_ok() {   # $1 = temp record path, $2 = expected doc, $3 = expected owner
+  # `(.ts|type)=="string"` accepted "" — and `date` failing inside the command substitution
+  # produced exactly that, publishing an undated record that still looked valid.
+  jq -e --arg d "$2" --arg s "$3" \
+    '(.v|type)=="number" and .v==1 and .doc==$d and .session==$s and (.ts|type)=="string" and (.ts|length)>0' \
+    -- "$1" >/dev/null 2>&1
+}
+
+# ── the record invariant ──────────────────────────────────────────────────────
+# ONE predicate, applied at EVERY read site. Round 3 found the hook and the CLI each validating a
+# different SUBSET, so a record could look healthy to one and invalid to the other: a plausible
+# JSON body whose filename is not the key of its own `doc`, or whose `doc` no longer exists, was
+# listed as fine by `status` and silently ignored by the gate. Splitting one invariant across two
+# partial checks is how a store ends up with two disagreeing opinions about itself.
+#
+# DUPLICATED BY DESIGN, and this is the honest cost: `fullcycle-gate.sh` implements the SAME
+# predicate in its own copy, because the hook is symlinked into the live agent dir and must not
+# depend on this script being present or executable. Change one, change both — the two sites are
+# `read_record` here and the record-scan loop there.
+#
+# On success sets REC_DOC and REC_OWNER. On failure returns 1 with REC_WHY set, so each caller
+# picks its own fail-loud shape: the CLI dies, the gate reports the record as blocking. Neither
+# one skips.
+read_record() {   # $1 = record path
+  local f="$1" name raw key canonical
+  REC_DOC=""; REC_OWNER=""; REC_WHY=""
+  name="${f##*/}"
+  if [ -L "$f" ]; then REC_WHY="is a symlink"; return 1; fi
+  [ -f "$f" ] || { REC_WHY="is not a regular file"; return 1; }
+  case "$name" in $HEX40) : ;; *) REC_WHY="filename is not a 40-hex record key"; return 1 ;; esac
+  # A record can vanish between `-f` and `cat` — a concurrent `unreg` that raced us, which POSIX
+  # explicitly permits since directory iteration is not a snapshot. That is a DEREGISTRATION, not
+  # corruption. Return 2 so a caller can tell the two apart; `status` tolerates 2 and reports 1.
+  raw="$(cat -- "$f")" || { [ -e "$f" ] || [ -L "$f" ] || { REC_WHY="vanished mid-read"; return 2; }; REC_WHY="cannot be read"; return 1; }
+  # `ts` is part of the published record, so it is part of the schema. Validating three of four
+  # fields meant a record this CLI would never write was still called well-formed.
+  printf '%s' "$raw" | jq -e '(.v|type)=="number" and .v==1 and (.session|type)=="string" and (.doc|type)=="string" and (.doc|length)>0 and (.ts|type)=="string"' >/dev/null 2>&1 \
+    || { REC_WHY="is off-schema (want {v:1, session:string, doc:non-empty string, ts:string})"; return 1; }
+  REC_OWNER="$(printf '%s' "$raw" | jq -r '.session')" || { REC_WHY="owner field could not be extracted"; return 1; }
+  REC_DOC="$(printf '%s' "$raw" | jq -r '.doc')"       || { REC_WHY="doc field could not be extracted"; return 1; }
+  case "$REC_OWNER" in ''|*[!A-Za-z0-9_-]*) REC_WHY="owner '$REC_OWNER' violates the session grammar"; return 1 ;; esac
+  # IDENTITY, not a prefix test. `docs/*` plus "the final component is a real file" let
+  # `docs/../../outside/GOAL.md` through: the hook would then open a file outside the repository,
+  # and `docs/x/../real/GOAL.md` looked healthy in `status` while `unreg` canonicalised it to a
+  # different key and could not release it. The stored path must EQUAL what `canon` derives from
+  # it — the same function `reg` used to write it — which folds in the `..`, symlinked-parent,
+  # outside-the-repo, non-ASCII and docs/-only rules in one place instead of re-deriving a
+  # weaker copy of them here.
+  canonical="$( (cd "$ROOT" && canon "$REC_DOC") 2>/dev/null )" || canonical=""
+  if [ -z "$canonical" ]; then
+    REC_WHY="doc '$REC_DOC' does not canonicalise (missing, outside the repo, not under docs/, symlinked, or unrepresentable)"
+    return 1
+  fi
+  [ "$canonical" = "$REC_DOC" ] || { REC_WHY="doc '$REC_DOC' is not its own canonical form ('$canonical') — no command could address it"; return 1; }
+  # `canon` requires the DIRECTORY to exist, not the file. A record for a deleted document is not
+  # a live claim; left accepted it blocks the gate forever on a file nobody can tick.
+  [ -f "$ROOT/$REC_DOC" ] || { REC_WHY="doc '$REC_DOC' is not an existing regular file"; return 1; }
+  # The filename must be the key OF THIS RECORD'S OWN doc. Without this a record can name one
+  # document while sitting at another's key: `reg` sees the key taken, `unreg` cannot find it, and
+  # the gate enforces a document nobody registered.
+  key="$(sha1_try "$REC_DOC")" || { REC_WHY="key for '$REC_DOC' could not be computed"; return 1; }
+  [ "$key" = "$name" ] || { REC_WHY="filename is not the key of its own doc '$REC_DOC'"; return 1; }
+  return 0
+}
+
+# A hash collision or a corrupt record must operate on nothing rather than the wrong document.
+# `read_record` requires the document to be an existing regular file, deliberately — a record
+# for a deleted document is not a live claim. But that made the record UNREMOVABLE: `unreg` dies
+# on the same invariant, so the gate blocks forever on a file nobody can tick and no command can
+# release. This accepts EXACTLY that case and nothing else: every other invariant still holds,
+# including "the filename is the key of its own doc", so it can only ever match the record of a
+# document that is genuinely gone. Ownership is still checked by the caller.
+stale_record_ok() {   # $1 = record path; sets REC_DOC/REC_OWNER on success
+  local f="$1" name raw key
+  REC_DOC=""; REC_OWNER=""
+  name="${f##*/}"
+  [ -L "$f" ] && return 1
+  [ -f "$f" ] || return 1
+  case "$name" in $HEX40) : ;; *) return 1 ;; esac
+  raw="$(cat -- "$f")" || return 1
+  printf '%s' "$raw" | jq -e '(.v|type)=="number" and .v==1 and (.session|type)=="string" and (.doc|type)=="string" and (.doc|length)>0 and (.ts|type)=="string"' >/dev/null 2>&1 || return 1
+  REC_OWNER="$(printf '%s' "$raw" | jq -r '.session')" || return 1
+  REC_DOC="$(printf '%s' "$raw" | jq -r '.doc')"       || return 1
+  case "$REC_OWNER" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac
+  case "$REC_DOC" in docs/*) : ;; *) return 1 ;; esac
+  case "$REC_DOC" in *[!\ -~]*|*/../*|*/./*|*//*|../*|./*|*/) return 1 ;; esac
+  key="$(sha1_try "$REC_DOC")" || return 1
+  [ "$key" = "$name" ] || return 1
+  # The whole point of this path: the document must really be gone.
+  if [ -e "$ROOT/$REC_DOC" ] || [ -L "$ROOT/$REC_DOC" ]; then return 1; fi
+  return 0
+}
+
+assert_record() {
+  local f="$1" want="$2"
+  read_record "$f" || die "record $f $REC_WHY — refusing to act on it"
+  same_doc "$REC_DOC" "$want" || die "record $f holds '$REC_DOC', expected '$want' — refusing to act on it"
+}
+
+klock() {
+  local l="$ACTIVE/$1.lock" n=0
+  until mkdir "$l" 2>/dev/null; do
+    n=$((n + 1)); [ "$n" -ge 100 ] && die "could not acquire lock for $1 — if it is stale, remove it with: rmdir -- $(q "$l")"
+    sleep 0.05
+  done
+  trap 'rmdir "$ACTIVE/'"$1"'.lock" 2>/dev/null' EXIT
+  trap 'rmdir "$ACTIVE/'"$1"'.lock" 2>/dev/null; exit 130' INT
+  trap 'rmdir "$ACTIVE/'"$1"'.lock" 2>/dev/null; exit 143' TERM
+}
+# A suppressed `rmdir` failure leaves the lock directory behind while the caller goes on to
+# report success, and every later operation on that key then times out. Say so instead.
+kunlock() {
+  local l="$ACTIVE/$1.lock"
+  trap - EXIT INT TERM          # disarm first — see release_legacy_lock for why the order matters
+  if ! rmdir "$l" 2>/dev/null && { [ -e "$l" ] || [ -L "$l" ]; }; then
+    printf '%s: WARNING: could not remove lock %s — later operations on this key will time out until it is removed by hand\n' "$PROG" "$l" >&2
+  fi
+}
+
+# ── commands ──────────────────────────────────────────────────────────────────
+cmd_reg() {
+  local doc key f tmp owner
+  require_sid; require_cutover; ensure_store
+  doc="$(canon "$1")" || exit $?
+  [ -f "$ROOT/$doc" ] || die "no such document: $doc"
+  key="$(sha1 "$doc")"; f="$ACTIVE/$key"
+  # The existing-record branch READS then reports, so it needs the key lock: without it a
+  # concurrent unreg or reclaim between the read and the report makes `reg` claim an ownership
+  # that no longer exists. The creation path below needs no lock — `ln` is the atomic decision.
+  # `-e || -L`: a DANGLING symlink at this key fails `-e`, so the slot looked free while the
+  # Stop hook went on reporting that same entry as a broken record. Occupied is occupied.
+  if [ -e "$f" ] || [ -L "$f" ]; then
+    klock "$key"
+    if [ -e "$f" ] || [ -L "$f" ]; then
+      assert_record "$f" "$doc"          # full invariant; sets REC_OWNER
+      owner="$REC_OWNER"
+      kunlock "$key"
+      [ "$owner" = "$SID" ] && { note "already registered (this session): $doc"; return 0; }
+      die "already registered by session $owner — run \"\$HOME/.claude/bin/$PROG\" reclaim $(q "$doc") to take it over deliberately" 3
+    fi
+    kunlock "$key"      # it was released while we waited; fall through and claim it
+  fi
+  tmp="$(mktemp "$ACTIVE/.tmp.XXXXXXXX")" || die "cannot create a temp record"
+  if ! jq -cn --arg s "$SID" --arg d "$doc" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --argjson v "$SCHEMA" '{v:$v,session:$s,doc:$d,ts:$t}' > "$tmp"; then
+    rm -f "$tmp"; die "cannot write record"
+  fi
+  written_record_ok "$tmp" "$doc" "$SID" || { rm -f "$tmp"; die "the record jq produced is not the record asked for — refusing to publish it"; }
+  # ln is the create-if-absent primitive: it fails when the name already exists, so a race
+  # cannot end with two winners. rename() would have silently replaced the other session.
+  if ln "$tmp" "$f" 2>/dev/null; then
+    rm -f "$tmp"; note "registered: $doc"
+  else
+    # Losing the `ln` means someone else published first. Re-read UNDER THE KEY LOCK before
+    # reporting anything: without it a reclaimer can replace the record between this read and
+    # the return, so "already registered (this session)" could name an owner that is gone.
+    rm -f "$tmp"
+    klock "$key"
+    assert_record "$f" "$doc"            # validate BEFORE trusting any field of it
+    owner="$REC_OWNER"
+    kunlock "$key"
+    [ "$owner" = "$SID" ] && { note "already registered (this session): $doc"; return 0; }
+    die "lost a registration race — now owned by session $owner" 3
+  fi
+}
+
+cmd_unreg() {
+  local doc key f owner stale=0
+  require_sid; require_cutover; ensure_store
+  # Accept a 40-hex RECORD KEY as well as a document path. Deleting a document, renaming it, or
+  # removing its parent directory all make `canon` fail or derive a different key, and the record
+  # then had no addressable handle at all — the gate blocked on it and no command could release
+  # it. `status` prints the key of every record it calls invalid, so there is always a handle.
+  case "$1" in
+    $HEX40) key="$1"; f="$ACTIVE/$key"; doc="" ;;
+    *) doc="$(canon "$1")" || exit $?; key="$(sha1 "$doc")"; f="$ACTIVE/$key" ;;
+  esac
+  { [ -e "$f" ] || [ -L "$f" ]; } || { note "not registered: ${doc:-$key}"; return 0; }
+  klock "$key"
+  if [ -e "$f" ] || [ -L "$f" ]; then
+    if read_record "$f"; then
+      [ -z "$doc" ] || same_doc "$REC_DOC" "$doc" \
+        || { kunlock "$key"; die "record $f holds '$REC_DOC', expected '$doc' — refusing to act on it"; }
+    elif stale_record_ok "$f"; then
+      [ -z "$doc" ] || same_doc "$REC_DOC" "$doc" \
+        || { kunlock "$key"; die "record $f holds '$REC_DOC', expected '$doc' — refusing to act on it"; }
+      stale=1
+    else
+      kunlock "$key"; die "record $f $REC_WHY — refusing to act on it"
+    fi
+    doc="$REC_DOC"
+    owner="$REC_OWNER"
+    if [ "$owner" != "$SID" ]; then kunlock "$key"; die "owned by session $owner, not this one" 3; fi
+    [ "$stale" -eq 1 ] && note "document '$doc' no longer exists — releasing its stale record"
+    # A suppressed removal failure would report a deregistration that never happened, leaving
+    # the document gated while the caller believes it is released.
+    rm -f "$f" || { kunlock "$key"; die "could not remove record for $doc — it is still registered"; }
+    [ -e "$f" ] && { kunlock "$key"; die "record for $doc still present after removal — refusing to report success"; }
+  fi
+  kunlock "$key"
+  note "deregistered: $doc"
+}
+
+# No liveness signal exists (heartbeats are deliberately out of scope), so "not owned by this
+# session" does NOT mean "abandoned". A command that swept every foreign record would steal
+# every live tab's work. Takeover is therefore explicit, per document, and reports what it took.
+cmd_reclaim() {
+  local doc key f owner tmp
+  require_sid; require_cutover; ensure_store
+  [ "$#" -gt 0 ] || die "reclaim needs explicit document paths (it never sweeps)"
+  for doc in "$@"; do
+    doc="$(canon "$doc")" || exit $?
+    key="$(sha1 "$doc")"; f="$ACTIVE/$key"
+    klock "$key"
+    if [ ! -e "$f" ] && [ ! -L "$f" ]; then kunlock "$key"; note "not registered, nothing to reclaim: $doc"; continue; fi
+    assert_record "$f" "$doc"
+    owner="$REC_OWNER"
+    if [ "$owner" = "$SID" ]; then kunlock "$key"; note "already this session's: $doc"; continue; fi
+    tmp="$(mktemp "$ACTIVE/.tmp.XXXXXXXX")" || { kunlock "$key"; die "cannot create a temp record"; }
+    if ! jq -cn --arg s "$SID" --arg d "$doc" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --argjson v "$SCHEMA" '{v:$v,session:$s,doc:$d,ts:$t}' > "$tmp"; then
+      rm -f "$tmp"; kunlock "$key"; die "cannot write record"
+    fi
+    written_record_ok "$tmp" "$doc" "$SID" || { rm -f "$tmp"; kunlock "$key"; die "the record jq produced is not the record asked for — refusing to publish it"; }
+    mv -f "$tmp" "$f" || { rm -f "$tmp"; kunlock "$key"; die "cannot publish record"; }
+    kunlock "$key"
+    note "reclaimed from session $owner: $doc"
+  done
+}
+
+cmd_status() {
+  local f doc owner mine n=0 d s rr
+  # Read-only is not a reason to skip the type guards: `-s` follows a symlink, so a linked
+  # legacy file would be stat'd outside the repository before anything noticed.
+  require_plain "$LEGACY" file
+  require_plain "$STORE" dir
+  require_plain "$ACTIVE" dir
+  require_plain "$RUNS" dir
+  # A reader must agree with the writer about the schema. Without this, `version` set to a future
+  # number made every mutation die while `status` printed a confident, empty list.
+  [ -d "$STORE" ] && { version_ok || die "$VERSION_WHY"; }
+  if [ -s "$LEGACY" ]; then
+    note "LEGACY .fullcycle-active present and non-empty — run \"$HOME/.claude/bin/$PROG\" migrate (mutations are blocked)"
+    note ""
+  fi
+  # Do NOT return here. Run captures are stored state too, and an absent `active/` is exactly
+  # when someone is trying to find out what is on disk.
+  if [ ! -d "$ACTIVE" ]; then note "active documents:"; note "  (none — no active/ directory)"; note ""; fi
+  [ ! -d "$ACTIVE" ] || note "active documents:"
+  # Hidden entries too. Globbing only `*` left anything dot-prefixed invisible HERE while the
+  # Stop hook enumerated and blocked on it — so `status`, the tool you run to find out why the
+  # gate is blocking, printed "(none)".
+  for f in "$ACTIVE"/* "$ACTIVE"/.[!.]* "$ACTIVE"/..?*; do
+    # Directory iteration is not a snapshot (POSIX), so an entry may vanish between listing and
+    # opening. Skip quietly; a missing record is a deregistration that raced us, not an error.
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    case "${f##*/}" in .tmp.*|*.lock) continue ;; esac
+    # The FULL record invariant, the same one the Stop hook applies — not a subset. A record the
+    # gate calls unreadable while `status` lists it as healthy is a store two tools disagree
+    # about, and an invalid record still COUNTS as an entry: printing "(none)" underneath one is
+    # how a corrupt store gets read as an empty store.
+    read_record "$f"; rr=$?
+    [ "$rr" -eq 2 ] && continue          # deregistered while we were listing; not an entry
+    if [ "$rr" -ne 0 ]; then
+      note "  ?? invalid record ${f##*/}: $REC_WHY"; n=$((n + 1)); continue
+    fi
+    doc="$REC_DOC"; owner="$REC_OWNER"
+    if [ "$owner" = "$SID" ]; then mine="this session"; else mine="session $owner"; fi
+    note "  $doc  ($mine)"
+    n=$((n + 1))
+  done
+  if [ "$n" -eq 0 ]; then note "  (none)"; fi
+  note ""
+  # Deliberately not called "in-flight": nothing here observes process liveness, so a bundle
+  # left by a crashed run is indistinguishable from a finished one. Reporting it as running
+  # would be a claim this store cannot support.
+  note "stored run captures (no liveness — a crashed run looks like a finished one):"
+  n=0
+  if [ -d "$RUNS" ]; then
+    # `$RUNS/*/*` with a plain `-d` test FOLLOWS a symlinked session directory, so
+    # `runs/<sid> -> /somewhere/else` made this enumerate and print external directory names as
+    # if they were this repository's captures. Reject the session level explicitly instead of
+    # letting the glob walk through it.
+    # Hidden entries too — `run-dir` refuses a dot-prefixed label, but nothing stops another
+    # tool or a hand-created directory from being there, and an unlisted capture is one nobody
+    # cleans up.
+    for s in "$RUNS"/* "$RUNS"/.[!.]* "$RUNS"/..?*; do
+      [ -e "$s" ] || [ -L "$s" ] || continue
+      if [ -L "$s" ]; then note "  ?? ${s#"$RUNS"/} is a symlink — not traversed"; n=$((n + 1)); continue; fi
+      [ -d "$s" ] || continue
+      for d in "$s"/* "$s"/.[!.]* "$s"/..?*; do
+        [ -e "$d" ] || [ -L "$d" ] || continue
+        if [ -L "$d" ]; then note "  ?? ${d#"$RUNS"/} is a symlink — not traversed"; n=$((n + 1)); continue; fi
+        [ -d "$d" ] || continue
+        note "  ${d#"$RUNS"/}"; n=$((n + 1))
+      done
+    done
+  fi
+  if [ "$n" -eq 0 ]; then note "  (none)"; fi
+  # Explicit: a trailing test that happens to be false must not become this command's exit
+  # status. `status` is read-only and cannot fail from having found something.
+  return 0
+}
+
+# Legacy records that cannot be represented exactly are a refusal, not a silent choice. Picking
+# one owner for a two-owner document, or dropping an untagged line (which EVERY session
+# enforces), would quietly weaken the gate — the precise failure this pipeline exists to prevent.
+cmd_migrate() {
+  local line owner doc tab conflicts="" plan="" seen="" dropped="" key f tmp n=0 canonical arch i snap now legacy_n ltracked ltstatus
+  # No `require_sid`: migration carries the owners written in the legacy file and never mints one,
+  # so it never read `SID`. Demanding it meant the recovery command the Stop hook prints could not
+  # be run from an ordinary terminal or from Codex — the exact places you reach for it.
+  ensure_store
+  # The legacy file is read, and its content is echoed back in conflict messages. Following a
+  # symlink here would print the contents of whatever it points at.
+  require_plain "$LEGACY" file
+  # THE LOCK COMES FIRST, before any existence, size, removal, snapshot or archive decision.
+  # Round 5 took it after the empty-file branch, so `! -s` could observe an empty file, a
+  # compliant writer could then append its claim under the lock, and this command would delete
+  # the now-nonempty file while reporting "empty — removed". Every decision about this file is
+  # made inside the lock, and the file is re-checked once we hold it.
+  require_plain "$LEGACY_LOCK" dir
+  legacy_n=0
+  until mkdir "$LEGACY_LOCK" 2>/dev/null; do
+    legacy_n=$((legacy_n + 1))
+    [ "$legacy_n" -ge 200 ] && die "another process is holding the legacy registry lock — if it is stale, remove it with: rmdir -- $(q "$LEGACY_LOCK")" 4
+    sleep 0.05
+  done
+  trap 'rmdir "$LEGACY_LOCK" 2>/dev/null' EXIT
+  trap 'rmdir "$LEGACY_LOCK" 2>/dev/null; exit 130' INT
+  trap 'rmdir "$LEGACY_LOCK" 2>/dev/null; exit 143' TERM
+  require_plain "$LEGACY" file            # re-validate under the lock
+  [ -e "$LEGACY" ] || { note "no legacy .fullcycle-active — nothing to migrate"; release_legacy_lock; return 0; }
+  # A TRACKED file is somebody's committed content, not this pipeline's runtime state. `migrate`
+  # would otherwise remove it from its tracked path and rename it to `.migrated` in any repo that
+  # happens to have a file by that name with one syntactically valid line in it.
+  ltracked="$(git -C "$ROOT" ls-files -- ':(literal,icase).fullcycle-active' 2>/dev/null)" || ltstatus=$?
+  [ "${ltstatus:-0}" -eq 0 ] || die "git ls-files failed (status $ltstatus) — cannot prove .fullcycle-active is untracked, refusing to migrate it"
+  [ -n "$ltracked" ] && die ".fullcycle-active is TRACKED by git in this repository — that is committed content, not pipeline runtime state. Refusing to move it. Untrack it first if the migration is really intended."
+  if [ ! -s "$LEGACY" ]; then
+    rm -f "$LEGACY" || die "legacy .fullcycle-active is empty but could not be removed — the cutover is still blocked"
+    { [ -e "$LEGACY" ] || [ -L "$LEGACY" ]; } && die "legacy .fullcycle-active still present after removal — refusing to report success"
+    note "legacy .fullcycle-active was empty — removed"; release_legacy_lock; return 0
+  fi
+  # QUIESCENT CUTOVER, held by the lock taken above. The old skill serialized every append on
+  # that same `mkdir` mutex and did the append INSIDE it, so holding it is exclusion rather than
+  # detection. RESIDUAL, stated rather than papered over: a writer that ignores the lock (a hand
+  # edit, or one holding an fd opened before we acquired it) is outside that guarantee, which is
+  # why the byte-exact digest comparison below stays as the net for exactly that case.
+  snap="$(digest_file "$LEGACY")" || die "cannot digest the legacy file to establish a migration snapshot"
+  tab="$(printf '\t')"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      *"$tab"*) owner="${line%%"$tab"*}"; doc="${line#*"$tab"}" ;;
+      *)        conflicts="$conflicts
+  untagged line (enforced by EVERY session, no single owner to carry over): $line"; continue ;;
+    esac
+    [ -n "$owner" ] || { conflicts="$conflicts
+  empty owner: $line"; continue; }
+    case "$owner" in *[!A-Za-z0-9_-]*) conflicts="$conflicts
+  owner is not [A-Za-z0-9_-]+: $line"; continue ;; esac
+    # Strip leading `./` and collapse repeated slashes FIRST. The legacy file holds whatever
+    # spelling was appended to it, and testing `docs/*` against a raw `./docs/...` would classify
+    # a live registration as "not a docs/ path" and drop it — discarding ownership silently,
+    # which is the one thing this migration must never do.
+    while :; do case "$doc" in ./*) doc="${doc#./}" ;; *) break ;; esac; done
+    while :; do
+      case "$doc" in
+        *//*)
+          # A failing `sed` returned an EMPTY string, which then failed the `docs/*` test and was
+          # classified droppable — the legacy file would be archived having silently discarded a
+          # valid claim. Normalisation failure is a conflict, not a drop.
+          doc="$(printf '%s' "$doc" | sed 's|//*|/|g')" || doc=""
+          if [ -z "$doc" ]; then
+            conflicts="$conflicts
+  path normalisation failed, so this claim cannot be carried over: $line"
+            break
+          fi ;;
+        *) break ;;
+      esac
+    done
+    [ -n "$doc" ] || continue
+    case "$doc" in
+      docs/*) : ;;
+      *) dropped="$dropped
+  not a docs/ path (the gate already ignores it): $doc"; continue ;;
+    esac
+    if [ ! -f "$ROOT/$doc" ] || [ -L "$ROOT/$doc" ]; then
+      dropped="$dropped
+  missing or symlinked document (the gate already ignores it): $doc"; continue
+    fi
+    # Now key it exactly the way `reg`/`unreg` will. A record hashed from a spelling those
+    # commands cannot reproduce is addressable by nothing and removable by no one, so a path
+    # that survives the checks above but still fails to canonicalise is a conflict, not a drop.
+    canonical="$( (cd "$ROOT" && canon "$doc") 2>/dev/null )" || canonical=""
+    if [ -z "$canonical" ]; then
+      conflicts="$conflicts
+  path does not canonicalise, so its record would be unaddressable: $line"; continue
+    fi
+    doc="$canonical"
+    # Dedupe on the 40-hex KEY, never on a `<path>` delimited string. `canon` accepts printable
+    # angle brackets (its old refusal was removed with the delimiter set it protected), so a
+    # legitimate path like `docs/outer><docs/target/GOAL.md` made the substring test report a
+    # DIFFERENT, distinct document as already seen and blocked the migration. Keys are fixed-width
+    # hex, so ` <key> ` cannot be forged by any path.
+    key="$(sha1 "$doc")"; f="$ACTIVE/$key"
+    case " $seen " in
+      *" $key "*)
+        conflicts="$conflicts
+  document registered more than once — the new format holds one owner: $doc"; continue ;;
+    esac
+    seen="$seen $key"
+    # An existing record for this key is only benign when it is EXACTLY this record. A different
+    # owner (or a different document under the same key) means migrating would archive the legacy
+    # file while one of the two owners silently vanishes — the Round-1 counterexample.
+    if [ -e "$f" ] || [ -L "$f" ]; then
+      # The FULL invariant, not a two-field comparison. An off-schema record (`v:999`) whose
+      # owner and doc happened to match used to pass this preflight, so migration archived the
+      # legacy file — the only authoritative source — behind a record the gate then rejected.
+      if ! read_record "$f"; then
+        conflicts="$conflicts
+  existing record at $key $REC_WHY: $doc"; continue
+      fi
+      if ! same_doc "$REC_DOC" "$doc" || [ "$REC_OWNER" != "$owner" ]; then
+        conflicts="$conflicts
+  a record already exists for '$doc' owned by '$REC_OWNER', but the legacy file says '$owner' — refusing to drop one of them"; continue
+      fi
+    fi
+    plan="$plan$owner$tab$doc
+"
+  done < "$LEGACY"
+
+  if [ -n "$conflicts" ]; then
+    printf '%s: cannot migrate losslessly:%s\n' "$PROG" "$conflicts" >&2
+    printf '%s: resolve these in %s by hand, then re-run.\n' "$PROG" "$LEGACY" >&2
+    exit 4
+  fi
+  [ -n "$dropped" ] && printf '%s: dropping records the gate already ignored:%s\n' "$PROG" "$dropped" >&2
+
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    owner="${line%%"$tab"*}"; doc="${line#*"$tab"}"
+    key="$(sha1 "$doc")"; f="$ACTIVE/$key"
+    # Preflight proved any existing record here is byte-equivalent to this one.
+    [ -e "$f" ] && { note "already present and identical, left alone: $doc"; continue; }
+    tmp="$(mktemp "$ACTIVE/.tmp.XXXXXXXX")" || die "cannot create a temp record"
+    jq -cn --arg s "$owner" --arg d "$doc" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+       --argjson v "$SCHEMA" '{v:$v,session:$s,doc:$d,ts:$t}' > "$tmp" || { rm -f "$tmp"; die "cannot write record"; }
+    written_record_ok "$tmp" "$doc" "$owner" || { rm -f "$tmp"; die "the record jq produced is not the record asked for — refusing to publish it"; }
+    ln "$tmp" "$f" 2>/dev/null || { rm -f "$tmp"; die "key collision while migrating: $doc"; }
+    rm -f "$tmp"; n=$((n + 1))
+  done <<EOF
+$plan
+EOF
+  # Never clobber an earlier archive: it is the only copy of what a previous cutover carried.
+  # `-e` is false for a DANGLING symlink, so testing only `-e` would pick that name and `mv`
+  # would follow it, writing the archive wherever the link points.
+  arch="$LEGACY.migrated"; i=2
+  while [ -e "$arch" ] || [ -L "$arch" ]; do arch="$LEGACY.migrated.$i"; i=$((i + 1)); done
+  # The snapshot check, immediately before the archive. Records already published stay published
+  # (they are exact copies of legacy lines, so re-running is idempotent); what is refused is
+  # ARCHIVING a file that grew a claim we never read.
+  now="$(digest_file "$LEGACY")" || die "published $n record(s) but could not re-read the legacy file to confirm it is unchanged — NOT archiving it"
+  [ "$now" = "$snap" ] || die "the legacy file changed while migrating despite the registry lock (an unlocked writer) — published $n record(s) and left $LEGACY in place; re-run to carry the rest" 4
+  mv "$LEGACY" "$arch" || die "migrated $n record(s) but could not move $LEGACY aside"
+  release_legacy_lock
+  note "migrated $n record(s); legacy file archived as ${arch##*/}"
+}
+
+# Capture storage for a long external run. Each run gets its own directory, so one session can
+# hold several without them overwriting each other. Mode 700 because gitignored is not private.
+cmd_run_dir() {
+  local label d n
+  require_sid; require_cutover; ensure_store
+  label="${1:-run}"
+  case "$label" in
+    *[!A-Za-z0-9_.-]*) die "run label must be [A-Za-z0-9_.-]+" ;;
+    # `.` and `..` pass the character class but resolve to runs/<sid> and runs/ — sharing every
+    # capture and sitting outside the depth the retention scan walks, so they would never be
+    # pruned either.
+    .|..|*/*) die "run label must not be '.', '..', or contain a separator" ;;
+    # A dot-prefixed label creates a capture `status` never lists (it globs non-hidden entries).
+    .*) die "run label must not start with a dot — it would be invisible to \"$HOME/.claude/bin/$PROG\" status" ;;
+  esac
+  # Each run gets its OWN directory: reusing one for a repeated label mixes two rounds' bundles
+  # and resets the mtime the retention window is measured from. But a taken label REFUSES rather
+  # than silently allocating a variant — quietly handing back a different path than the caller
+  # asked for is worse than either. (Learned the hard way: an earlier version allocated
+  # `<label>.2`, a caller that resolved the same label twice got two directories, and a review
+  # round ran against an empty bundle in the second one. Call this ONCE and use the value.)
+  # Parent first, then a PLAIN mkdir on the leaf as the atomic claim. `-e` followed by
+  # `mkdir -p` is check-then-create: two concurrent calls both see absence and both succeed,
+  # sharing one capture directory. Plain `mkdir` fails for the loser, which is the point.
+  d="$RUNS/$SID/$label"
+  # `ensure_store` type-checks the FIXED components; the session directory is DYNAMIC and was
+  # not checked, so `runs/<sid> -> /somewhere/else` made `mkdir -p` succeed through the link and
+  # every capture — full code diffs in plaintext — land outside the repository. The store's
+  # no-symlink invariant has to cover the parts of the path that vary too, not just the ones
+  # spelled out in a constant.
+  require_plain "$RUNS/$SID" dir
+  mkdir -p "$RUNS/$SID" || die "cannot create $RUNS/$SID"
+  require_plain "$d" dir
+  mkdir "$d" 2>/dev/null || die "run label '$label' is already taken at $d — labels are per-attempt; use the next suffix, or read that path directly"
+  # Release the claim if the permissions cannot be set. The leaf `mkdir` IS the claim, so failing
+  # after it used to consume the label permanently: the command exited non-zero and a retry was
+  # told the label was already taken.
+  # Sweep on capture CREATION — a normal lifecycle boundary that actually happens. Documenting a
+  # 7-day retention that only runs when a human remembers to type `prune` is not bounded
+  # retention; these are plaintext code diffs. A sweep failure warns rather than failing the
+  # allocation: the caller asked for a directory, not for a sweep.
+  ( cmd_prune >/dev/null ) || printf '%s: WARNING: retention sweep failed; old captures may remain\n' "$PROG" >&2
+  if ! chmod 700 "$RUNS" "$RUNS/$SID" "$d"; then
+    if rmdir "$d" 2>/dev/null; then
+      die "cannot set mode 700 on $d — refusing to store code diffs under weaker permissions than documented (label '$label' released, retry is safe)"
+    fi
+    die "cannot set mode 700 on $d, and the claim could not be released either — label '$label' is now STUCK; remove $(q "$d") by hand before retrying"
+  fi
+  printf '%s\n' "$d"
+}
+
+# Delete named captures of THIS session. It lives here rather than in the calling skill because
+# the caller could only write `[ -L "$R" ] && … ; rm -rf "$R/$label"`, which is check-then-delete:
+# between the two statements `$R` can become a symlink to somewhere else and the `rm -rf` follows
+# it out of the repository. Two things close that here:
+#   1. `cd -P` ONCE into the session directory, then verify where we landed. After the chdir the
+#      shell holds a resolved directory; a later swap of any name on the path cannot redirect a
+#      relative delete, so validation and deletion refer to the same directory by construction.
+#   2. Delete by EXACT label, relative to that directory. `rm -rf` on a symlink removes the link
+#      itself and never descends into its target, so a leaf swapped to a symlink is harmless.
+# The caller's old prefix glob had a second bug worth naming: `<goal>-api-r*` also matches
+# `<goal>-api-refactor-r004`, so it could delete a concurrent sibling unit's OPEN round.
+cmd_rm_run() {
+  local label removed=0 here want
+  require_sid; require_cutover; ensure_store
+  require_plain "$RUNS/$SID" dir
+  [ -d "$RUNS/$SID" ] || { note "no captures for this session"; return 0; }
+  ( cd -P -- "$RUNS/$SID" 2>/dev/null || die "cannot enter this session's capture directory"
+    here="$(pwd -P)" || die "cannot resolve this session's capture directory"
+    # EXACT equality with this session's own directory, not "somewhere under runs/". Prefix
+    # containment accepted `runs/<other-session>`, so swapping `runs/<mine>` to a symlink at
+    # another session's directory redirected the delete into ITS captures — same-label evidence
+    # of a concurrent round, removed. Comparing physical paths after the chdir leaves no window.
+    want="$(cd -P -- "$RUNS" 2>/dev/null && pwd -P)/$SID" || die "cannot resolve $RUNS"
+    [ "$here" = "$want" ] || die "this session's capture directory resolves to '$here', not '$want' — refusing to delete anything"
+    for label in "$@"; do
+      case "$label" in
+        ''|.|..|*/*)         die "invalid run label '$label'" ;;
+        .*)                  die "run label must not start with a dot: '$label'" ;;
+        *[!A-Za-z0-9_.-]*)   die "run label must be [A-Za-z0-9_.-]+: '$label'" ;;
+      esac
+      if [ -e "./$label" ] || [ -L "./$label" ]; then
+        rm -rf -- "./$label" || die "could not remove capture '$label'"
+        { [ -e "./$label" ] || [ -L "./$label" ]; } && die "capture '$label' still present after removal — refusing to report success"
+        note "removed capture: $label"; removed=$((removed + 1))
+      else
+        note "no such capture (already gone): $label"
+      fi
+    done
+    [ "$removed" -gt 0 ] || note "nothing removed" ) || return $?
+  return 0
+}
+
+# Raw review bundles hold full code diffs in plaintext. They earn a short life, not an
+# indefinite one; anything still wanted after the window should have been copied out.
+cmd_prune() {
+  local n left
+  require_cutover; ensure_store      # prune mutates the store, so the cutover rule applies to it
+  [ -d "$RUNS" ] || return 0
+  # The depth-one probe proved nothing about the traversal deletion actually walks. Both depth-two
+  # scans suppressed stderr AND piped into `wc`, so the pipeline's status came from `wc` — always
+  # 0 — and an unreadable session directory silently disappeared from both counts, letting the
+  # command report a clean sweep over captures it never saw. Each scan now runs unpiped, with its
+  # own status checked, and counting happens afterwards on the captured text.
+  stale_dirs() {   # prints matching capture dirs; non-zero if the traversal itself failed
+    find "$RUNS" -mindepth 2 -maxdepth 2 -type d -mtime "+$RUN_RETENTION_DAYS" -print
+  }
+  count_lines() { [ -z "$1" ] && { printf '0\n'; return 0; }; printf '%s\n' "$1" | wc -l | tr -d ' '; }
+  local before after
+  before="$(stale_dirs)" || die "cannot traverse $RUNS for the retention scan — refusing to report a sweep that did not happen"
+  n="$(count_lines "$before")"
+  find "$RUNS" -mindepth 2 -maxdepth 2 -type d -mtime "+$RUN_RETENTION_DAYS" -exec rm -rf {} + 2>/dev/null
+  find "$ACTIVE" -maxdepth 1 -name '.tmp.*' -mmin +60 -delete 2>/dev/null
+  # `find -exec` swallows per-entry failures, so verify rather than assume. Claiming a deletion
+  # that did not happen is worse than reporting the leftovers.
+  after="$(stale_dirs)" || die "cannot re-traverse $RUNS to verify the sweep — treat this run as incomplete"
+  left="$(count_lines "$after")"
+  [ "$left" -eq 0 ] || die "pruned $((n - left)) of $n capture(s); $left could not be removed"
+  # `find -mtime +N` truncates to whole days, so removal happens once a capture is strictly
+  # older than N*24h — i.e. on day N+1. Said plainly rather than rounded in the message.
+  # `find -mtime +N` truncates age to whole days and requires it to EXCEED N, so removal starts
+  # at N+1 complete days — a capture aged 7d23h is not selected. Said as the threshold that
+  # actually applies, not as the configured number.
+  note "pruned $n run capture(s) aged $((RUN_RETENTION_DAYS + 1)) complete days or more"
+}
+
+usage() {
+  cat <<'USAGE'
+dstack — per-repository runtime state for the full-cycle pipeline
+
+Invoke it by ABSOLUTE PATH — "$HOME/.claude/bin/dstack" — in every command below. install.sh
+links it there and nothing adds that directory to PATH, so a bare `dstack` resolves only if you
+put it on PATH yourself, and never in a non-interactive shell. Quote document paths.
+
+  D="$HOME/.claude/bin/dstack"    # then use "$D" below; a bare `dstack` normally does not resolve
+
+  "$D" reg <doc>          claim a docs/ document for this session (fails if another owns it)
+  "$D" unreg <doc|key>    release this session's claim (idempotent); a 40-hex record key
+                          works too, for a record whose document was deleted or renamed
+  "$D" reclaim <doc>...   take over named documents from another session, explicitly
+  "$D" status             list active documents and stored run captures
+  "$D" migrate            convert a legacy .fullcycle-active; refuses anything lossy
+  "$D" run-dir [label]    create and print a capture directory for a long external run
+  "$D" rm-run <label>...  delete this session's named run captures, by exact label
+  "$D" prune              drop run captures older than the retention window
+
+Exit codes: 0 ok · 1 usage/environment · 3 ownership conflict · 4 cutover blocked
+USAGE
+}
+
+[ "$#" -gt 0 ] || { usage; exit 1; }
+cmd="$1"; shift
+# Arity and unknown-command rejection already happened at the top, before dependency and
+# repository discovery, so a usage mistake reports itself rather than the environment. Repeating
+# the counts here would just be a second copy to drift out of sync; this dispatch only routes.
+# (`--help` reaches here too — HELP_ONLY skipped discovery, not the dispatch.)
+case "$cmd" in
+  reg)      cmd_reg "$1" ;;
+  unreg)    cmd_unreg "$1" ;;
+  reclaim)  cmd_reclaim "$@" ;;
+  status)   cmd_status ;;
+  migrate)  cmd_migrate ;;
+  run-dir)  cmd_run_dir "${1:-run}" ;;
+  rm-run)   cmd_rm_run "$@" ;;
+  prune)    cmd_prune ;;
+  -h|--help|help) [ "$#" -eq 0 ] || die "usage: $PROG --help (takes no arguments)"; usage ;;
+  *)        die "unknown command '$cmd' (try: $PROG --help)" ;;
+esac

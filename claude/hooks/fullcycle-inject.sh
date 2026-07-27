@@ -1,10 +1,28 @@
 #!/bin/bash
-# UserPromptSubmit hook: inject the full-cycle directive into every user prompt,
+# UserPromptSubmit hook: nudge the full-cycle skill into play on every user prompt,
 # UNLESS the prompt contains the skip token [quick].
+#
+# WHY THIS IS SHORT. This text is prepended to EVERY user prompt, including pure questions, so
+# it is the one string in this setup whose cost scales with turn count. It used to restate the
+# entire pipeline in 1,850 bytes / 1,845 characters — a near-verbatim copy of section 0 of
+# `~/.claude/CLAUDE.md`, which is already loaded for the whole session. It is now 465 bytes /
+# 461 characters. Both units are given because they differ here (the text contains multi-byte
+# characters) and because an earlier note reported "1,857 characters", which was neither — it
+# was a byte count that also included jq's trailing newline. The duplicate bought nothing: the
+# skill body carries the real detail either way, so the standing rules were being paid for on
+# every turn to say what was already in context.
+#
+# What is left is the only thing a per-prompt injection can do that an always-loaded file
+# cannot: keep the trigger in front of the model at the moment it decides how to answer. Add
+# nothing here that CLAUDE.md or the skill already says; point at them instead.
+#
+# Honest scope on the saving: once this block is stable it sits inside the cached prefix, so on
+# a cache hit its direct cost is cache-read rate rather than full input rate. The context window
+# it occupies is real regardless, and that is the part that mattered.
 input=$(cat)
 prompt=$(printf '%s' "$input" | jq -r '.prompt // empty' 2>/dev/null)
 case "$prompt" in
   *'[quick]'*) exit 0 ;;
 esac
-ctx='[full-cycle enforced] If this request touches files — implementation, changes, bugfixes, refactors, configuration, builds — first invoke the full-cycle skill via the Skill tool and follow the whole pipeline to the end: intent capture -> security/UI·UX&DX/technical tri-axis -> per-Goal Codex research (codex-research skill: both-sides evidence; deep-research only as fallback) -> deep interview (no obvious questions) -> one Goal + milestone + PR-sized task decomposition with per-task deps/files declarations in GOAL.md -> docs/<goal>/GOAL.md + task folders -> conditional design consult -> DAG-scheduled execution (serial default; review rounds of different tasks overlap by default; worker fan-out via general-dev/frontend-dev in git worktrees only on a check-parallel.sh PARALLEL verdict, scope-checked before review and merge; INVALID declarations mean fix the decomposition) -> Red-Green-Refactor TDD -> codex-review (GPT-5.6 Sol; mandatory pre-review defect-class self-sweep with class-wide fixes; one new codex-review-<NNN>.md per round; findings carry evidence + verification, confirmed/suspected sibling sites when one root cause spans several, an optional one-line suggested direction, and, on a high/medium finding only, a shape-only sketch of at most 6 lines when that sentence cannot name the invariant; a round left with only low-severity items closes that round as approve-with-fixes; continue until genuine consensus) -> per-task + per-milestone + final Goal E2E -> final report. Communicate with the user in Korean; write all workflow artifacts and every agent-to-agent prompt/report in English. Only check a Gate-status / Goal-gate checkbox when it is actually complete (while any is unchecked in an active GOAL.md or task doc, the Stop hook blocks the turn from ending). Pure questions / lookups / conversation may skip this.'
+ctx='[full-cycle enforced] If this request touches files — implementation, change, bugfix, refactor, configuration, build — invoke the `full-cycle` skill via the Skill tool BEFORE doing anything else, and follow it to the end. The skill carries the pipeline; CLAUDE.md carries the standing rules (Korean to the user, English artifacts, frontend delegation, and never ticking a gate box that is not actually done). Pure questions, lookups, and conversation skip this.'
 jq -n --arg c "$ctx" '{hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:$c}}'

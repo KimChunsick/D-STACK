@@ -1,0 +1,100 @@
+RESEARCH BRIEF — consolidating agent-pipeline runtime state into a per-repo `.dstack/`
+directory, with a `dstack` CLI, to fix a Stop-hook wait deadlock and cut token overhead.
+
+## Context (what exists today)
+
+A personal Claude Code / Codex configuration repo drives a mandatory delivery pipeline
+("full-cycle") in every target repository. Its runtime state today is a handful of ad-hoc
+dotfiles written at the target repo root:
+
+- `.fullcycle-active` — a line-oriented registry, one line per active work document,
+  formatted `<claude-session-id><TAB><docpath>`. A bash `Stop` hook reads it and blocks the
+  turn from ending while any registered document still has an unchecked gate checkbox.
+- `.fullcycle-active.lock` — a `mkdir`-based mutex serializing read-modify-write on the
+  registry (append on register, grep-v + temp-file + mv on deregister).
+- Stray `.fullcycle-active.tmp` left behind by an interrupted deregistration.
+
+Observed problems driving this work:
+
+1. **Stop-hook wait deadlock.** Long external runs (a `codex exec` adversarial review round
+   takes 15-25 minutes) are supposed to run as background tasks; the Claude Code harness
+   re-invokes the agent when a background task exits. But the Stop hook blocks the turn from
+   ending unconditionally, so the turn can never end, so the background-completion path is
+   unreachable. The agent instead emits a one-line status, gets blocked, emits it again, and
+   spins — re-sending the entire conversation context on every cycle. Observed reaching
+   "round 018" of a review loop this way.
+2. **Concurrent sessions collide.** Several terminal tabs run the pipeline in one repository.
+   File-overlap checking exists but only within a single Goal's declared task graph; two Goals
+   in two tabs coordinate nothing. Database migration files (sequentially numbered) collide.
+3. **Token waste from long sessions.** A `UserPromptSubmit` hook injects ~1,857 characters of
+   pipeline instructions into *every* user prompt, largely duplicating a always-loaded
+   instruction file. Full reviewer stdout is `cat`-ed into the main context every round.
+
+## Proposed change (what to research for and against)
+
+Replace the ad-hoc dotfiles with one gitignored per-repo directory and a small CLI:
+
+```
+.dstack/
+  active/<sha1-of-docpath>          # content: session-id \n docpath
+  claims/<session-id>/<sha1>        # content: path-prefix \n docpath
+  waiting/<pid>                     # in-flight external run ticket
+  sessions/<session-id>             # heartbeat, mtime only
+  runs/<session-id>/                # captured stdin/stdout of external runs
+```
+
+Key design bets to test:
+
+- **Directory-of-files instead of a line-oriented file**, so register = create one file and
+  deregister = remove one file. This is meant to eliminate the mutex entirely (no
+  read-modify-write, no temp file, no stranded lock directory) because concurrent writers
+  never touch the same path.
+- **A `dstack` CLI** (`reg`, `unreg`, `status`, `wait begin|end`, `claim-check`, `reclaim`,
+  `migrate`) replacing ~25 lines of bash currently embedded in a skill Markdown file that the
+  model must reproduce correctly on every run.
+- **A wait ticket**: a live external run writes `.dstack/waiting/<pid>`; the Stop hook permits
+  the turn to end while a ticket's PID is alive, and blocks again once it dies without the
+  work being completed.
+- **Auto-appending `.dstack/` to the target repo's `.gitignore`** on first use.
+- **A `PreToolUse` hook on file-writing tools** that rejects a write into a path prefix
+  claimed by a different, still-live session.
+
+## What to gather
+
+1. Claude Code hook reference, current: the exact stdin fields a `Stop` hook receives (is
+   there a `stop_hook_active` field today, or only `last_assistant_message`?); the documented
+   output shapes for `Stop` and for `PreToolUse` (how a `PreToolUse` hook denies a tool call);
+   whether hook matchers can target `Edit`/`Write`/`NotebookEdit`; any documented performance
+   guidance about hooks that run on every tool call.
+2. Claude Code background task semantics: does a backgrounded Bash command reliably re-invoke
+   the agent on completion, and is that path blocked when a `Stop` hook returns
+   `decision: "block"`? Any documented or community-reported pattern for "let the turn end
+   while an external run finishes."
+3. POSIX / macOS APFS atomicity facts: is create-file-then-write safe for lock-free
+   concurrent registries, or is same-directory temp + `rename(2)` required? What are the real
+   failure modes of a directory-as-a-set state store (partial writes read by a concurrent
+   reader, `readdir` during unlink, empty-directory cleanup races)?
+4. Prior art for per-repo tool state directories (`.git/`, `.terraform/`, `.venv`,
+   `.pytest_cache`, `.ruff_cache`, editor `.idea/`): naming conventions, whether such tools
+   append to a repo's tracked `.gitignore` or use `.git/info/exclude`, and reported problems
+   with each choice (team repos, re-clone, tool-name leakage).
+5. Evidence on file-naming for database migrations: sequential integers vs timestamps vs
+   ULID-style identifiers, specifically for teams running concurrent branches. Which do major
+   migration tools recommend and why; documented failure modes of each.
+6. Prompt-caching interaction: when a per-prompt injected context block changes or shrinks,
+   what actually happens to cost in Anthropic's prompt-caching model? Does trimming a
+   per-user-message injected block yield proportional savings, or is it largely absorbed by
+   cache reuse? Cite Anthropic's caching documentation.
+
+## Actively seek the case AGAINST
+
+- Is a state directory plus a CLI over-engineering for a single-maintainer setup with a
+  handful of concurrent terminal tabs? What is the argument for keeping one flat file?
+- Does a `PreToolUse` hook firing on every file write cost enough latency to be a bad trade
+  against occasional manual merge conflicts?
+- Is a PID-based wait ticket sound? What breaks when a PID is recycled, when the process is
+  killed with SIGKILL leaving the ticket behind, or when the run is on a remote machine?
+- Is weakening a Stop gate (allowing the turn to end during a wait, or after N repeated
+  blocks) a meaningful loss of enforcement, and are there documented alternatives that keep
+  enforcement while letting the turn end?
+- Are there arguments that auto-editing a repository's `.gitignore` from a tool is harmful?

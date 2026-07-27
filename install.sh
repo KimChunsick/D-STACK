@@ -28,6 +28,7 @@ claude/skills/codex-review|.claude/skills/codex-review|link
 claude/skills/codex-research|.claude/skills/codex-research|link
 claude/agents/frontend-dev.md|.claude/agents/frontend-dev.md|link
 claude/agents/general-dev.md|.claude/agents/general-dev.md|link
+claude/bin/dstack|.claude/bin/dstack|link
 codex/AGENTS.md|.codex/AGENTS.md|link
 codex/instructions.md|.codex/instructions.md|link
 codex/rules/default.rules|.codex/rules/default.rules|link
