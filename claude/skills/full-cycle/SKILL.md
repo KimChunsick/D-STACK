@@ -27,6 +27,39 @@ below depends on that — a turn that could never end could never be re-entered 
 external run finishes, which is the failure this whole arrangement exists to remove. When
 work is genuinely incomplete and you are waiting on something, end the turn.
 
+## The pipeline runs unattended after P4
+
+`scheduling.autonomy` is the rule; this is why it exists and how to read it.
+
+One Goal in, a finished Goal out. P1–P4 are the conversation, and the P4 interview is where the
+questions get asked — all of them, including the ones that are only *probably* needed later. After
+it, the pipeline runs to completion with nobody watching: decomposition, implementation, review
+rounds, E2E, final report.
+
+That only works if two failure modes are named and refused. The first is the mechanical wait — a
+long external run that nothing wakes you from — and `waits.external` is the answer: the launch and
+the wait are one harness-tracked call, so the completion notification re-enters the session by
+itself. The second is subtler and more common: **ending a turn on a question**. A question is
+indistinguishable from a crash to someone who is not at the keyboard, and most of them are not real
+choices — they are a preference for confirmation over judgment. `autonomy.stops` lists what
+genuinely needs a person; `autonomy.internal-recoveries` lists the things that *look* like stops and
+are not, because each has a defined next move. Everything else: pick the reading a careful colleague
+would, write the assumption into the work doc where the review will see it, and continue.
+
+Unattended is not unsupervised, and the difference is enforcement rather than attendance. Every
+gate, the adversarial review loop and its escalations, the scope checks and the E2E captures all
+still run. That is also why **P6 registration is fail-closed**: with nobody reading the transcript,
+an unregistered document means the Stop hook holds no record and every gate downstream enforces
+nothing, so the run finishes looking complete. A warning was an acceptable answer when a human was
+watching; it is not one now.
+
+The guarantee has an honest edge, and it is in `autonomy.stops`: if the wake mechanism itself is
+gone — background tasks disabled, or a resumed session that did not restore its task — nothing will
+wake the session, and continuing silently means stalling silently. Say so and stop.
+
+Notifications go out at the branch points a person would actually act on, via `PushNotification`,
+best effort — see `autonomy.notify`. Not a progress feed, and not one per review round.
+
 ## Language boundary
 
 Communicate directly with the user in Korean. Write all workflow artifacts in English —
@@ -364,15 +397,143 @@ scheduling:
       and post-seal bundle changes.
   waits:
     external: long external runs (codex research/review rounds, CI) keep every doc
-      registered — background the run, END THE TURN, and act on the completion
-      notification. The gate states incomplete work once per user turn and then lets the
-      turn end, precisely so this path works; a turn that cannot end also cannot be
-      re-invoked on background completion. Never deregister to end the turn, never arm a
-      foreground wait loop, and never emit "still running" turns — each one re-sends the
-      entire conversation and learns nothing.
+      registered. LAUNCH AND WAIT ARE ONE ACTION, and the action is named — ONE background
+      Bash call whose BLOCKING TERMINAL STEP is
+      `"$HOME/.claude/bin/dstack" run <label> [--stdin <file>] -- <cmd...>`, made with
+      `run_in_background` set to true. Setup BEFORE that step is fine and the recipes need
+      it — `mktemp -d`, a cleanup trap, path assembly, input validation. What is forbidden
+      is anything AFTER it whose result you need, because THAT STEP does not return until
+      the external command has finished, so that work is work you are waiting on. Be exact
+      about which thing blocks — the Bash tool call returns immediately, which is what
+      `run_in_background` means, and it is the background task that stays alive; a line
+      after `dstack run` inside it simply does not run until the round is over. Saying
+      "the call blocks" reads as a stuck harness and invites the hand-rolled watcher this
+      replaced. (This used to read "nothing else in that call", which no recipe in this
+      pipeline can satisfy and both of them violate.) `dstack run` blocks until
+      the command finishes, publishes its status, and prints one `DONE <label> exit=<n>
+      dir=<path>` line; the harness's completion notification for that background call IS
+      the resume signal. There is NO watcher to arm afterwards — that separate late step
+      is the one that used to get skipped, or armed with a 5-minute default against a
+      25-minute job. Then END THE TURN. The gate states incomplete work once per user turn
+      and then lets the turn end, precisely so this path works; a turn that cannot end
+      also cannot be re-invoked on background completion. Never deregister to end the
+      turn, never arm a foreground wait loop, never emit "still running" turns (each
+      re-sends the entire conversation and learns nothing), and never DETACH the run — a
+      detached process survives but is invisible to the harness, so it can never notify at
+      all, which is the failure this replaced.
+    external-residuals: accepted, and stated no wider than they are true.
+      Completion re-invocation is observed installed-client behaviour (2.1.220) and every
+      run of this pipeline has done it, but it is NOT a documented public guarantee —
+      revalidate on upgrade. `--resume`/`--continue` restore no background task, so a
+      session that dies mid-run loses the automatic pickup (the run itself still finishes
+      and its capture is on disk). `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` removes the
+      mechanism outright — if it is set, this contract does not hold and the pipeline is
+      back to manual. A main-session background shell may also be reaped under OS memory
+      pressure once the session has been idle 30 minutes with no turn or subagent running.
+      `dstack run` tears its child's process group down on a normal exit and on the signals
+      it traps; `SIGKILL` and `SIGPROF` can orphan the child, so check a capture with no
+      terminal record for a live pid or group before relaunching.
+      `<run-dir>/exit` IS THE RUN'S STATUS. The notification's status is a hint, and it can
+      disagree. Measured in bash and zsh both — a signal delivered to the launching shell
+      while `dstack run` is in the foreground does NOT cancel it, because the shell defers
+      a pending trap until the foreground command returns. The run finishes and the wrapper
+      then exits 143. Treat that as failure and you discard a COMPLETED run and pay for
+      another. The launching shell's signal handlers therefore terminate without cleaning
+      up, since the same deferral means they would otherwise delete the scratch directory a
+      live child is running in. Cancelling a run in flight is not something the wrapper can
+      do; stop the recorded process group and let the capture record what happened.
+      Scratch cleanup is CONDITIONAL on `<run-dir>/exit` existing, for the same reason —
+      `dstack run` publishes that file only after confirming the child's process group is
+      gone, so it is the quiescence proof. Cleaning unconditionally on EXIT deletes a live
+      `codex exec`'s cwd whenever `dstack` itself died to something untrappable.
+      THIS TABLE OVERRIDES ANY PER-SKILL RETRY TEXT. A skill that says to re-run every
+      nonzero result is subordinate to `internal-recoveries` and `stops` above — retry only
+      a DIAGNOSED transient failure, and never retry a missing dependency or a rejected
+      model pin, which are stops.
     user-input: to pause for a decision only the user can make, `"$HOME/.claude/bin/dstack" unreg` that doc (the CLI is at `$HOME/.claude/bin/dstack`; nothing puts it on PATH)
       and re-register on resume. This is a manual escape hatch and is honestly a hole in
       the tripwire while it is open — use it for user input, nothing else.
+  autonomy:
+    rule: CONVERSATION THROUGH P4, UNATTENDED AFTER IT. P1-P4 are a dialogue and the P4
+      interview is where every question gets asked. From P5 to the final report the
+      pipeline runs to completion with NO human input — decompose, implement, review,
+      E2E, close — and it does not end a turn on a question it could have asked at P4.
+      Assume nobody is watching, because the whole point of `waits.external` is that
+      nobody has to be.
+    internal-recoveries: NOT stops. These look like failures and are handled without a
+      human, because each has a defined next move. A `stops` entry always WINS over this
+      list — an unavailable pinned review model, for instance, surfaces as a nonzero run
+      AND as a required dependency that is gone, and the second is what governs.
+      - a declaration the checker calls INVALID → return to P5-decompose and fix it; a
+        broken graph is repaired, never worked around by going serial
+      - `dstack reg` refused because a legacy `.fullcycle-active` is present → `migrate`,
+        then re-register. `migrate` refuses anything it cannot represent losslessly, so it
+        cannot silently lose a record.
+      - a nonzero external run whose cause is DIAGNOSED and transient — the round was
+        killed, the capture is empty, the process is confirmed gone → discard it and
+        re-run under the next label, after checking nothing is still alive in the old one.
+        An undiagnosed nonzero run is not automatically retried — read `err.txt` first, and
+        if the cause is a missing dependency or a rejected pin, that is a stop.
+      - `check-registration.sh` exit 1 naming a document THIS SESSION registered that must
+        not be — a closed unit still registered, or one at the wrong depth for the declared
+        granularity → `unreg` that document and re-run the check. This is a genuine
+        recovery and not a disguised `reclaim`; the record is this session's own, so
+        releasing it takes nothing from anybody and the gate it was holding open is a gate
+        over a document no phase governs. It was missing, and its absence was a dead end
+        under `set -e` with no branch to take.
+      - `check-registration.sh` exit 1 naming a STRUCTURAL mismatch — declared but not
+        scaffolded, scaffolded but not declared, duplicate ids, a folder with no readable
+        id → return to P6-scaffold when the docs tree is wrong, or to P5-decompose when the
+        declaration is. Do not register around it.
+      - `check-registration.sh` exit 2 is NOT here. It means the check could not run at all
+        (no granularity line, an unreadable GOAL.md, `dstack` missing), and a check that
+        did not run must never be treated as one that found nothing.
+      # `reclaim` is deliberately NOT here — see stops.
+    stops: the ONLY things that end the turn waiting for a person. This block adds none
+      that did not already exist —
+      - a genuine product or risk choice (ask in Korean, record the decision in English,
+        resume; `waits.user-input` is how the doc is parked meanwhile)
+      - a concrete HIGH finding still open when the codex-review loop closes
+      - anything the user has explicitly asked to approve
+      - A REQUIRED DEPENDENCY IS GONE — the pinned review model is unavailable, `codex` is
+        not installed, `jq`/`shasum` are missing. These surface as a nonzero run and must
+        NOT be retried into it; retrying a missing dependency burns rounds and changes
+        nothing. Name what is missing and stop.
+      - `dstack reg` FAILED AND THE CAUSE IS NOT `migrate`-able — an unusable session id
+        (empty or malformed; `reg` returns 1), a registry that cannot be written, a
+        `status` line that never shows the document as `(this session)`. There is no
+        autonomous repair for any of these and continuing means running ungated. Name the
+        cause and stop.
+      - `dstack reg` REFUSED BECAUSE ANOTHER SESSION OWNS THE DOCUMENT. `reclaim` is the
+        command for it and it must not be run autonomously — it has no liveness signal, so
+        it cannot tell a crashed session from a working one. It simply replaces the owner,
+        and the Stop hook then SKIPS records owned by another session, so reclaiming from a
+        live session silently un-gates that session's work while both keep going. This
+        used to carve out a "provably orphaned" handoff, and that carve-out was empty —
+        `reg` returns 0 for a document THIS session already owns, so the one case it named
+        is a state `reg` never reaches, and every remaining case is unprovable by
+        construction. The other half of it, "or the user says so", is not autonomy at all;
+        it is the user answering the question. So there is no autonomous path. Ask.
+      - THE MECHANISM ITSELF IS UNAVAILABLE — `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` is
+        set, or the session died and was resumed so its background task was not restored.
+        There is no autonomous transition out of these — nothing will wake the session, so
+        continuing silently means stalling silently. Say which one it is, say the pipeline
+        is manual until it is fixed, and stop. This is the honest edge of the unattended
+        guarantee rather than an exception to it.
+      A question that is merely convenient to ask is not a stop. Pick the reading a
+      careful colleague would, state the assumption in the work doc, and keep going.
+    bounds: none beyond what the review loop already carries — no token ceiling, no
+      wall-clock ceiling, no extra round cap. The codex-review termination rules (finding
+      stream, non-convergence, round cap) are the bound, by recorded user decision.
+    notify: the mechanism is the `PushNotification` tool, and it is BEST EFFORT — the
+      installed client delivers a terminal notification, and a mobile push only when
+      Remote Control is connected, so it can legitimately report not-sent. A non-delivery
+      is not a failure to retry or to stop on; the work docs remain the durable record and
+      the user reads them. Send at REAL branch points, not on a timer — a milestone
+      closed, blocked on one of the `stops` above, the Goal complete. A sealed review round
+      is NOT one — units run three to five rounds each and one notification per round is the
+      noise this rule exists to prevent. Notify when the thing a person would act on has
+      actually changed.
 ```
 
 ## Concurrent streams in one repository
@@ -487,15 +648,89 @@ orchestrator-only and goes through the `dstack` CLI — never hand-rolled:
 `PATH`** — so invoke it by absolute path. A bare `dstack` works only if the user happens to have
 added it, and it fails silently-ish in exactly the non-interactive contexts where a shell rc
 file never runs:
+**Registration is FAIL-CLOSED and it is a P6 gate.** A failed `reg` used to print a warning and let
+the pipeline continue, which was survivable only because a human was reading the transcript. It is
+not survivable now: `scheduling.autonomy` says nobody is watching, so an unregistered document means
+the Stop hook holds no record, every gate downstream enforces nothing, and the run completes looking
+finished.
+
+**When `reg` fails, `scheduling.autonomy` decides what happens — this section names no outcomes of
+its own.** That is deliberate and it is the third repair of the same defect: prose here that also
+routed failures gave several states two answers, and one of those answers was to `reclaim` a
+document another session owns, which silently un-gates that session. Read the cause, find it in
+`internal-recoveries` or in `stops`, and follow that.
+**Run this, and nothing else, at P6.** The proof is a script, not a fence here — it takes the
+Goal's declared granularity and task identities from `GOAL.md`, derives the expected review-unit
+set, and compares it against `dstack status` including ownership.
 ```bash
-DS="$HOME/.claude/bin/dstack"
-"$DS" reg docs/<goal>/GOAL.md               || echo "WARN: failed — Goal is UNGATED" >&2
-"$DS" reg docs/<goal>/<review-unit>/task.md || echo "WARN: failed — unit is UNGATED" >&2
-"$DS" status                   # what is registered, who owns it, what runs are stored
-"$DS" unreg <doc>              # release (the pause escape hatch)
-"$DS" reclaim <doc>...         # adopt another session's record, explicitly
-"$DS" migrate                  # one-time cutover from a legacy .fullcycle-active
+set -e
+DS="$HOME/.claude/bin/dstack"; CR="$HOME/.claude/skills/full-cycle/check-registration.sh"
+GOAL='<goal>'
+case "$GOAL" in ''|.|..|*/*|.*|*[!A-Za-z0-9_-]*) echo "refusing: '$GOAL' is not a plain slug"; exit 1 ;; esac
+G="docs/$GOAL"
+LIST="$(mktemp)"
+bash "$CR" --list "$G" > "$LIST"
+while IFS= read -r d; do
+  [ -n "$d" ] || continue
+  "$DS" reg "$d" || { echo "refusing: reg failed for $d"; rm -f "$LIST"; exit 1; }
+done < "$LIST"
+rm -f "$LIST"
+bash "$CR" "$G"
 ```
+**The SET is read, never written here — and so is the depth.** Three versions of this loop, three
+different ways to register the wrong thing. A literal `<Mn>/<NN-task>/task.md` glob registered
+task-depth documents even for a milestone-granularity Goal, which is the misregistration the table
+above warns about, baked into the recipe that implements it. Replacing it with a depth-wide
+`find … -exec "$DS" reg {} \;` fixed the level and broke two other things: `find -exec cmd \;` does
+NOT propagate `cmd`'s status — measured, `find . -exec false {} \;` exits 0 — so a failed `reg` was
+invisible while every later document kept being claimed; and registering everything at a depth
+means undeclared folders and already-closed units get registered BEFORE anything classifies them,
+which is also why "re-running the fence is safe" was false.
+
+`--list` emits exactly the documents that must be registered: `GOAL.md`, plus every unit that is
+declared in GOAL.md AND scaffolded AND still has an unchecked gate box. Undeclared and closed units
+are excluded by construction, so the loop cannot create the state the checker is about to refuse,
+and each `reg` status is checked on its own. `reg` is idempotent for a document this session already
+owns, so re-running IS safe now.
+
+**The slug check is defence in depth against a mistake, not a boundary.** `<goal>` is a value the
+orchestrator substitutes into shell source, so anything it can write, it can write — the same
+conclusion `codex-research` Step 2 reached after three rounds looking for a quoting form that fixes
+it. There is none. What the check catches is real and has happened: a `..` component, or a
+metacharacter that makes the rest of the line a second command. If `<goal>` ever comes from a user
+string, a file, or a tool result, this recipe is the wrong shape and no edit to the quoting saves
+it; the value must arrive as data in argv or the environment.
+
+`check-registration.sh` exits 0 with a one-line confirmation, 1 with every reason it blocked, and
+**2 when it could not run at all** — so "the check did not run" is never mistaken for "the check
+passed". It also refuses a closed unit that is still registered, and a document registered at the
+wrong depth for the declared granularity.
+
+**This used to be thirty lines of bash written out here, and it is worth knowing why it moved.**
+Five review rounds, and every repair introduced the next defect: a failure that printed a warning
+and continued; `set -e` added above a reference list so the success path ran `unreg`; a hand-listed
+array that was simultaneously the assertion and its own proof; a `find` derivation that compared
+how MANY units existed and never WHICH; a loop whose success path returned 1 so the trailing
+`|| exit 1` aborted the fence silently. A deterministic transform belongs in code that can be run
+and checked, not in prose the model must re-execute correctly every round — which is the standing
+rule this file spent five rounds demonstrating.
+
+The other subcommands are a REFERENCE, not a continuation of the block above — running them in
+sequence after a successful registration would `unreg` the document that was just registered, which
+is what the first version of this fence did. Invoke one deliberately when its situation arises:
+```
+"$DS" status                  # what is registered, who owns it, what runs are stored
+"$DS" unreg <doc>             # release — the pause escape hatch, for user input only
+"$DS" reclaim <doc>...        # adopt another session's record. NOT automatic: it has no
+                              # liveness signal, so it cannot tell a crashed session from a
+                              # live one, and taking a live session's record silently
+                              # un-gates that session. See `autonomy.stops`.
+"$DS" migrate                 # one-time cutover from a legacy .fullcycle-active
+```
+When `reg` fails, read why before doing anything, and route it through `scheduling.autonomy` rather
+than deciding here — that table is the single source and this paragraph does not restate its
+outcomes. A legacy `.fullcycle-active`, foreign ownership, and an unusable session id are three
+different situations with three different answers.
 This used to be ~25 lines of bash written out here for the model to reproduce each run, and
 that was a mistake twice over. It stranded a `.fullcycle-active.tmp` at one repo root when an
 interrupted deregistration left its temp file behind, and — worse — **the skill loader
@@ -536,8 +771,19 @@ fixes to", not "every subagent". Either way each remaining fix falls back to the
 cold rebrief. The handoff happens AFTER
 the unit closes, which is also when its worktrees may be cleaned. These two mechanisms —
 resumable workers and a clean session boundary — were designed independently and do fight; the
-resolution is ordering, not cleverness. So `/clear` then resume with `"$HOME/.claude/bin/dstack" status`, `"$HOME/.claude/bin/dstack" reclaim` on the records the id rotation
-orphaned, and a read of `GOAL.md`. Prefer this to letting one session run a multi-day Goal: the
+resolution is ordering, not cleverness. So `/clear`, then resume with
+`"$HOME/.claude/bin/dstack" status` and a read of `GOAL.md`.
+
+**The records the id rotation left behind need `reclaim`, and that is a CONFIRMATION, not an
+autonomous step.** This section used to just say to run it, which gave one state two rules — the
+stop table forbids autonomous `reclaim` because there is no liveness signal, and this said to do it.
+The contradiction is not resolvable by ranking the two: nothing here can distinguish "records my own
+previous session left" from "records a live parallel session owns", and reclaiming the second
+un-gates that session's work while both keep running. What makes this case different is not
+provability but PRESENCE — a person just typed `/clear`, so the one thing `dstack` cannot supply is
+available for free. List what you intend to reclaim, let them confirm, then reclaim. One
+confirmation at a milestone boundary where a human is already there is not a cost worth trading a
+silent un-gating for. Prefer this to letting one session run a multi-day Goal: the
 context grows monotonically and every later turn pays for the whole history of the earlier ones.
 
 **P7-tdd.** *Design consult (conditional, before any code):* if the task hits any
@@ -567,9 +813,18 @@ bundle. This matters at milestone granularity, where several tasks share ONE uni
 it as "different tasks may overlap" would let two rounds of the same unit allocate the same
 `codex-review-<NNN>.md` filename — the allocator is check-then-write and cannot survive
 that. Continue until the latest round reaches `agreed` or `resolved`; a real product/risk
-choice goes to the user in Korean (user-input wait) and the review resumes after. When the
-round budget is reached with blockers still open, escalate to the user rather than
-downgrading a finding or grinding on. Then tick the Codex box in the unit's `task.md`.
+choice goes to the user in Korean (user-input wait) and the review resumes after. Then tick
+the Codex box in the unit's `task.md`.
+
+**What happens when the round budget runs out is `codex-review`'s §4, not a second rule
+here.** This used to say "escalate to the user when the budget is reached with blockers
+still open", and `blockers` means high AND medium — so it demanded a human for exactly the
+case §4 and `autonomy.stops` both close without one. Two transitions out of the same state
+is how an unattended run stalls on a medium nobody needs to see. The single rule is §4's —
+closure writes every open finding into the unit's `task.md` as a recorded follow-up with
+its severity and evidence, seals `Consensus: resolved`, and names them in the final report;
+a concrete HIGH still open is the one thing that escalates. Never downgrade a finding to
+fit under that, and never grind past the budget to avoid recording one.
 
 *Findings attribution — who FIXES a finding once implementation lives in a worker.* The
 orchestrator always OWNS the review: it assembles the bundle, records the round, judges the

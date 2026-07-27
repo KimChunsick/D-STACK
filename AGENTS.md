@@ -89,6 +89,13 @@ shell.
   **explicitly** (there is no liveness signal, so it never sweeps); `status` lists everything;
   `migrate` converts a legacy `.fullcycle-active` and **refuses** anything it cannot represent
   losslessly.
+- `"$HOME/.claude/bin/dstack" run <label> [--stdin <file>] -- <cmd>…` runs ONE long external command
+  (a codex round, CI) inside its capture directory and **blocks until it finishes**, publishing the
+  command's status to `exit`. Start it from a background call and that call's completion
+  notification is what resumes the session — there is no separate watcher to arm, which is the step
+  that used to get skipped and leave a finished round sitting unread. It deliberately does **not**
+  detach: a detached process survives but is invisible to the harness, so it could never notify.
+  Exit 6 means the launched command failed; its exact status is on the `DONE` line and in `exit`.
 - Being gitignored is not confidentiality. Backups, sync folders, and snapshots all see
   `runs/`, which is why it is mode 700 and short-lived.
 - Requires `jq`, `git`, and `shasum`/`sha1sum` (bash cannot compute SHA-1 itself).

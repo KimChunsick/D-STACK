@@ -1,0 +1,27 @@
+# Research brief — Claude Code background task lifetime
+
+One narrow question, left open as "unverified" by this Goal's main research artifact.
+
+A delivery pipeline running inside Claude Code (CLI client 2.1.220, macOS) launches 3-25 minute
+external commands with the Bash tool's `run_in_background`, and depends on the completion
+notification re-invoking the session with no human input. Measured locally: such a command survives
+ordinary turn boundaries and ran 25 minutes across four of them, notifying on exit.
+
+What is NOT known, and is the question:
+
+1. What do Anthropic's own docs say about the LIFETIME of an interactive Claude Code background
+   Bash task or Monitor — any documented maximum duration, idle timeout, or condition that ends it
+   early, separate from `--resume`/`--continue` (which are documented as not restoring them)?
+2. What happens to a running background Bash task or Monitor when the session AUTO-COMPACTS its
+   context? Is it killed, is it preserved, is the pending completion notification lost? The
+   `PreCompact`/`PostCompact` hooks are documented; the background-task interaction is what is
+   unclear.
+3. Is completion re-invocation on background-command exit a DOCUMENTED guarantee anywhere, or only
+   observed behaviour? Quote the doc if it exists.
+4. Any documented way to make an idle interactive session resume programmatically, beyond
+   background-task notifications, Monitor events, scheduled tasks, Channels, and the `asyncRewake`
+   hook exit code 2.
+
+Prefer primary Anthropic documentation and the installed client's own behaviour over blog posts.
+Where nothing authoritative exists, say so plainly — "undocumented" is a useful answer here and is
+better than an inferred one. Distinguish documented from community-observed for every claim.

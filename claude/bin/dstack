@@ -56,13 +56,17 @@ case "${1:-}" in -h|--help|help) HELP_ONLY=1 ;; *) HELP_ONLY=0 ;; esac
 # is knowable from the argument vector alone; nothing about the environment can change it.
 if [ "$HELP_ONLY" -eq 0 ]; then
   case "${1:-}" in
-    '')       printf '%s: usage: %s <reg|unreg|reclaim|status|migrate|run-dir|rm-run|prune> [args]  (--help for detail)\n' "$PROG" "$PROG" >&2; exit 1 ;;
+    '')       printf '%s: usage: %s <reg|unreg|reclaim|status|migrate|run-dir|run|rm-run|prune> [args]  (--help for detail)\n' "$PROG" "$PROG" >&2; exit 1 ;;
     reg)      [ "$#" -eq 2 ] || die "usage: $PROG reg <doc>" ;;
     unreg)    [ "$#" -eq 2 ] || die "usage: $PROG unreg <doc>" ;;
     reclaim)  [ "$#" -ge 2 ] || die "usage: $PROG reclaim <doc>..." ;;
     status)   [ "$#" -eq 1 ] || die "usage: $PROG status (takes no arguments)" ;;
     migrate)  [ "$#" -eq 1 ] || die "usage: $PROG migrate (takes no arguments)" ;;
     run-dir)  [ "$#" -le 2 ] || die "usage: $PROG run-dir [label]" ;;
+    # The shortest legal form is `run <label> -- <cmd>`, which is 4 words including the
+    # subcommand. Everything finer (the `--stdin` pair, the `--` separator, an empty command)
+    # is checked in cmd_run, where the argument SHAPE is known rather than just its count.
+    run)      [ "$#" -ge 4 ] || die "usage: $PROG run <label> [--stdin <file>] -- <cmd> [args...]" ;;
     rm-run)   [ "$#" -ge 2 ] || die "usage: $PROG rm-run <label>..." ;;
     prune)    [ "$#" -eq 1 ] || die "usage: $PROG prune (takes no arguments)" ;;
     *)        die "unknown command '${1}' — try '$PROG --help'" ;;
@@ -809,13 +813,18 @@ EOF
   note "migrated $n record(s); legacy file archived as ${arch##*/}"
 }
 
-# Capture storage for a long external run. Each run gets its own directory, so one session can
-# hold several without them overwriting each other. Mode 700 because gitignored is not private.
-cmd_run_dir() {
-  local label d n
-  require_sid; require_cutover; ensure_store
-  label="${1:-run}"
-  case "$label" in
+# One label grammar, one place. `run` builds `runs/<sid>/<label>` from the caller's string before
+# it can know whether the directory already exists, so it has to validate FIRST — and a second
+# hand-written copy of these rules is exactly the kind of drift this file keeps paying for
+# elsewhere. (`rm-run` keeps its own copy because its messages name the label being deleted.)
+require_label() {
+  case "$1" in
+    # EMPTY FIRST. None of the patterns below matches the empty string — `*[!…]*` needs a
+    # character, `.*` needs a literal dot — so an empty label sailed through and `run` then built
+    # `runs/<sid>/`, putting a launch claim and capture files in the SESSION root, where `rm-run`
+    # (which rejects '' separately) could never address them. `run-dir` never saw this because it
+    # defaults its argument; `run` passes the caller's string straight through.
+    '') die "run label must not be empty" ;;
     *[!A-Za-z0-9_.-]*) die "run label must be [A-Za-z0-9_.-]+" ;;
     # `.` and `..` pass the character class but resolve to runs/<sid> and runs/ — sharing every
     # capture and sitting outside the depth the retention scan walks, so they would never be
@@ -824,6 +833,16 @@ cmd_run_dir() {
     # A dot-prefixed label creates a capture `status` never lists (it globs non-hidden entries).
     .*) die "run label must not start with a dot — it would be invisible to \"$HOME/.claude/bin/$PROG\" status" ;;
   esac
+  return 0
+}
+
+# Capture storage for a long external run. Each run gets its own directory, so one session can
+# hold several without them overwriting each other. Mode 700 because gitignored is not private.
+cmd_run_dir() {
+  local label d n
+  require_sid; require_cutover; ensure_store
+  label="${1:-run}"
+  require_label "$label"
   # Each run gets its OWN directory: reusing one for a repeated label mixes two rounds' bundles
   # and resets the mtime the retention window is measured from. But a taken label REFUSES rather
   # than silently allocating a variant — quietly handing back a different path than the caller
@@ -860,6 +879,284 @@ cmd_run_dir() {
   printf '%s\n' "$d"
 }
 
+# Run ONE long external command and block until it finishes, so that a single harness-tracked
+# background call is the whole mechanism: that call's completion notification IS the signal to
+# resume, and there is no second step to forget.
+#
+# WHY THIS EXISTS. The pipeline's review and research rounds take 3-25 minutes. The recipe used to
+# be: allocate a directory, assemble a bundle, write a wrapper script, launch it DETACHED into its
+# own process session, and THEN — as a separate, later step in a 600-line Markdown file — hand-arm
+# a background watcher on a sentinel file, with a non-default timeout because the watcher's default
+# is 5 minutes against a 25-minute job. When that last step was skipped, or armed with the default,
+# nothing ever notified the session and the pipeline sat idle until a human typed. That is the bug
+# this subcommand exists to make unreachable.
+#
+# NOT DETACHED, deliberately, reversing an earlier decision in this pipeline. Detaching keeps the
+# round alive when the session dies — but a detached process is invisible to the harness, so it can
+# never notify, and Claude Code does not restore background tasks on `--resume`, so no recovery
+# path exists for the orphan to be picked up by. Detaching therefore bought "the work is not lost"
+# at the cost of the exact property this command exists for, plus a pid-file protocol whose races a
+# design review took apart: a grace period that calls a slow-starting child a failed launch,
+# `kill -0` against a recycled pid, and a dead wrapper proving nothing about its child. Running the
+# command as a DIRECT CHILD makes its status exact and that whole class unreachable.
+# TEARDOWN IS EXPLICIT, and the first draft got this wrong in a way review caught: it ASSERTED
+# that a killed supervisor takes its child with it. It does not — signalling the dstack process
+# alone leaves `codex exec` running and orphaned. So the child is launched into its own process
+# group and that group is signalled from a trap on every catchable exit.
+# ACCEPTED RESIDUAL: SIGKILL cannot be trapped. An orphan therefore remains possible, which is why
+# the child's pid is recorded in the claim and `rm-run` refuses to delete a capture while EITHER
+# the supervisor or the launched process is still alive — a `kill -9`ed run leaves its evidence
+# intact rather than being deleted out from under a process still writing to it.
+#
+# The detached form was not a mistake when it was adopted — it followed two rounds observed dying
+# at turn end. That observation no longer holds on this client: measured directly, a harness-
+# tracked background command survives the turn boundary and was still running past 20 minutes.
+# That measurement is what makes the simpler shape available, and it is the dependency to re-check
+# if this ever regresses.
+# Signal handler for `run`. Installed BEFORE the child is forked and held until the terminal record
+# is published — review round 002 found both ends open in the first repair: a signal between the
+# fork and the trap install killed the supervisor with its child orphaned, and a signal after the
+# trap was cleared killed it with no terminal record at all.
+#
+# `$!` IS THE TIEBREAKER for the instruction-level window between `&` returning and `child=$!`
+# being assigned. The shell sets `$!` as part of executing the background command itself, so it is
+# already correct inside that window while `child` is not — which turns "we cannot know whether a
+# fork happened" into two cases we CAN tell apart:
+#   a process exists → tear it down and publish its status;
+#   none ever did    → release the claim, because nothing ran and stranding the label would make
+#                      every aborted setup undeletable until the retention sweep.
+# Signals `run` takes ownership of. INT/TERM/HUP alone was not enough: round 003 demonstrated an
+# untrapped signal (USR1) killing the supervisor with the child left alive in its own group.
+RUN_SIGNALS='INT TERM HUP QUIT PIPE ALRM USR1 USR2'
+
+# `kill -0 -<pgid>` asks whether the process GROUP still has a member we may signal. The leader's
+# death is NOT the group's death — round 003 reproduced a leader exiting 143 while a TERM-resistant
+# descendant survived (`group_survived=yes`), which would have had `run` publish a terminal record,
+# and `rm-run` later delete the capture, while that descendant was still writing into it.
+run_group_gone() { ! kill -0 "-$1" 2>/dev/null; }
+
+# Bounded escalation until the group is empty: quiesce, TERM, KILL, five seconds per stage.
+# `$2 = term` starts by signalling (the abort path); omitted, it waits first (the normal path,
+# where the leader has already exited on its own and any survivor is a leak). An already-empty
+# group returns immediately, so an ordinary run pays nothing for this.
+#
+# ACCEPTED RESIDUAL (round 004, low): a pgid carries no ownership token. If the group empties and
+# the kernel recycles that id between the liveness probe and the signal, these signals land on an
+# unrelated group. The window needs the group to be fully gone first — while any descendant lives
+# the id cannot be reused — so it is exactly the probe-to-signal instant, and pinning an owned
+# identity through settlement is more machinery than a single-user tool warrants. Recorded rather
+# than closed, which is the disposition the finding itself offered.
+run_group_settle() {
+  local p="$1" i
+  [ "${2:-}" = term ] && { kill -TERM "-$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null; }
+  i=0; while ! run_group_gone "$p" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  run_group_gone "$p" && return 0
+  kill -TERM "-$p" 2>/dev/null
+  i=0; while ! run_group_gone "$p" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  run_group_gone "$p" && return 0
+  kill -KILL "-$p" 2>/dev/null
+  i=0; while ! run_group_gone "$p" && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  run_group_gone "$p"
+}
+
+run_publish() { printf '%s\n' "$1" > "$d/exit.tmp" && mv -f "$d/exit.tmp" "$d/exit"; }
+
+# THE CLEANUP OWNER, armed the instant the launch claim succeeds and disarmed only after the
+# terminal record has landed. It is installed on EXIT as well as on every signal in RUN_SIGNALS, so
+# a `die` between the claim and the fork releases the claim through the same path — round 003
+# showed that arming only just before the launch left a pre-trap TERM stranding the claim.
+#
+# `$!` IS THE TIEBREAKER for the instruction-level window between `&` returning and `child=$!`
+# being assigned: the shell sets it as part of executing the background command itself, so it is
+# already correct there while `child` is not. That turns "we cannot know whether a fork happened"
+# into two cases — a process exists (tear the GROUP down and publish its status) or none ever did
+# (release the claim, because nothing ran and stranding the label would make every aborted setup
+# undeletable until the retention sweep).
+# EVERY read below is defaulted. Round 004 argued that bash unwinds `cmd_run`'s locals before the
+# EXIT trap runs, so `set -u` would abort this handler. Measured on the deployed interpreter
+# (/bin/bash 3.2.57, which is both this file's shebang target and the shell on PATH here) that is
+# NOT what happens — `exit` from inside the function, including from a nested `die`, runs the trap
+# with those locals still readable, and injecting the post-fork failure into the real script tore
+# the group down and published exit 143 with no stray process. The claim is rebutted; the
+# suggestion behind it is still taken, because a handler that CAN die on an unbound variable is one
+# refactor away from doing so, and defaulting costs nothing.
+run_cleanup() {
+  local p st
+  trap '' EXIT $RUN_SIGNALS                  # never re-enter while tearing down
+  [ "${run_done-0}" -eq 1 ] && return 0      # already finalised (published, or refused to publish)
+  run_done=1
+  p="${child-}"
+  if [ -z "$p" ]; then
+    # An unset `$!` is fatal under `set -u`, and a crash inside a signal handler is the opposite
+    # of a report.
+    set +u; p="$!"; set -u
+  fi
+  if [ -z "$p" ]; then
+    # Nothing was ever launched, so the claim is not consumed. Guarded on `$d` being set: an
+    # unguarded `rm -rf "${d-}/.launch"` would resolve to `/.launch` if it were not.
+    [ -n "${d-}" ] && rm -rf "$d/.launch" 2>/dev/null
+    printf '%s: run %s aborted before anything was launched — claim released, label is free to retry\n' "$PROG" "${label-?}" >&2
+    return 0
+  fi
+  run_group_settle "$p" term
+  wait "$p" 2>/dev/null; st=$?
+  # QUIESCENCE GATES PUBLICATION. Round 004: warning-then-publishing anyway made the capture
+  # terminal, which is exactly what lets `rm-run` delete it — while a process that outlived SIGKILL
+  # is still writing into it. No terminal record is the honest state; the capture then stays
+  # undeletable, which is the fail-closed direction.
+  if run_group_gone "$p"; then
+    # The success line runs only when publication actually succeeded. Round 005 (low): the two
+    # messages used to both fire on a failed publish, so an abort reported "could not publish" and
+    # "recorded exit" in the same breath.
+    if run_publish "$st"; then
+      printf '%s: run %s aborted — launched process group torn down, recorded exit %s\n' "$PROG" "${label-?}" "$st" >&2
+    else
+      printf '%s: WARNING: run %s aborted and its group was torn down, but the terminal record could not be published at %s/exit — the capture stays nonterminal\n' "$PROG" "${label-?}" "${d-?}" >&2
+    fi
+  else
+    printf '%s: ERROR: run %s — process group %s survived SIGKILL; NOT publishing a terminal record, so %s stays undeletable while something may still be writing into it\n' "$PROG" "${label-?}" "$p" "${d-?}" >&2
+  fi
+}
+
+cmd_run() {
+  local label sin="/dev/null" d rc f a child="" run_done=0
+  require_sid; require_cutover; ensure_store
+  label="$1"; shift
+  # The label becomes a path component below, so its grammar is settled BEFORE anything is built
+  # from it — including the existence test that decides allocate-versus-adopt.
+  require_label "$label"
+  if [ "${1:-}" = "--stdin" ]; then
+    [ "$#" -ge 2 ] || die "--stdin needs a file argument"
+    sin="$2"; shift 2
+    # Refuse a symlink instead of reading through one, the same stance `require_plain` takes
+    # everywhere else here. ACCEPTED RESIDUAL: between this check and the redirection below the
+    # path could be replaced. Closing that needs O_NOFOLLOW, which bash cannot express; the
+    # callers are recipes in this repository naming a file this session just wrote.
+    [ -L "$sin" ] && die "--stdin file '$sin' is a symlink — refusing to read through one"
+    [ -f "$sin" ] || die "--stdin file is not an existing regular file: $sin"
+    [ -r "$sin" ] || die "--stdin file is not readable: $sin"
+  fi
+  # The separator is required even where it looks redundant: without it, a command whose first
+  # word happens to be `--stdin`, or a mistyped flag, is silently swallowed into the command line.
+  [ "${1:-}" = "--" ] || die "the command must be introduced by '--' (got '${1:-<nothing>}')"
+  shift
+  [ "$#" -gt 0 ] || die "no command given after '--'"
+
+  # Allocate, or adopt a directory `run-dir` already made for this same attempt. Adoption is what
+  # lets the review recipe assemble its bundle INTO the directory before the command is launched.
+  require_plain "$RUNS/$SID" dir
+  d="$RUNS/$SID/$label"
+  if [ -e "$d" ] || [ -L "$d" ]; then
+    require_plain "$d" dir
+  else
+    d="$(cmd_run_dir "$label")" || exit $?
+    [ -n "$d" ] || die "run-dir produced no path for label '$label'"
+  fi
+
+  # THE LAUNCH CLAIM, atomic on purpose. "Does it have output files yet" is check-then-write: two
+  # calls can both observe an unused directory and both proceed. A plain `mkdir` fails for the
+  # loser — the same primitive `run-dir` uses to claim a label and `reg` uses (via `ln`) to claim a
+  # document. Once anything has been LAUNCHED the claim is never removed, so a crashed attempt still
+  # reads as consumed; labels are per-attempt and a retry takes the next suffix. A failure before
+  # the fork releases it — nothing ran, so nothing is consumed.
+  mkdir "$d/.launch" 2>/dev/null \
+    || die "run label '$label' has already been launched (claim at $d/.launch) — labels are per-attempt; use the next suffix"
+  # CLEANUP OWNERSHIP STARTS HERE, one statement after the claim exists, and is released only once
+  # the terminal record has landed. Round 003 showed that arming it just before the launch was too
+  # late: a TERM during the writes below stranded the claim with nothing to release it. EXIT is
+  # included so every `die` past this point leaves through the same owner.
+  trap 'run_cleanup' EXIT
+  trap 'run_cleanup; exit 6' $RUN_SIGNALS
+  # Who is supervising this run, so `rm-run` can tell "still running" from "crashed and abandoned".
+  printf '%s\n' "$$" > "$d/.launch/supervisor" \
+    || die "cannot record the supervisor pid at $d/.launch/supervisor"
+
+  # EVERY reserved name must be ABSENT, not merely "not a symlink". Adoption broke two ways on the
+  # weaker check, both found in review: a capture that already held a regular `exit` silently
+  # disabled `rm-run`'s active-run guard for the entire run, and an `exit` that was a DIRECTORY made
+  # `mv -f exit.tmp exit` succeed by moving the file INSIDE it — so this command reported DONE while
+  # the status file it promises was never published. A directory this command adopts holds only
+  # material the caller assembled (a bundle); every name below is ours to create.
+  for f in out.txt err.txt exit exit.tmp cmd; do
+    if [ -e "$d/$f" ] || [ -L "$d/$f" ]; then
+      die "'$d/$f' already exists — an adopted capture directory must not contain the names this command publishes; use the next label"
+    fi
+  done
+  # Pre-create the capture files, so a failure to create them is reported as itself instead of
+  # surfacing later as bash's redirection failure and being recorded as the command's own status.
+  : > "$d/out.txt" || die "cannot create $d/out.txt"
+  : > "$d/err.txt" || die "cannot create $d/err.txt"
+  # A re-readable record of exactly what ran. `q` quotes each word, so an argument containing
+  # newlines — every codex prompt does — cannot make the record ambiguous. A SUBSHELL, not a `{ }`
+  # group: a group reports only its LAST command's status, so a write that failed partway would
+  # have published a truncated command line and reported success. `exit 1` inside `( )` is the
+  # group's status; inside `{ }` it would have exited dstack itself.
+  ( for a in "$@"; do q "$a" || exit 1; printf ' ' || exit 1; done; printf '\n' ) > "$d/cmd" \
+    || die "cannot record the command at $d/cmd"
+
+  # OWN THE CHILD'S PROCESS GROUP AND TEAR IT DOWN ON THE WAY OUT. Review round 001 disproved this
+  # file's earlier claim that "the child dies with the supervisor": terminating only the dstack
+  # process leaves `codex exec` running, orphaned and invisible, still spending credits — precisely
+  # the failure that NOT detaching was supposed to remove. `set -m` puts the child in a process
+  # group of its own, so the whole tree can be signalled rather than just the immediate child.
+  #
+  # `set -m` puts the child in a process group of its own, so the whole tree can be signalled
+  # rather than just the immediate child. The trap that does the signalling is already armed —
+  # see the claim above.
+  # argv, never shell source: nothing here is re-parsed, so no quoting inside a prompt can become
+  # code — the hazard the old generated-wrapper heredoc had to be written around.
+  set -m
+  "$@" < "$sin" > "$d/out.txt" 2>"$d/err.txt" &
+  child=$!
+  set +m
+  # Recorded so `rm-run` can refuse while the LAUNCHED group is alive, not only while the
+  # supervisor is. SIGKILL cannot be trapped, so an orphan is still possible; this record is what
+  # then keeps its capture from being deleted out from under it. A failure here goes through the
+  # cleanup owner like everything else, which tears the group down rather than abandoning it.
+  printf '%s\n' "$child" > "$d/.launch/child" \
+    || die "cannot record the launched pid at $d/.launch/child"
+  # ONE `wait`, no liveness loop. The loop that used to be here rested on a wrong belief, which
+  # round 003 disproved by direct probe: bash CACHES a reaped job's status, so a second
+  # `wait "$child"` returns that same status rather than 127, while `kill -0 "$child"` asks about
+  # whatever process currently occupies that pid — so a recycled pid made the loop spin until an
+  # unrelated process exited. It was never needed either: a trapped signal runs `run_cleanup` and
+  # EXITS, so control does not come back here to be looped over.
+  wait "$child"; rc=$?
+  # THE LEADER'S DEATH IS NOT THE GROUP'S DEATH. Round 003 reproduced a leader exiting 143 with a
+  # TERM-resistant descendant still alive. On this path the leader exited on its own, so any
+  # survivor is a leak: wait it out, then escalate.
+  #
+  # AND QUIESCENCE GATES PUBLICATION — round 004 caught this being a warning rather than a gate.
+  # An `exit` file is what makes a capture terminal, and `rm-run` stops guarding once it exists, so
+  # publishing over a group that outlived SIGKILL hands deletion permission for a directory
+  # something is still writing into. Refusing to publish is the fail-closed state: the capture
+  # stays undeletable until a person deals with it.
+  # `run_done` is NOT set here. Round 005: setting it before settlement made a signal arriving
+  # during that bounded window (up to 15 seconds) find `run_done=1`, skip teardown entirely, and
+  # exit with descendants alive. Reentrancy protection belongs to `run_cleanup` — which disarms its
+  # own traps on entry — and finalisation is a separate fact, true only once the run has been
+  # published or publication has been explicitly refused.
+  if ! run_group_settle "$child"; then
+    run_done=1
+    die "the command exited $rc but its process group $child survived SIGKILL — refusing to publish a terminal record while something may still be writing into $d; stop it, then remove the capture by hand"
+  fi
+  # Publish the terminal record atomically, THEN disarm — in that order, so there is no window in
+  # which this process has stopped protecting the run but its status is not yet on disk. Refuse to
+  # report a run whose record did not land: every reader downstream treats `exit` as the authority
+  # on whether the round really finished.
+  run_publish "$rc" \
+    || { run_done=1; die "the command finished with status $rc but its terminal record could not be published at $d/exit — treat this attempt as unrecorded and re-run it under the next label"; }
+  run_done=1
+  trap - EXIT $RUN_SIGNALS
+  note "DONE $label exit=$rc dir=$d"
+  # The command's own status lives in `exit` and on the line above. This command's status only
+  # answers "did it succeed", because passing a child's arbitrary status through would make a child
+  # returning 3 or 4 indistinguishable from an ownership conflict or a blocked cutover. 6 is the
+  # single code meaning "the thing you asked me to run failed".
+  [ "$rc" -eq 0 ] || exit 6
+  return 0
+}
+
 # Delete named captures of THIS session. It lives here rather than in the calling skill because
 # the caller could only write `[ -L "$R" ] && … ; rm -rf "$R/$label"`, which is check-then-delete:
 # between the two statements `$R` can become a symlink to somewhere else and the `rm -rf` follows
@@ -872,7 +1169,7 @@ cmd_run_dir() {
 # The caller's old prefix glob had a second bug worth naming: `<goal>-api-r*` also matches
 # `<goal>-api-refactor-r004`, so it could delete a concurrent sibling unit's OPEN round.
 cmd_rm_run() {
-  local label removed=0 here want
+  local label removed=0 here want sup
   require_sid; require_cutover; ensure_store
   require_plain "$RUNS/$SID" dir
   [ -d "$RUNS/$SID" ] || { note "no captures for this session"; return 0; }
@@ -890,6 +1187,44 @@ cmd_rm_run() {
         .*)                  die "run label must not start with a dot: '$label'" ;;
         *[!A-Za-z0-9_.-]*)   die "run label must be [A-Za-z0-9_.-]+: '$label'" ;;
       esac
+      # A capture that `run` launched but that has published no terminal record may still be
+      # running. Deleting it unlinks the files being written to and makes the supervisor's own
+      # `exit` publication fail — a live round losing both its output and its completion record.
+      # BOTH recorded pids are consulted, not just the supervisor: `run` cannot trap SIGKILL, so a
+      # hard-killed supervisor can leave the launched process alive and orphaned, and checking only
+      # the supervisor would then happily delete the capture that orphan is still writing into.
+      # `kill -0` can answer yes for a RECYCLED pid; that direction refuses a deletion that would
+      # have been safe, which is the harmless one.
+      if [ -d "./$label/.launch" ] && [ ! -e "./$label/exit" ]; then
+        sup="$(cat "./$label/.launch/supervisor" 2>/dev/null)" || sup=""
+        case "$sup" in
+          # A claim with no readable pid is a capture we cannot prove is finished, so it BLOCKS —
+          # the same stance every other unknown takes in this file. The window it covers is real
+          # but tiny (between the claim and the pid write), and guessing "safe to delete" there
+          # would throw away a round that had just started. `prune` is the escape if one is ever
+          # stranded; it sweeps by age and does not consult this guard.
+          ''|*[!0-9]*) die "capture '$label' has a launch claim, no terminal record, and no readable supervisor pid — cannot prove it is finished, so refusing to delete it (\"\$HOME/.claude/bin/$PROG\" prune removes it once it ages out)" ;;
+          *) if kill -0 "$sup" 2>/dev/null; then
+               die "capture '$label' is still being run by process $sup and has no terminal record — refusing to delete it mid-run"
+             fi ;;
+        esac
+        # The launched process. A MISSING record is unknown, not safe: `run` releases its claim on
+        # every failure before the fork, so a claim that exists with no child record means the fork
+        # may have happened while the pid was still being written. Round 002 asked for exactly this
+        # — treat it as unknown rather than deletable — and it costs nothing real, because the
+        # ordinary "nothing was launched" case no longer leaves a claim behind at all.
+        sup="$(cat "./$label/.launch/child" 2>/dev/null)" || sup=""
+        case "$sup" in
+          ''|*[!0-9]*) die "capture '$label' has a launch claim and no terminal record, and its launched pid is unknown — cannot prove nothing is still writing there, so refusing to delete it (\"\$HOME/.claude/bin/$PROG\" prune removes it once it ages out)" ;;
+          # The recorded pid is also the process GROUP id (`run` launches under `set -m`). Asking
+          # only about the pid was not enough: round 003 reproduced a dead leader with a live
+          # descendant, which is a group that still has a member writing into this capture while
+          # the pid alone reads as gone.
+          *) if kill -0 "$sup" 2>/dev/null || ! run_group_gone "$sup"; then
+               die "capture '$label' still has a live launched process or process group ($sup) and no terminal record — refusing to delete it; stop it first"
+             fi ;;
+        esac
+      fi
       if [ -e "./$label" ] || [ -L "./$label" ]; then
         rm -rf -- "./$label" || die "could not remove capture '$label'"
         { [ -e "./$label" ] || [ -L "./$label" ]; } && die "capture '$label' still present after removal — refusing to report success"
@@ -952,10 +1287,21 @@ put it on PATH yourself, and never in a non-interactive shell. Quote document pa
   "$D" status             list active documents and stored run captures
   "$D" migrate            convert a legacy .fullcycle-active; refuses anything lossy
   "$D" run-dir [label]    create and print a capture directory for a long external run
+  "$D" run <label> [--stdin <file>] -- <cmd> [args...]
+                          run one long external command in that capture directory and BLOCK
+                          until it finishes; captures out.txt/err.txt and publishes its status
+                          to `exit`. Allocates the label, or adopts a directory `run-dir`
+                          already made for this attempt (so a bundle can be assembled into it
+                          first). Start it from a background call: that call's completion
+                          notification is what resumes the session, with no separate watcher
+                          to arm. A foreground call blocks the caller and will hit its own
+                          timeout long before a 25-minute round ends.
   "$D" rm-run <label>...  delete this session's named run captures, by exact label
   "$D" prune              drop run captures older than the retention window
 
 Exit codes: 0 ok · 1 usage/environment · 3 ownership conflict · 4 cutover blocked
+             6 the command `run` launched exited non-zero (its exact status is in the capture's
+               `exit` file and on the DONE line)
 USAGE
 }
 
@@ -972,6 +1318,7 @@ case "$cmd" in
   status)   cmd_status ;;
   migrate)  cmd_migrate ;;
   run-dir)  cmd_run_dir "${1:-run}" ;;
+  run)      cmd_run "$@" ;;
   rm-run)   cmd_rm_run "$@" ;;
   prune)    cmd_prune ;;
   -h|--help|help) [ "$#" -eq 0 ] || die "usage: $PROG --help (takes no arguments)"; usage ;;

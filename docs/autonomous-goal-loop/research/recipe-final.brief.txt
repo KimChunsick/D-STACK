@@ -1,0 +1,6 @@
+Question: what does Anthropic's public documentation say about the `--ephemeral` flag of
+`codex exec`, and about whether Codex CLI persists prompts or output to session history when
+it is used?
+
+Keep the answer short. Cite what you find, and say plainly what you could not verify. Do not
+speculate to fill a section. This brief exists to exercise a shell recipe end to end.

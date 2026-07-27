@@ -1,0 +1,71 @@
+# Research brief — autonomous goal-to-completion agent loop
+
+## Context
+A personal delivery pipeline ("full-cycle") runs inside Claude Code (CLI client 2.1.220, macOS).
+A single user Goal is decomposed into milestones and PR-sized tasks; each review unit goes through
+an adversarial review performed by an EXTERNAL process (`codex exec`, GPT-5.6 Sol) that takes
+15-25 minutes of wall clock per round, and a research step that takes similar time. A bash Stop
+hook gates completion by parsing checkbox rows in work documents.
+
+The current contract is: launch the long external run in the background, END THE ASSISTANT TURN,
+and resume when a completion signal arrives. The maintainer reports that in practice the session
+does NOT resume by itself — they must type a message before the pipeline continues with the
+finished round's data. They want: give one Goal, and have the pipeline run to completion without
+having to type.
+
+Measured facts already established locally on client 2.1.220 (do not re-derive; use as given):
+- A `run_in_background` Bash command SURVIVES the end of an assistant turn and its exit produces
+  a notification that re-invokes the assistant with no human input.
+- A persistent `Monitor` (background watcher whose stdout lines become events) also survives the
+  turn boundary and its events re-invoke the assistant with no human input.
+- A fully detached process (POSIX setsid / python start_new_session) survives too, but is
+  invisible to the harness, so it produces no notification at all.
+So the wake-up primitives exist and work. The failure is procedural/structural, not a missing
+capability.
+
+## What to research
+
+1. PRIOR ART — long-running autonomous agent loops that carry a goal to completion without a human
+   in the loop between steps. How do production systems structure the "wait for a long external
+   job, then continue" step? Cover at minimum: durable execution / workflow engines (Temporal,
+   Restate, AWS Step Functions, Inngest) and their "await external event / signal / callback"
+   primitives; event-driven vs polling designs; webhook-vs-sentinel-file completion signalling;
+   idempotent resumption after a crash or restart. What do these get right that an ad-hoc
+   "background it and hope for a notification" design gets wrong?
+
+2. THE SPECIFIC HARNESS — Claude Code (Anthropic's CLI agent). Find CURRENT, primary documentation
+   for: background Bash tasks and their completion notifications; hooks (especially Stop hooks,
+   `stop_hook_active`, and any documented block cap); scheduled/cron prompts; whether an idle
+   session can be re-entered programmatically; headless / print mode (`claude -p`) and the Agent
+   SDK as an alternative host for an unattended loop; session resumption (`--resume`,
+   `--continue`); any documented limits on how long a background task may live, and what happens
+   to background tasks across context compaction. Cite the docs, not blog recollection. Note
+   explicitly what is undocumented.
+
+3. RELIABILITY OF INSTRUCTION-DRIVEN STEPS — evidence on how reliably an LLM follows a
+   multi-hundred-line procedural document, and specifically the failure mode where one late step
+   in a long skill file (here: "arm a persistent watcher, then end the turn") is skipped or
+   performed with a wrong parameter (here: the watcher's default 5-minute timeout versus a
+   15-25 minute job). What is known about making such a step deterministic instead — wrapping the
+   launch and the watch into ONE atomic action, code rather than prose?
+
+4. OPPOSING VIEWS — actively seek the case AGAINST unattended, self-continuing agent loops.
+   Runaway cost and token burn; error compounding across autonomous steps without human review;
+   loops that never terminate; silent failure where the agent believes work is done; safety and
+   audit concerns with an agent that keeps acting while nobody is watching; evidence on whether
+   human checkpoints materially improve outcome quality. Include measured/empirical results where
+   they exist, not just opinion.
+
+5. FOR THE GOAL — evidence that a fully autonomous goal-to-completion loop is sound and
+   achievable: reports of long unattended agent runs that worked, the design properties that made
+   them work (bounded budgets, termination proofs, checkpointing, resumability, observability),
+   and what monitoring or kill-switch design is considered the minimum responsible baseline.
+
+6. TERMINATION AND BUDGET — how autonomous loops are given a provable stopping condition and a
+   hard resource ceiling, and how a stuck loop is detected (heartbeat, progress metric that must
+   decrease, watchdog timeout) as opposed to merely capped by a round count.
+
+## What a good answer looks like
+Concrete, current, primary-sourced. Name the exact API/flag/hook when the claim is about a tool.
+Distinguish what is documented from what is community-observed. Say plainly which parts of the
+maintainer's plan the evidence supports and which it undermines.

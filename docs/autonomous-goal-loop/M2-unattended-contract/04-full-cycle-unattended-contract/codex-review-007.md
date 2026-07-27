@@ -1,0 +1,54 @@
+# Codex adversarial review — Round 007
+
+## Review scope
+Batch pass 2 (consolidated round) | `REVIEW_MODE=serial` | bundle 50748 bytes (r6 43361). Allowlist unchanged: the review-unit folder, `claude/skills/full-cycle/SKILL.md`. **§4 cap closure** — the high and both mediums fixed, no concrete HIGH open.
+
+## GPT findings
+
+Verification boundary: the referenced repository was absent from the workspace, so review was limited to the supplied snapshot and executable shell probes.
+
+[severity:high][technical correctness] P6 introduces checker failures with no autonomy transition: wrong-depth or closed registrations halt under `set -e` but match neither `internal-recoveries` nor `stops`.
+Sites: `claude/skills/full-cycle/SKILL.md` — `scheduling.autonomy`; confirmed: P6 registration fence and checker-outcome prose.
+Evidence: The checker explicitly refuses wrong-depth and closed registrations, while automatic `unreg` is reserved exclusively for user-input pauses.
+Verification: A same-session wrong-depth record makes the final checker return 1, aborting before P7; no documented branch repairs the record or permits human escalation.
+Suggested direction: Map every checker outcome to an explicit recovery or stop, including safe cleanup for stale same-session registrations.
+
+[severity:medium][technical correctness] Individual registration failures are masked because `find -exec` predicate failure does not affect `find`’s exit status; subsequent documents continue being registered.
+Sites: `claude/skills/full-cycle/SKILL.md` — P6 `find ... -exec "$DS" reg {} \;` fence.
+Evidence: A foreign-owned unit can fail registration while later units are claimed by this session, expanding one ownership conflict into additional registry conflicts before the checker blocks.
+Verification: Under both Bash and zsh, `set -e; find . -maxdepth 0 -exec false {} \;; print survived` exited 0 and reached `survived`.
+Suggested direction: Validate the exact expected paths first, then register them in an explicit fail-fast loop with each status checked.
+
+[severity:medium][security] The runnable fence interpolates the repository-derived `<goal>` into shell source without validation, allowing metacharacters to become commands and `..` to escape the intended `docs` subtree.
+Sites: `claude/skills/full-cycle/SKILL.md` — `G=docs/<goal>` and the subsequent recursive `find`/registration.
+Evidence: No slug constraint, shell escaping, or canonical containment check precedes execution.
+Verification: Substituting `safe; printf injected` produced and executed the second command under both Bash and zsh.
+Suggested direction: Pass the goal path as a quoted positional argument and reject any canonical path outside the intended `docs` root.
+
+Omitted-detail: 0 low
+
+GPT verdict: reject — P6 still has an unattended dead end, masks per-document registration failures, and executes an unvalidated path placeholder in shell context.
+
+## Carried decisions
+- **Every checker outcome now has a transition, and the missing one was a dead end.** Under `set -e`
+  a checker exit 1 halted P6 with no branch in `internal-recoveries` or `stops`. Added: a document
+  THIS SESSION registered that must not be (closed, or wrong depth) is `unreg`-ed and the check
+  re-run — a genuine recovery, not a disguised `reclaim`, because the record is this session's own
+  and the gate it held was over a document no phase governs. A STRUCTURAL mismatch returns to P6 or
+  P5 instead. Exit 2 is deliberately NOT a recovery: a check that did not run must never be treated
+  as one that found nothing.
+- **`find -exec` masks the failure of the command it runs.** Measured: `find . -exec false {} \;`
+  exits 0. The P6 loop was therefore registering every later document after one `reg` had already
+  failed, turning one ownership conflict into several. The fence now reads an explicit list and
+  checks each `reg` on its own.
+- **Registering before classifying is what made "safe to re-run" false.** A depth-wide loop claims
+  undeclared folders and already-closed units before anything decides whether they belong.
+  `--list` emits GOAL.md plus every declared, scaffolded, still-open unit, so the fence cannot
+  create the state the checker is about to refuse.
+- **The `<goal>` slug check is defence in depth against a mistake, not a boundary.** Verified: the
+  substituted value `safe; printf INJECTED` executed the second command under both shells, and now
+  refuses. The honest framing is `codex-research`'s — the orchestrator writes the whole command, so
+  no quoting form is a boundary; if the value ever comes from outside the session, the recipe is the
+  wrong shape.
+
+Consensus: resolved

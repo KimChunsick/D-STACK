@@ -34,9 +34,45 @@ the decomposition, never "just go serial".
   `"$HOME/.claude/bin/dstack" unreg <doc>`.
 - **The gate states incomplete work once per user turn, then lets the turn end** (it honours
   `stop_hook_active`). That is deliberate: a turn that can never end also can never be re-invoked when
-  a background command finishes. So for a long external run — a Codex round, CI — background it and
-  END THE TURN. Never arm a foreground wait loop, and never emit "still running" turns; each one
-  re-sends the whole conversation and learns nothing.
+  a background command finishes.
+- **A long external run is ONE harness-tracked call, and the call IS the wake-up.** For a Codex
+  round, CI, anything that outlives its turn: one Bash call with `run_in_background` set to true,
+  whose blocking terminal step is `"$HOME/.claude/bin/dstack" run <label> [--stdin <file>] -- <cmd…>`.
+  Setup before that step is fine; what is forbidden is work after it whose result you need, because
+  that STEP does not return until the command finishes. Be precise about which thing blocks: the
+  Bash tool call returns immediately — that is what `run_in_background` means — and it is the
+  background task that stays alive, so a line placed after `dstack run` inside it simply does not
+  run until the round is over. Then END THE TURN — the completion
+  notification re-enters the session by itself, and there is no watcher to arm. **Never detach the
+  run.** A detached process survives but is invisible to the harness, so it can never notify at all;
+  that was the actual cause of every "the round finished an hour ago and nothing happened". Never
+  arm a foreground wait loop, and never emit "still running" turns; each one re-sends the whole
+  conversation and learns nothing. Read `<run-dir>/exit` for the run's status — a signalled wrapper
+  can report failure over a run that completed. **A capture with NO terminal record is not a failed
+  run you may simply relaunch** — `dstack run` tears its child's process group down on a normal exit
+  and on the signals it traps, but `SIGKILL` and `SIGPROF` can orphan it, so check for a live pid or
+  group first; relaunching over a live `codex exec` spends credits twice and lets two runs write one
+  label. Honest limits: `--resume`/`--continue` restore no
+  background task, `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` removes the mechanism outright, a
+  main-session background shell may be reaped under OS memory pressure once the session has been
+  idle 30 minutes with nothing running, and completion re-invocation is observed installed-client
+  behaviour rather than a documented guarantee.
+- **After the interview, a Goal runs unattended.** P1–P4 are the conversation and the P4 interview
+  is where the questions get asked. From P5 to the final report, decompose, implement, review, E2E
+  and close with no human input — and do not end a turn on a question you could have asked at P4. A
+  question is indistinguishable from a crash to someone who is not at the keyboard. The only things
+  that stop it are the escalations that already exist: a genuine product or risk choice, a concrete
+  HIGH still open when the review loop closes, a required dependency that is gone, a `dstack reg`
+  refused because another session owns the document (`reclaim` has no liveness signal and must not
+  run autonomously), a `dstack reg` that failed for a cause `migrate` cannot fix (unusable session
+  id, unwritable registry, a `status` line that never says `(this session)`), the wake mechanism
+  itself being unavailable, and anything the user asked to approve. **This list is a summary and
+  `scheduling.autonomy` in the `full-cycle` skill is the authority** — read it there before
+  concluding something is not a stop, because a summary that quietly drops an entry is exactly how
+  an unattended run continues past one. Everything else: take the reading a careful colleague
+  would, write the assumption into the work doc where the review will see it, and keep going.
+  Unattended is not unsupervised — every gate, the adversarial review loop and the scope checks
+  still run.
 
 ## 0.1 Language boundary (mandatory)
 

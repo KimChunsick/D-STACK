@@ -303,12 +303,31 @@ done
 # A malformed request must not degrade quietly into "no rounds requested" — the reviewer asked
 # for specific history and would get a compacted round back with no sign the ask was dropped.
 _extra=""
-# Split on commas ONLY (not whitespace), so an empty or whitespace-only field survives to be
-# rejected instead of vanishing: ' ' between two commas names no round, and dropping it turns a
-# malformed request into a silently smaller one. set -f keeps '[1]' a fatal id, not a glob.
-# IFS splitting drops a TRAILING empty field, so '1,' has to be caught before the loop.
-case "$EXTRA_FULL" in *,) echo "FATAL: REVIEW_FULL_ROUND_IDS has an empty field: '$EXTRA_FULL'" >&2; exit 1 ;; esac
-_ifs="$IFS"; IFS=','; set -f
+# Split on commas AND whitespace. Commas-only rejected the form this skill actually documents —
+# `REVIEW_FULL_ROUND_IDS="1 3"` arrived as the single field `1 3`, which is not all digits, so the
+# supply mechanism the review prompt promises died with a FATAL on its own published invocation.
+#
+# THE WHOLE GRAMMAR IS VALIDATED BEFORE ANY SPLITTING, and that ordering is the point. Accepting
+# whitespace as a separator means IFS absorbs things the split can no longer see: `1, ` lost its
+# empty field to trailing-whitespace removal and came back as a quiet request for round 1 alone,
+# and ` ` came back as no request at all. Both silently REDUCE what the reviewer asked for, which
+# is the one failure mode this validation exists to prevent — an unmet request looks identical to
+# a request that was never made. A `case` over the trimmed string sees them; the split cannot.
+# set -f keeps '[1]' a fatal id, not a glob.
+_ef="$EXTRA_FULL"
+_ef="${_ef#"${_ef%%[![:space:]]*}"}"; _ef="${_ef%"${_ef##*[![:space:]]}"}"   # trim both ends
+[ -z "$EXTRA_FULL" ] || [ -n "$_ef" ] \
+  || { echo "FATAL: REVIEW_FULL_ROUND_IDS is whitespace-only — that names no round; unset it to request nothing" >&2; exit 1; }
+case "$_ef" in
+  ,*|*,)      echo "FATAL: REVIEW_FULL_ROUND_IDS has an empty field (leading or trailing comma): '$EXTRA_FULL'" >&2; exit 1 ;;
+esac
+case "$_ef" in
+  *,[[:space:]]*,*|*,,*) echo "FATAL: REVIEW_FULL_ROUND_IDS has an empty field: '$EXTRA_FULL'" >&2; exit 1 ;;
+esac
+EXTRA_FULL="$_ef"
+# The trailing `X` is a sentinel: command substitution strips trailing newlines, so without it the
+# newline never reaches IFS and a multi-line value silently becomes one unsplittable field.
+_ifs="$IFS"; IFS="$(printf ', \t\nX')"; IFS="${IFS%X}"; set -f
 for r in ${EXTRA_FULL:+$EXTRA_FULL}; do
   r="${r#"${r%%[![:space:]]*}"}"; r="${r%"${r##*[![:space:]]}"}"   # trim, so '1, 2' still works
   case "$r" in *[!0-9]*|'') echo "FATAL: REVIEW_FULL_ROUND_IDS must be round numbers, got '$r'" >&2; exit 1 ;; esac
