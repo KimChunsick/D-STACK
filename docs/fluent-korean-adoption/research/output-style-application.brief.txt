@@ -1,0 +1,47 @@
+Research brief — applying the fluent-korean-not-coding output style to Claude and ChatGPT
+
+Context:
+- The user maintains a public SSOT repository (D-STACK) backing up their own authored AI-agent
+  configuration for Claude Code and Codex CLI. Third-party artifacts are policy-excluded from the
+  repo; they may live only in the live agent dirs (~/.claude, ~/.codex).
+- fluent-korean (github.com/snflkd/fluent-korean, MIT license) is a Claude Code output-style
+  plugin that improves Korean-language fluency of model output (restores particles, complete
+  sentences, natural phrasing). It ships two variants: `fluent-korean` (frontmatter
+  `keep-coding-instructions: true`) and `fluent-korean-not-coding` (drops Claude Code's built-in
+  coding instructions). The user wants ONLY the not-coding variant applied, to both their
+  "Claude" and "ChatGPT" environments (exact surfaces to be pinned in a later interview:
+  Claude Code CLI vs Claude web/desktop; ChatGPT web/desktop custom instructions vs Codex CLI).
+- The user's Claude Code already carries extensive personal Korean-writing rules in
+  ~/.claude/CLAUDE.md plus a harness-level "always respond in Korean" instruction, so overlap and
+  conflict with the new style are a real concern.
+
+Questions to research (prefer current primary sources):
+1. Claude Code output styles, mechanics as of 2025-2026: file locations
+   (~/.claude/output-styles/ vs project .claude/output-styles/), frontmatter schema (name,
+   description, keep-coding-instructions), what exactly a custom style replaces in the default
+   system prompt, activation paths (/output-style, /config, settings.json "outputStyle" key),
+   when changes take effect (new session, /clear), plugin-marketplace install vs manual file
+   placement, filename/case sensitivity pitfalls, and whether an active output style propagates
+   to subagents.
+2. Consequences of running Claude Code with a style that DROPS the built-in coding instructions:
+   what is removed, any reported effects on coding behavior/quality, community experience.
+3. Claude web / desktop app: current mechanisms for a persistent writing style — the Styles
+   feature, personal preferences/instructions, project instructions; character limits; which
+   mechanism best fits a reusable Korean-fluency guideline of roughly 2-4 KB of markdown.
+4. ChatGPT web/desktop: custom instructions as of 2025-2026 — where they live in settings,
+   current per-field character limits, whether Projects / custom GPT instructions are a better
+   fit for a multi-KB style guide, interaction with ChatGPT memory, account-wide vs
+   per-conversation application.
+5. Both-sides evidence on the goal itself:
+   FOR — evidence that explicit Korean-fluency style instructions measurably improve LLM Korean
+   output (particle restoration, complete predicates, reduced translationese).
+   AGAINST — added token cost per turn, instruction-following degradation as system prompts grow,
+   redundancy/conflict with the user's existing Korean rules, models improving to the point such
+   prompts are unnecessary, and better alternatives (keeping the coding variant in a coding CLI,
+   trimming the guideline, applying it only in non-coding surfaces).
+
+Constraints:
+- Only the not-coding variant is in scope for installation.
+- Nothing third-party may be committed to the public SSOT repo.
+- The Claude Code side must not break the user's existing pipeline behavior (their own CLAUDE.md
+  rules must keep working).
