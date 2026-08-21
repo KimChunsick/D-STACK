@@ -34,6 +34,7 @@ codex/instructions.md|.codex/instructions.md|link
 codex/rules/default.rules|.codex/rules/default.rules|link
 codex/skills/adversarial-review|.codex/skills/adversarial-review|link
 codex/skills/adversarial-research|.codex/skills/adversarial-research|link
+codex/skills/socratic-audit|.codex/skills/socratic-audit|link
 "
 
 # Timestamp for backup names (overridable for deterministic tests).

@@ -51,6 +51,7 @@
 /codex/skills/*
 !/codex/skills/adversarial-review/
 !/codex/skills/adversarial-research/
+!/codex/skills/socratic-audit/
 /gemini/*
 !/gemini/.gitkeep
 !/gemini/README.md
