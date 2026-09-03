@@ -28,8 +28,9 @@ It is configuration, not an application: nothing renders, nothing serves.
 - The CLI is the Rust crate `dstack-cli/`: its dependencies are exactly serde, serde_json,
   regex, sha2 and time, and git is the only executable it runs. One responsibility per file,
   350 lines at most, which `dstack doctor` checks.
-- The gates are `cargo test` and `bash dstack-cli/parity/run.sh`, which drives the binary
-  against the shell implementation the `shell-final` tag still carries.
+- The gates are `bash dstack-cli/test.sh` (cargo test, then `cargo clean --profile dev`, so the
+  debug tree never stays in the checkout) and `bash dstack-cli/parity/run.sh`, which drives the
+  binary against the shell implementation the `shell-final` tag still carries.
 - Three scripts stay shell — `install.sh`, `claude/hooks/dstack-hook.sh` and
   `claude/statusline-command.sh`. They run under the bash macOS ships, so no feature of bash 4
   or later, and jq belongs to the installer alone.

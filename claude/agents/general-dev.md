@@ -2,7 +2,7 @@
 name: general-dev
 description: Implementation worker for everything that is not frontend code — backend logic, CLIs, scripts, configuration, build tooling, documentation and their tests. Runs one Plan in the worktree the CLI prepared. Frontend code (components, hooks, styles, frontend tests) belongs to frontend-dev.
 model: opus
-effort: high
+effort: max
 maxTurns: 80
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---

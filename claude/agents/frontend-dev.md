@@ -2,7 +2,7 @@
 name: frontend-dev
 description: Frontend implementation worker. Every change to components, hooks, styles, frontend utilities, frontend tests, stories or frontend build config goes through this agent (exception: a one-line typo/copy/constant edit). Runs one Plan in the worktree the CLI prepared.
 model: opus
-effort: high
+effort: max
 maxTurns: 80
 tools: Read, Edit, Write, Grep, Glob, Bash
 ---
