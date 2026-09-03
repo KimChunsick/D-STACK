@@ -1,0 +1,23 @@
+=== REQUEST (frozen) ===
+- [ ] **R01** the bundle carries the request rows verbatim — accept: the REQUEST section repeats the approved line byte for byte
+- [ ] **R02** the bundle carries only the plan's declared files — accept: no diff hunk names a file outside plan.files
+
+=== PLAN ===
+plan: P1
+slug: bundle-check
+status: in-progress
+files: a/b.sh
+deps: (none)
+T1 two-covers covers: R01, R02 files: a/b.sh
+T2 smuggled covers: R09 files: a/b.sh
+
+=== DIFF (allowed files only) ===
+worktree: /tmp/sandbox
+base: none
+--- file: a/b.sh
+(no changes against the base)
+
+=== CONTRACT ===
+Your first output is a per-R verdict table with one row per R id in the REQUEST section.
+Then list findings by axis: goal achievement / security / UI·UX&DX / performance / architecture & code quality.
+Your last line is `VERDICT: approve|reject`.

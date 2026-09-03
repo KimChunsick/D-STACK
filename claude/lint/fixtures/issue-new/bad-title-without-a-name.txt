@@ -1,0 +1,5 @@
+# A title the slug cannot be built from: no ASCII letter and no digit in it.
+title: !!! ---
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs

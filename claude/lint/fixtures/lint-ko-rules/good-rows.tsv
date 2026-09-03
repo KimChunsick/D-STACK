@@ -1,0 +1,4 @@
+id	kind	pattern	severity	replacement	example	source	level
+K01	regex	정본	S1	기준이 되는 곳	정본은 이 파일이에요.	v1 tech-writing §2	word
+K20	regex	필요로 (한다|합니다|해요)	S1	~가 필요해요	이 명령은 jq를 필요로 한다.	v1 tech-writing §2	sentence
+K51	judgment	-	S1	해요체로 통일해요	이 값은 참고용입니다.	v1 tech-writing §1	sentence

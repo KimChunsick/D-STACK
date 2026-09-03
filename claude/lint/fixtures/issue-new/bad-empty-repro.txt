@@ -1,0 +1,5 @@
+# The option is passed with nothing in it, which is the same miss as not passing it.
+title: run verify prints an empty CURRENT
+symptom: the CURRENT line is empty in a worktree that has a run
+repro:
+source: dstack-cli/src/verbs/run/verify.rs

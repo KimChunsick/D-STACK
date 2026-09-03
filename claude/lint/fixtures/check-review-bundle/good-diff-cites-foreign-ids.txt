@@ -1,0 +1,37 @@
+=== REQUEST (frozen) ===
+- [ ] **R01** the bundle carries the request rows verbatim — accept: the REQUEST section repeats the approved line byte for byte
+- [ ] **R02** the bundle carries only the plan's declared files — accept: no diff hunk names a file outside plan.files
+
+=== PLAN ===
+plan: P1
+slug: bundle-check
+status: in-progress
+files: a/b.sh
+deps: (none)
+T1 two-covers covers: R01, R02 files: a/b.sh
+
+=== DIFF (allowed files only) ===
+worktree: /tmp/sandbox
+base: none
+--- declared: a (1 changed file(s))
+--- file: a/b.sh
+diff --git a/a/b.sh b/a/b.sh
+index 3f1a2be..9c04d17 100644
+--- a/a/b.sh
++++ b/a/b.sh
+@@ -1,5 +1,12 @@
+ #!/usr/bin/env bash
+ # the worker helper the plan declared
+ 
+ say() { printf '%s\n' "$*"; }
++
++# R100: a worker writes nothing under .dstack/ but its own artifact directory.
++verify_location() {
++  # R36 — the location check runs before any edit; R101 keeps the artifact paths together.
++  say "R1 of the design: the CLI is the only writer of pipeline state"
++}
+
+=== CONTRACT ===
+Your first output is a per-R verdict table with one row per R id in the REQUEST section, in the form `| R | verdict (covered|partial|absent) | evidence in the diff |`.
+Then list findings by axis: goal achievement / security / UI·UX&DX / performance / architecture & code quality.
+Your last line is `VERDICT: approve|reject`; any absent verdict in the table means reject.

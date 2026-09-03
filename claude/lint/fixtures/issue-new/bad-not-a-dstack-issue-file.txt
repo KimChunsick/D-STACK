@@ -1,0 +1,7 @@
+# A file the maintainer wrote by hand sits where this filing would land: the sighting cannot be
+# appended to frontmatter dstack did not write, and rewriting it would throw the triage away.
+plant: yes
+title: run verify prints an empty CURRENT
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs

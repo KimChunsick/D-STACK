@@ -1,0 +1,6 @@
+# D-06: the same friction filed three times is one file carrying three sightings.
+title: worker report is read by its R lines alone
+symptom: a report whose R line is missing is recorded as unreported
+repro: dstack report
+source: dstack-cli/src/verbs/report/mod.rs
+repeat: 3

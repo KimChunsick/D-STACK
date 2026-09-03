@@ -1,0 +1,4 @@
+# D-08: an issue nobody can look up is not actionable.
+title: run verify prints an empty CURRENT
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify

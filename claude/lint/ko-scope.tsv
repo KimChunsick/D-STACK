@@ -1,0 +1,15 @@
+# dstack Korean scope table (R93). Columns: pattern<TAB>scope
+# pattern is a glob on the repository-relative path; the FIRST matching row wins, so put the
+# narrow rows above the wide ones. "**/" also matches zero directories, so docs/**/*.md covers
+# both docs/x.md and docs/a/b.md.
+# scope: ko-haeyo | ko-plain (follow the repository's own tone) | ko-data (product copy, i18n,
+#        built-in examples: tone rules are skipped) | en | exempt
+# A path no row matches is passed and counted as unclassified by `dstack lint-ko --report`, so a
+# repository that never declares a scope table is never blocked (R93).
+pattern	scope
+claude/lint/**	exempt
+README.md	ko-haeyo
+claude/skills/**/*.md	en
+claude/agents/**/*.md	en
+codex/**	en
+*.ko.json	ko-data

@@ -1,0 +1,3 @@
+# quick new with no flags: the quick defaults ask for no tool the sandbox lacks, so it is accepted.
+args: tidy-readme
+repeat: 1

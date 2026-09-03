@@ -1,0 +1,5 @@
+$ dstack check coverage
+R01 tasks=1 evidence=1 ok
+R02 tasks=1 evidence=1 ok
+R 2: covered 2, evidence 2, missing 0
+exit 0

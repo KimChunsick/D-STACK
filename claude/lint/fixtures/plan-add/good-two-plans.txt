@@ -1,0 +1,2 @@
+plan add first --milestone M1 --files a/b.sh
+plan add second --milestone M1 --files c/d.sh --deps P1

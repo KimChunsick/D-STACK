@@ -1,6 +1,0 @@
-Question: what does Anthropic's public documentation say about how a Claude Code background
-Bash task is terminated, and what exit status is observed by the caller when it is stopped?
-
-This brief exists to exercise the codex-research Step 2 recipe end to end after a security fix
-to its placeholder handling. Keep the answer short. Cite what you find, and say plainly what you
-could not verify. Do not speculate to fill a section.

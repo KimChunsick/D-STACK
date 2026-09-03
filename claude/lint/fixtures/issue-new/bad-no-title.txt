@@ -1,0 +1,4 @@
+# No operand at all: there is nothing to name the file after.
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs

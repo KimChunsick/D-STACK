@@ -1,0 +1,4 @@
+# D-08: what dstack did is the field nobody else can reconstruct.
+title: run verify prints an empty CURRENT
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs

@@ -1,0 +1,9 @@
+name	probe	install	source	auth	needed_when	required_by	group
+git	command -v git	xcode-select --install	https://git-scm.com	no	goal-closing	always	
+jq	command -v jq	brew install jq	https://jqlang.github.io/jq/	no	goal-closing	always	
+shasum	command -v shasum	(macOS built-in; Linux: perl-Digest-SHA)	https://perldoc.perl.org/shasum	no	goal-closing	always	
+codex	command -v codex	npm install -g @openai/codex	https://github.com/openai/codex	yes	goal-closing	review=on	
+ego-browser	command -v ego-browser	install ego lite (ego-browser ships inside the app); then re-run dstack doctor	https://github.com/citrolabs/ego	no	goal-closing	e2e=capture	
+cargo	command -v cargo	curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh	https://rustup.rs	no	optional	always	
+ffmpeg	command -v ffmpeg	brew install ffmpeg	https://ffmpeg.org	no	optional	e2e=capture	
+code	command -v code	VSCode → Command Palette → Shell Command: Install code in PATH	https://code.visualstudio.com	no	optional	always	

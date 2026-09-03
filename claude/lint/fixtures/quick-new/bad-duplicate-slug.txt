@@ -1,0 +1,3 @@
+# The same slug twice: the second `quick new` must refuse instead of reopening the directory.
+args: dup-slug
+repeat: 2

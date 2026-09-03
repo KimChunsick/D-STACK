@@ -1,0 +1,1 @@
+{"session_id":"s1","cwd":".","hook_event_name":"PreToolUse","tool_name":"Agent","tool_input":{"description":"probe","prompt":"do one thing","model":"claude-opus-5"}}

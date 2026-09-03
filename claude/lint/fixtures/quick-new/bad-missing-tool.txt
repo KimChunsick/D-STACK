@@ -1,0 +1,5 @@
+# --review turns review=on, and the deps table's review=on tool cannot be probed (R105),
+# so the task must be refused before its directory exists.
+args: needs-review --review
+repeat: 1
+deps: broken

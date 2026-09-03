@@ -1,0 +1,80 @@
+# dstack Korean rule table (R91 seed). Columns are tab separated:
+#   id  kind  pattern  severity  replacement  example  source  level
+# kind     regex = the pattern decides; judgment = a model decides (pattern is "-", never blocks).
+# severity S1 blocks a write in a blocking scope (ko-haeyo, ko-plain, commit-msg); S2/S3 report only.
+# example  MUST be matched by the pattern — selftest_lint_ko_rules checks exactly that, so a rule
+#          that stopped matching its own example is caught before it silently stops catching prose.
+# level    word = survives a fragment (Edit new_string); sentence = only judged on a whole file,
+#          because an Edit shows one clause and a sentence rule would fire on half a sentence (R93).
+# Sources: v1 tech-writing §2 (own), snflkd/fluent-korean and epoko77-ai/im-not-ai — both MIT, Copyright (c) 2026
+#          snflkd / epoko77-ai; rows adapted, not copied verbatim (source column names the origin id).
+# This file lives under claude/lint/, which ko-scope.tsv marks exempt: the examples below are the
+# very prose the rules ban, so linting this table would reject the table.
+id	kind	pattern	severity	replacement	example	source	level
+K01	regex	정본	S1	기준이 되는 곳 / 여기 적힌 게 전부예요	정본은 이 파일이에요.	v1 tech-writing §2	word
+K02	regex	advisory	S1	참고용 값 / 화면에 보여주기 위한 값	이 숫자는 advisory예요.	v1 tech-writing §2	word
+K03	regex	드리프트	S1	조금씩 어긋나요	설정이 드리프트해요.	v1 tech-writing §2	word
+K04	regex	판별 ?유니언	S1	세 가지 중 하나예요 / 결과 객체로 돌아와요	응답은 판별 유니언이에요.	v1 tech-writing §2	word
+K05	regex	패스스루	S1	그대로 넘겨줘요	헤더는 패스스루해요.	v1 tech-writing §2	word
+K06	regex	(^|[^`A-Za-z0-9_-])fail-(closed|open)	S1	안전하게 막아요 / 막지 않고 진행해요	훅은 fail-closed로 동작해요.	v1 tech-writing §2	word
+K07	regex	소비처|컨슈머	S1	쓰는 쪽 / 호출하는 화면	소비처가 두 곳이에요.	v1 tech-writing §2	word
+K08	regex	임베드	S1	직접 그리는 방식	차트를 임베드해요.	v1 tech-writing §2	word
+K09	regex	게이트($|[^웨])	S1	막는 조건	이 게이트는 통과 조건이에요.	v1 tech-writing §2	word
+K10	regex	오케스트레이션	S1	흐름을 이어주는 일	오케스트레이션이 필요해요.	v1 tech-writing §2	word
+K11	regex	컨텍스트	S1	상황 / 맥락	컨텍스트가 비어 있어요.	v1 tech-writing §2	word
+K12	regex	카논	S1	기준이 되는 판	카논에 맞춰요.	v1 tech-writing §2 (fluent-korean)	word
+K13	regex	레짐	S1	운영 방식	새 레짐으로 바꿔요.	v1 tech-writing §2 (fluent-korean)	word
+K14	regex	내로잉	S1	범위를 좁히는 일	타입 내로잉이 안 돼요.	v1 tech-writing §2 (fluent-korean)	word
+K15	regex	인바리언트	S1	늘 지켜야 하는 조건	인바리언트가 깨져요.	v1 tech-writing §2 (fluent-korean)	word
+K16	regex	페일라우드	S1	바로 소리내어 실패해요	페일라우드로 처리해요.	v1 tech-writing §2 (fluent-korean)	word
+K20	regex	필요로 (한다|합니다|해요|하는|했)	S1	~가 필요해요	이 명령은 jq를 필요로 한다.	v1 tech-writing §2 (fluent-korean)	sentence
+K21	regex	가능하게 (한다|합니다|해요|했)	S1	~할 수 있게 해요	이 옵션은 병렬 실행을 가능하게 한다.	v1 tech-writing §2 (fluent-korean)	sentence
+K22	regex	발화(한다|합니다|해요|했)	S1	조건에 걸리면 실행돼요	조건에 걸리면 훅이 발화한다.	v1 tech-writing §2 (fluent-korean)	sentence
+K23	regex	도달 ?불가	S1	여기까지 올 수 없어요	이 분기는 도달 불가 상태다.	v1 tech-writing §2 (fluent-korean)	sentence
+K24	regex	에 있어서	S1	~에서는 / ~할 때는	설정에 있어서 중요한 값이에요.	v1 tech-writing §2 (fluent-korean)	sentence
+K25	regex	(보여|되어|불려|쓰여)(집니다|져요|진다)	S1	피동을 한 번만 써요 (보여요, 돼요)	값이 없는 것으로 보여집니다.	v1 tech-writing §2 (fluent-korean)	sentence
+K26	regex	에 대해서	S2	~을 / ~를	이 값에 대해서 설명해요.	v1 tech-writing §2 (fluent-korean)	sentence
+K30	regex	(^|[^가-힣])즉,	S2	문장을 다시 써서 상투어를 지워요	즉, 값이 없어요.	v1 tech-writing §2 (fluent-korean)	word
+K31	regex	궁극적으로	S2	문장을 다시 써서 상투어를 지워요	궁극적으로 이 값이 기준이에요.	v1 tech-writing §2 (fluent-korean)	word
+K32	regex	포괄적인	S2	무엇을 얼마나 덮는지 적어요	포괄적인 검사를 돌려요.	v1 tech-writing §2 (fluent-korean)	word
+K33	regex	견고한	S2	무엇이 안 깨지는지 적어요	견고한 구조로 만들어요.	v1 tech-writing §2 (fluent-korean)	word
+K34	regex	원활한	S2	무엇이 막히지 않는지 적어요	원활한 실행을 위해 준비해요.	v1 tech-writing §2 (fluent-korean)	word
+K50	judgment	-	S2	'~를 통해'가 한 문단에 겹치면 조사로 풀어써요	설정을 통해 값을 통해 전달해요.	v1 tech-writing §2 (fluent-korean)	sentence
+K51	judgment	-	S1	해요체로 통일해요 (ko-haeyo 범위)	이 값은 참고용입니다.	v1 tech-writing §1	sentence
+K52	judgment	-	S2	문장 성분을 살려서 다시 써요 ('~의' 연쇄)	설정의 변경의 영향을 확인해요.	v1 tech-writing §2 (fluent-korean)	sentence
+K53	judgment	-	S2	서술어로 끝맺어요	캐시 무효화 실패 시 재시도 로직 동작	v1 tech-writing §2 (fluent-korean)	sentence
+K54	judgment	-	S2	비유 대신 일반 어휘를 써요	설정을 갈아엎었어요.	v1 tech-writing §2 (fluent-korean)	sentence
+K60	regex	되어(진다|집니다|져요|지는|졌)|지게 (된다|됩니다|돼요)	S1	능동이나 단일 피동으로 써요 (판단된다)	결과가 판단되어진다.	im-not-ai A-8	sentence
+K61	regex	에서의|에로의|으로의|에의|으로부터의	S2	절이나 구로 풀어써요	회의에서의 결정이에요.	im-not-ai A-19	word
+K62	regex	가지고 (있다|있습니다|있어요)	S2	형용사나 동사로 되돌려요 (경쟁력이 강하다)	강한 경쟁력을 가지고 있다.	im-not-ai A-7	sentence
+K63	regex	결론적으로|요약하면|정리하자면|정리하면,	S2	결산 문구를 지우고 바로 결론을 써요	결론적으로 이 방법이 낫다.	im-not-ai D-1	word
+K64	regex	시사하는 바가 크다|주목할 만하다|매우 중요하다	S2	구체적인 결론으로 바꿔요	이 결과는 시사하는 바가 크다.	im-not-ai D-2	sentence
+K65	regex	크게 (두|세|네) 가지로|다음과 같은 (두|세|네|몇) 가지	S2	도입구 없이 바로 본론을 써요	이유는 크게 세 가지로 나눌 수 있다.	im-not-ai D-3	sentence
+K66	regex	혁신적|획기적|압도적|파격적|전례 없는	S2	구체적인 수치나 사실로 바꿔요	획기적인 개선이에요.	im-not-ai D-4	word
+K67	regex	(할|볼|나설) 때(입니다|이다|예요)\.|시점(입니다|이다|이에요)\.	S2	구체적인 동사 단언으로 끝내요	이제 행동할 때입니다.	im-not-ai D-6	sentence
+K68	regex	(필요한|중요한) 것은 .*(이다|입니다|이에요|예요)\.|(핵심|관건|문제)은 .*(이다|입니다|이에요)\.	S2	주어와 서술어를 직결해요 (방향이 필요해요)	필요한 것은 방향이다.	im-not-ai D-8	sentence
+K69	regex	는 이유(다|이다|예요|입니다)\.	S2	순방향 단언으로 써요 (그래서 ~해요)	그것이 우리가 바꾸는 이유다.	im-not-ai D-10	sentence
+K70	regex	과제도 남아 ?있다|한계도 분명하다|아쉬운 점도 있다	S2	문패를 빼고 실제 과제를 첫 문장으로 써요	과제도 남아 있다.	im-not-ai D-12	sentence
+K71	regex	주목할 점은|주목해야 할 점은	S2	직설로 써요 (X는 ~예요)	주목할 점은 속도예요.	im-not-ai I-2	sentence
+K72	regex	다는 (것이다|뜻이다|말이다)\.	S2	직접 종결로 써요 (~다)	실패했다는 것이다.	im-not-ai I-3	sentence
+K73	regex	[가-힣] — [가-힣]	S2	쉼표·괄호·별도 문장으로 나눠요	이 값은 — 참고로 — 기본값이에요.	im-not-ai J-3	word
+K74	regex	(단순한|단순히) [가-힣 ]+를 넘어	S2	"X만이 아니라 Y예요"로 풀어요	단순한 도구를 넘어 동반자예요.	im-not-ai A-21	sentence
+K75	regex	에 의해 	S2	행위자를 주어로 써요 (AI가 만든)	AI에 의해 생성된 글이에요.	im-not-ai A-9	sentence
+K76	regex	(정말|진짜|아주) 좋은 (질문|지적)	S2	공감 상투구를 빼고 답부터 써요	정말 좋은 질문이에요.	dstack-korean §3	word
+K77	regex	(라|다)고 할 수 있(다|어요|습니다)	S2	단정하거나 근거를 적어요	이 방법이 낫다고 할 수 있어요.	im-not-ai G-1	sentence
+K90	judgment	-	S2	"~에 대해"가 한 문단에 세 번 이상이면 목적격 조사로 직결해요	보안에 대해, 성능에 대해, 비용에 대해 논의해요.	im-not-ai A-1	sentence
+K91	judgment	-	S2	같은 "~할 수 있다"가 네 번 이상이면 일부만 다른 완곡으로 분산해요 (단정 전환 금지)	할 수 있다. 할 수 있다. 할 수 있다. 할 수 있다.	im-not-ai A-10	sentence
+K92	judgment	-	S2	세 개 이상 연속 불릿 블록은 문단 산문으로 합쳐요 (칼럼·보고서)	- 하나 - 둘 - 셋 - 넷	im-not-ai C-2	sentence
+K93	judgment	-	S2	"A가 아니라 B" 대구가 두 번 이상 반복되면 한 번만 남겨요	속도가 아니라 방향이다. 양이 아니라 질이다.	im-not-ai C-8	sentence
+K94	judgment	-	S2	연결어미 뒤 쉼표가 여섯 번 이상이면 쉼표를 지워요; 윤문이 새로 만들지 않아요	빠르고, 싸고, 좋고, 편하고, 쉽고, 가볍고, 작아요.	im-not-ai C-11	sentence
+K95	judgment	-	S2	감각 술어 평가문과 사전 은유(잠식·청사진·적신호·신호탄)는 명제로 바꿔요	경고는 서늘하고 시장은 잠식된다.	im-not-ai D-14	sentence
+K96	judgment	-	S2	문장 길이를 섞어요: 단문 한둘과 장문 하나를 문단마다	모든 문장이 같은 길이예요. 모든 문장이 같은 길이예요.	im-not-ai E-1	sentence
+K97	judgment	-	S2	같은 종결어미가 네 문장 이상 이어지면 바꿔요; "~고 있다"는 단순 시제로	해요. 해요. 해요. 해요.	im-not-ai E-2	sentence
+K98	judgment	-	S2	"-성/-적/-화" 명사화가 쌓이면 동사·형용사 어근으로 되돌려요	정책의 실행의 효율성의 제고	im-not-ai F-4 F-5	sentence
+K99	judgment	-	S2	이중·삼중 완곡은 하나만 남기고 극성과 확신도는 유지해요	그럴 가능성이 있을 수 있어요.	im-not-ai G-2	sentence
+K100	judgment	-	S2	문두 접속사(또한·따라서·즉·나아가)가 한 문단에 세 번 이상이면 절반을 덜어요	또한 좋다. 따라서 산다. 즉 이득이다.	im-not-ai H-1 H-4	sentence
+K101	judgment	-	S2	"~한 것이다/일 것이다"가 세 번 연속이면 일부만 "~다"로	그런 것이다. 맞는 것이다. 옳은 것이다.	im-not-ai I-1	sentence
+K102	judgment	-	S2	당위("~해야 한다")로 끝나는 문단이 둘 이상이면 자리만 옮겨요; 서법은 보존	그러므로 지켜야 한다.	im-not-ai I-4	sentence
+K103	judgment	-	S2	따옴표 강조가 다섯 번 이상이면 진짜 인용만 남겨요	"빠른" "쉬운" "좋은" "싼" "가벼운" 도구	im-not-ai J-2	sentence
+K104	judgment	-	S2	고유명사·수치·날짜·직접 인용·기술 용어(API·prompt)는 윤문 대상이 아니에요	API는 2026년 3월에 바뀌었어요.	im-not-ai Do-NOT	sentence
+K105	judgment	-	S2	한 문서에서 해요체와 합쇼체를 섞지 않아요	그렇습니다. 그래요.	im-not-ai E-7	sentence

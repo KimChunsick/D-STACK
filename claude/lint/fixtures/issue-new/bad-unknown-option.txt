@@ -1,0 +1,6 @@
+# An option no arm of the loop claims (R11).
+title: run verify prints an empty CURRENT
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs
+extra: --reason curiosity

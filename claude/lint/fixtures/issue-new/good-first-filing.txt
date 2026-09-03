@@ -1,0 +1,6 @@
+# Every field the verb asks for, plus the proposal it does not: one file with one sighting.
+title: plan start refuses a file worktree
+symptom: it exits 1 and prints nothing at all
+repro: dstack plan start P4 --worktree ./notes.txt
+source: dstack-cli/src/verbs/plan/lifecycle.rs
+proposal: name the path that was refused and why

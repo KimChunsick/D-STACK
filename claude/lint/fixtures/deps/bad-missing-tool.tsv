@@ -1,0 +1,2 @@
+name	probe	install	source	auth	needed_when	required_by	group
+nope	command -v definitely-not-a-tool-xyz	brew install nope	-	no	goal-closing	always	

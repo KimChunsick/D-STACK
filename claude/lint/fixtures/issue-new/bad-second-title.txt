@@ -1,0 +1,6 @@
+# A second operand: the title is one argument, and a stray word is not a second one.
+title: run verify prints an empty CURRENT
+symptom: the CURRENT line is empty in a worktree that has a run
+repro: dstack run verify
+source: dstack-cli/src/verbs/run/verify.rs
+extra: again
