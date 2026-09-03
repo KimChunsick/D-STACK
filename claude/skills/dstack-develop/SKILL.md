@@ -38,7 +38,7 @@ unit is the **Milestone** and the fresh-context unit stays the Plan.
 | Discuss | interview round for this Milestone only, budget from R51 (first Milestone 2 rounds × 5 questions, later 1 × 3); `dstack ask add` / `dstack ask answer` / `dstack ask assume`, `dstack decision add` | `dstack ask list` shows 0 open |
 | Plan | `dstack milestone add`, `dstack plan add`, `dstack task add`; then `dstack plan render` | render shows 3–6 Plans, every live R covered |
 | Execute | the wave loop of §5 | no Plan of this Milestone is `pending`/`in-progress` |
-| Verify | `dstack check coverage`, `dstack check decisions`, `dstack verify` | all three exit 0 |
+| Verify | the milestone's e2e pass — one `e2e-runner` over every open case of every Plan, recorded per artifact (verify §4–§5, §7) — then `dstack check coverage`, `dstack check decisions`, `dstack verify` | all three exit 0 |
 | Wrap-up | `dstack review --scope milestone`, close finished quick items, report to the user | the ledger pass seals |
 
 **GSD verification warns; here it blocks.** GSD: "A phase is not done because execution
@@ -79,7 +79,7 @@ off is recorded, never silently dropped:
 |---|---|---|
 | `unit_tests: on` | Red/Green/Refactor inside each Task (§4.1), `unit-test` skill | `skipped: unit_tests=off` |
 | `review: on\|off` | rounds and axes of `codex-review`; the per-R covered/partial/absent verdict never turns off (R69) | `skipped: review=off (verdict still required)` |
-| `e2e: capture\|cli\|none` | which evidence kind the Plan's cases take | `skipped: e2e=none` |
+| `e2e: capture\|cli\|none` | which evidence kind the milestone's e2e cases take — run once per milestone, never per Plan (verify §1) | `skipped: e2e=none` |
 | `korean_polish: on` | `ko-polish` on human-facing prose only | `skipped: korean_polish=off` |
 | `codex_effort` | `model_reasoning_effort` of every Codex run | — |
 
@@ -205,7 +205,7 @@ Run in this order. Every step is a CLI verb; nothing here is a judgment call.
 |---|---|---|
 | 1 | read the `run verify` lines of the report | a location mismatch voids the delegation (R36); re-run the Plan, do not accept its commits |
 | 2 | `dstack worker report --plan P3 --from <report-file>` | prints `reported: N / unreported: M (R…)`; writes the M rows to the ledger as `unreported` (R68) |
-| 3 | `dstack evidence add --r R07 --case c-test --kind test --artifact <path> --produced-by "<cmd>"` (one per artifact the worker produced) | the ledger's only writer is the main session (R104) |
+| 3 | `dstack evidence add --r R07 --case c-test --kind test --artifact <path> --produced-by "<cmd>"` (one per test artifact the worker produced) | the ledger's only writer is the main session (R104); the Red output exists only now. E2E cases are not run here — they wait for the milestone close (verify §1) |
 | 4 | `dstack task done T7 --commit <sha>` (one per task in the report) | records the commit that is the Task |
 | 5 | `dstack plan done P3` | refreshes readiness; regenerates ROADMAP.md and STATE.md under the lock |
 | 6 | `dstack review --scope plan --plan P3` then the `codex-review` skill on the bundle | review is per Plan and unconditional (R69) |
@@ -250,14 +250,18 @@ review is allowed if the reason is written in one line.
 
 ## 10. Closing a Milestone and the Goal
 
-1. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0.
-2. `dstack review --scope milestone --milestone M2` → ledger pass → seal.
-3. Goal close: `dstack verify` also checks branch containment (R38). If the Goal branch does
-   not contain the base branch HEAD it refuses with "rebase first". After the rebase, re-run
-   the ledger pass (step 2) for every Plan whose files had conflicts, then close.
-4. `dstack report` — R table with computed status; `UNMET` exits 1, only `ABSTAIN`/`BLOCKED`
+1. The milestone's e2e pass (verify §7 step 3): one runner over every open case of every Plan in
+   the milestone, one `dstack evidence add` per artifact. A failed case becomes a decimal Plan
+   (`dstack plan insert --after P<n>`) with its own review round; the milestone waits.
+2. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0.
+3. `dstack review --scope milestone --milestone M2` → ledger pass → seal.
+4. Goal close records no new evidence (every case ran at its milestone): `dstack verify` also
+   checks branch containment (R38). If the Goal branch does not contain the base branch HEAD it
+   refuses with "rebase first". After the rebase, re-run the ledger pass (step 3) for every
+   Plan whose files had conflicts, then close.
+5. `dstack report` — R table with computed status; `UNMET` exits 1, only `ABSTAIN`/`BLOCKED`
    exits 2. Accept each one deliberately: `dstack verify --accept-abstain R05 --why "<why>"`.
-5. `dstack run close`.
+6. `dstack run close`.
 
 Korean wrap-up line, e.g. "M2는 Plan 4개가 전부 done이고 검사 세 개가 통과했어요. 남은
 ABSTAIN은 R05 하나예요 — 사유를 확인해 주시면 받고 Goal을 닫을게요."

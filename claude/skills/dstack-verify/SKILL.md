@@ -4,9 +4,9 @@ description: >-
   Verification and close-out of a Goal run. Expands approved R rows into the cases ledger, runs the
   work_type verification profile (R72) through the e2e-runner subagent, records every artifact with
   `dstack evidence add`, then runs `dstack verify`, `dstack report` and the milestone / Goal close
-  checklist. Use it when a Plan's tasks are done and its review round is sealed, when a milestone or
-  the Goal is closing, when a case must be marked blocked or abstained, or when a completion report is
-  asked for. Korean triggers the user may type: "검증해줘", "증거 남겨줘", "케이스 돌려줘",
+  checklist. Use it when a worker returns with test artifacts, when a milestone is closing (the e2e
+  cases of every Plan in it run once, in one pass), when the Goal is closing, when a case must be
+  marked blocked or abstained, or when a completion report is asked for. Korean triggers the user may type: "검증해줘", "증거 남겨줘", "케이스 돌려줘",
   "마일스톤 닫자", "Goal 닫아줘", "완료 보고 만들어줘", "리포트 뽑아줘".
 ---
 
@@ -21,10 +21,17 @@ in the codebase — SUMMARY.md claims are not evidence."* Here a worker's report
 
 | Moment | What runs |
 |---|---|
-| A Plan's tasks are done, its round sealed | cases for the R ids that Plan covers → evidence → `dstack check coverage` |
-| A milestone closes | milestone ledger check + the §7 checklist |
+| A worker returns | the `test` rows its Tasks produced (Red/Green artifacts) → `dstack evidence add` at once: the Red output exists only at that moment |
+| A milestone closes | ONE e2e-runner pass over the cases of every Plan in the milestone → evidence → `dstack check coverage` → the §7 checklist |
 | The Goal closes | §7 checklist + `dstack report --metrics` + `dstack run close` |
 | A case cannot be observed | record `blocked` / `abstain` (§5), then continue with the next case |
+
+Evidence has two rhythms. Test evidence is per Task and recorded the moment the worker's report
+arrives (develop §7). E2E evidence is per milestone, not per Plan: the Plans of a wave are
+independent, so one runner at milestone close covers them all, and the runner is the expensive
+part of verification. The price is that a failed case reopens a Plan that is already done and
+reviewed — the fix is a decimal Plan (`dstack plan insert --after P<n>`) with its own review
+round, and the milestone stays open until its case is re-run and recorded.
 
 Phases are switched on by request fields only — never by a guess about the task's size. Read them
 with `dstack request show` and obey the table:
@@ -97,12 +104,13 @@ throws on a user-owned space — that is "user is controlling", stop there (§5.
 The main session prepares the artifact directory and passes it as the only writable location:
 
 ```bash
-mkdir -p "$(git rev-parse --show-toplevel)/.dstack/local/artifacts/<plan-or-scope>"
+mkdir -p "$(git rev-parse --show-toplevel)/.dstack/local/artifacts/<scope>"
 ```
 
-`<main-root>/.dstack/local/artifacts/<plan-or-scope>/` (mode 700, never committed). `<plan-or-scope>`
-is the plan id for a Plan pass (`P3`), the milestone id for a milestone pass (`M2`), or the quick
-slug. The runner writes only there; the main session records the artifacts afterwards.
+`<main-root>/.dstack/local/artifacts/<scope>/` (mode 700, never committed). `<scope>` is the
+milestone id for a milestone pass (`M2`) or the quick slug. The runner writes only there; the main
+session records the artifacts afterwards. The worker's own test artifacts live elsewhere
+(`.dstack/runs/<id>/artifacts/P<n>/`, develop §6) and are recorded when the worker returns.
 
 Delegation defaults (R25) — always pass `model` explicitly:
 
@@ -116,11 +124,11 @@ Delegation defaults (R25) — always pass `model` explicitly:
 Brief block to send (an empty-context worker gets everything it needs, R68):
 
 ```
-Run the <work_type> verification profile for run <run-id>, plan <P>.
+Run the <work_type> verification profile for run <run-id>, milestone <M> (every Plan in it).
 Artifact directory (the ONLY place you may write): <abs path>/.dstack/local/artifacts/<scope>/
 How to start the system under test: <command, or "already running at <url>">
 Capture engine: ego-browser — instructions: <paste the §3.1 rows>
-Cases:
+Cases (every open case of every Plan in the milestone, in one table):
 | R | case | acceptance criterion (verbatim from the request) | steps |
 | R03 | c1 | <accept: …> | <steps> |
 Naming: <artifact-dir>/R<NN>-<case>.<ext>, plus R<NN>-<case>.txt naming the R id.
@@ -133,7 +141,7 @@ A run longer than the foreground cap goes through ONE background Bash call and t
 completion notification resumes the work (R98):
 
 ```bash
-dstack exec <label> -- <the long command>     # label: e2e-P3, e2e-M2, …
+dstack exec <label> -- <the long command>     # label: e2e-M2, e2e-<quick slug>, …
 ```
 
 ## 5. Recording evidence (R104)
@@ -142,17 +150,17 @@ One command per artifact, run by the main session after the runner reports:
 
 ```bash
 dstack evidence add --r R03 --case c1 --kind capture \
-  --artifact .dstack/local/artifacts/P3/R03-c1.png \
+  --artifact .dstack/local/artifacts/M2/R03-c1.png \
   --produced-by "ego-browser nodejs … captureScreenshot → R03-c1.png"
 ```
 
 ```bash
 dstack evidence add --r R05 --case c1 --kind cli \
-  --artifact .dstack/local/artifacts/P3/R05-c1.txt --produced-by "make test"
+  --artifact .dstack/local/artifacts/M2/R05-c1.txt --produced-by "make test"
 dstack evidence add --r R07 --case c1 --kind transcript \
-  --artifact .dstack/local/artifacts/P3/R07-c1.txt --produced-by "curl -i -X POST …"
+  --artifact .dstack/local/artifacts/M2/R07-c1.txt --produced-by "curl -i -X POST …"
 dstack evidence add --r R09 --case c1 --kind review \
-  --artifact .dstack/local/artifacts/P3/R09-claims.md --produced-by "claim→source checklist"
+  --artifact .dstack/local/artifacts/M2/R09-claims.md --produced-by "claim→source checklist"
 ```
 
 ### 5.1 Why a row is rejected, and what fixes it
@@ -177,7 +185,7 @@ A phase that is off still leaves a trace. Write a one-line note file into the ar
 
 ```bash
 dstack evidence add --r R04 --case c-visual --kind visual \
-  --artifact .dstack/local/artifacts/P3/R04-c-visual-skipped.txt \
+  --artifact .dstack/local/artifacts/M2/R04-c-visual-skipped.txt \
   --produced-by "visual=none" --status skipped --note no-visual-surface
 ```
 
@@ -231,15 +239,16 @@ Run in order. Every step prints counts; paste the counts, do not summarise them 
 | # | Step | Command |
 |---|---|---|
 | 1 | All plans of the milestone are done | `dstack plan render` |
-| 2 | Ledger check for the milestone (R70): open findings and integration behaviour only, no new scope | `dstack review --scope milestone --milestone M2`, then the `codex-review` skill seals the round |
-| 3 | New R rows expanded | `dstack cases sync` |
-| 4 | Coverage | `dstack check coverage` |
-| 5 | Interview decisions covered | `dstack check decisions` |
-| 6 | Evidence and policy | `dstack verify` |
-| 7 | Report | `dstack report` |
-| 8 | Finished quick items tidied (R99) | `dstack quick list`, `dstack quick close <slug>` |
+| 2 | New R rows expanded | `dstack cases sync` |
+| 3 | The milestone's e2e pass: every open case of every Plan, one runner, then one `evidence add` per artifact (§4, §5). A failed case → `dstack plan insert --after P<n>` for the fix, its own review round, back to step 1 | `dstack cases render` shows what is still open |
+| 4 | Ledger check for the milestone (R70): open findings and integration behaviour only, no new scope | `dstack review --scope milestone --milestone M2`, then the `codex-review` skill seals the round |
+| 5 | Coverage | `dstack check coverage` |
+| 6 | Interview decisions covered | `dstack check decisions` |
+| 7 | Evidence and policy | `dstack verify` |
+| 8 | Report | `dstack report` |
+| 9 | Finished quick items tidied (R99) | `dstack quick list`, `dstack quick close <slug>` |
 
-Goal close adds, in this order:
+Goal close records no new evidence: every case was run at its milestone. It adds, in this order:
 
 ```bash
 dstack report --metrics    # R01: wall clock, tokens, review rounds, concurrent runs, R met rate
