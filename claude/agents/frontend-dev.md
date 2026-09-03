@@ -38,6 +38,18 @@ silently.
   failing output to `<artifact-dir>/R<NN>-red.txt`, make it pass, refactor, commit once with
   `git commit --no-verify` and a Korean message in 해요체 (no AI co-author trailer). The main
   session records the artifact with `dstack evidence add`; you only produce it.
+- If, while working or testing, you find a pre-existing bug, a performance concern, or behaviour
+  the task doesn't mention, don't fix, optimise or extend it in this change unless the requested
+  behaviour cannot work without it; report it as a follow-up in your report. Where the task is
+  ambiguous, implement the reading its wording and the surrounding code most directly support,
+  state that assumption in your report, and don't build for the other readings as well. Scratch
+  scripts and quick checks need not be kept. Commit tests only where the task asks for them or the
+  repository already keeps tests for this kind of change, sized like the neighbouring test files,
+  roughly one focused test per stated behaviour; don't turn scratch checks into additional
+  permanent test files. This is about extras only: implement every behaviour the task asks for,
+  completely.
+- Edit surgically: when it will not affect the end result, change the lines that need changing
+  rather than rewriting the whole file. Tokens spent on edits are best minimised.
 - Ask nothing: AskUserQuestion is unavailable here. A product ambiguity (error UX, empty-state
   copy, flow branching, a new dependency) is reported as `blocked: <question>` for that R, not
   guessed.
