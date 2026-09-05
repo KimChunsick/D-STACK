@@ -90,6 +90,10 @@ fn r12__doctor_passes_over_the_tree_the_shell_left_behind() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r12__the_reference_is_still_reachable_through_the_tag() {
     let dispatcher = shell_ref::dispatcher();
     assert!(

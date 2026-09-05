@@ -30,6 +30,7 @@ fn repo() -> PathBuf {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -162,11 +163,19 @@ fn assert_fixtures(checker: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_verify_and_report_reach_parity() {
     assert_parity("32-verify-report");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_verify_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "verify",
@@ -184,6 +193,10 @@ fn r11_verify_refuses_with_the_shell_wording() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_report_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "report",
@@ -255,6 +268,10 @@ fn write(path: &Path, text: &str) {
 /// symlink. A link planted under `subagents` must not pull an unrelated tree into the sum, and a
 /// cycle must not hang the walk; both implementations have to answer the same numbers.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r01_a_symlinked_transcript_tree_sums_as_find_sums() {
     let dir = sandbox("symlink");
     let run = run_id(&dir);

@@ -309,6 +309,10 @@ fn r03__covers_helpers_are_sorted_and_unique() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03__renders_match_the_shell_renderers() {
     let doc = fixture();
     assert_eq!(

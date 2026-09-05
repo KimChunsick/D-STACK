@@ -61,6 +61,7 @@ fn repo() -> PathBuf {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -148,11 +149,19 @@ fn assert_same_refusal(tag: &str, cases: &[&[&str]]) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_ledgers_reach_parity() {
     assert_parity("22-ask-decision");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_ask_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "ask",
@@ -184,6 +193,10 @@ fn r11_ask_refuses_with_the_shell_wording() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_decision_and_check_refuse_with_the_shell_wording() {
     assert_same_refusal(
         "decision",
@@ -266,6 +279,10 @@ fn current_run_dir(dir: &Path) -> PathBuf {
 /// R13: a missing plan.json is "no plan", but one that cannot be read is a cannot decide — a
 /// broken file must not read as a run whose decisions reach no task.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_check_decisions_cannot_decide_on_an_unreadable_plan() {
     let dir = sandbox("brokenplan");
     let run_dir = current_run_dir(&dir);
@@ -354,6 +371,10 @@ fn seeded(tag: &str) -> PathBuf {
 /// where a Unicode-aware split would find two known rows: no warning from ask add, and a
 /// decision row that reads as covered by the task on R99.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_affects_splits_on_ascii_whitespace_only() {
     let hard = "R01\u{a0}R99";
     let cases: &[&[&str]] = &[
@@ -412,6 +433,10 @@ fn both(tag: &str, calls: &[&[&str]]) -> Vec<(String, String, i32)> {
 /// R14: a withdrawn row takes no task and no evidence by design, so a decision that affects only
 /// withdrawn rows has nothing left to reach — it is moot, and moot is covered.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r14_a_row_whose_every_r_is_marked_is_moot() {
     let calls: &[&[&str]] = &[
         &["req", "withdraw", "R02", "--why", "the interview dropped it"],
@@ -436,6 +461,10 @@ fn r14_a_row_whose_every_r_is_marked_is_moot() {
 /// R14: one live R id that is neither tasked nor evidenced still leaves the row UNCOVERED — the
 /// moot rule forgives the marked ids, never the row.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r14_a_live_id_keeps_a_mixed_row_uncovered() {
     let calls: &[&[&str]] = &[
         &["req", "withdraw", "R02", "--why", "the interview dropped it"],

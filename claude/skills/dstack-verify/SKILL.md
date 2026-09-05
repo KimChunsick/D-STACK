@@ -119,7 +119,7 @@ Delegation defaults (R25) — always pass `model` explicitly:
 | Running cases, capturing artifacts | `e2e-runner` | sonnet |
 | Korean prose polish under the report | `ko-polish` | sonnet |
 | Fixing what a failed case exposed | `general-dev` / `frontend-dev` for FE code | opus |
-| Reviewing the fix | Codex, through the `codex-review` skill | `codex_effort` of the request |
+| Reviewing the fix | Codex, through the `codex-review` skill | fixed `high` effort |
 
 Brief block to send (an empty-context worker gets everything it needs, R68):
 

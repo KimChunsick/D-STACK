@@ -257,6 +257,10 @@ fn assert_cannot_decide(tag: &str, file: &str, verbs: &[&[&str]]) {
 
 /// Case (a): the file is not there, and both implementations give the same empty answer.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03__an_absent_store_file_answers_the_way_the_shell_answers() {
     let shell = sandbox("absent-shell");
     let rust = sandbox("absent-rust");
@@ -288,6 +292,10 @@ fn r03__an_absent_store_file_answers_the_way_the_shell_answers() {
 /// Case (b), questions.md: `check request` counted an unreadable ledger as zero questions and let
 /// the check pass (review round 040); `ask list` printed a ledger of no rows.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_questions_md_cannot_decide() {
     assert_cannot_decide(
         "questions",
@@ -298,6 +306,10 @@ fn r13__an_unreadable_questions_md_cannot_decide() {
 
 /// Case (b), decisions.md: the two readers of the decision ledger.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_decisions_md_cannot_decide() {
     assert_cannot_decide(
         "decisions",
@@ -308,6 +320,10 @@ fn r13__an_unreadable_decisions_md_cannot_decide() {
 
 /// Case (b), cases.tsv: the evidence ledger every verdict is computed from.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_cases_tsv_cannot_decide() {
     assert_cannot_decide(
         "cases",
@@ -318,6 +334,10 @@ fn r13__an_unreadable_cases_tsv_cannot_decide() {
 
 /// Case (b), review/index.tsv: the sealed rounds a close and a bundle both count.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_review_index_cannot_decide() {
     let dir = sandbox("index");
     populate(&dir);
@@ -348,6 +368,10 @@ fn r13__an_unreadable_review_index_cannot_decide() {
 /// Case (c), plan.json: a file that is there but is not the JSON the store writes. jq fails in the
 /// shell, so nothing here is a divergence of behaviour — only of the message.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unparseable_plan_json_cannot_decide() {
     let dir = sandbox("plan-json");
     populate(&dir);
@@ -367,12 +391,20 @@ fn r13__an_unparseable_plan_json_cannot_decide() {
 
 /// Case (b), plan.json: unreadable, which the shell's jq also fails on.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_plan_json_cannot_decide() {
     assert_cannot_decide("plan-perm", "plan.json", &[&["next"], &["status"]]);
 }
 
 /// Case (b), request.md: the document every verb starts from.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_request_md_cannot_decide() {
     assert_cannot_decide(
         "request",
@@ -384,6 +416,10 @@ fn r13__an_unreadable_request_md_cannot_decide() {
 /// Row-level tolerance stays: awk skips a row it counts too few columns in and reads on, so a
 /// half-written cases.tsv row is not a cannot-decide.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03__a_short_row_stays_tolerated() {
     let dir = sandbox("short-row");
     populate(&dir);
@@ -432,6 +468,10 @@ fn assert_no_write(tag: &str, unreadable: &str, args: &[&str], absent: Option<&s
 
 /// Round 052 (1): `ask add` warned about a request.md it could not read and appended anyway.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__ask_add_stops_on_an_unreadable_request_md() {
     assert_no_write(
         "r2-ask-add",
@@ -443,6 +483,10 @@ fn r13__ask_add_stops_on_an_unreadable_request_md() {
 
 /// Round 052 (2): `ask answer` moved the question to answered before decisions.md was read.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__ask_answer_keeps_the_question_open_when_decisions_md_cannot_be_read() {
     let dir = sandbox("r2-ask-answer");
     populate(&dir);
@@ -475,6 +519,10 @@ fn r13__ask_answer_keeps_the_question_open_when_decisions_md_cannot_be_read() {
 /// Round 052 (3): `request approve` cleared the pending markers and stamped the approval before
 /// the ledger `cases sync` expands was ever read.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__request_approve_writes_nothing_when_cases_tsv_cannot_be_read() {
     assert_no_write("r2-approve", "cases.tsv", &["request", "approve"], None);
 }
@@ -482,6 +530,10 @@ fn r13__request_approve_writes_nothing_when_cases_tsv_cannot_be_read() {
 /// Round 052 (4): `cases sync` and `evidence add` created the ledger header before reading the
 /// request they expand it from.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__cases_sync_writes_no_header_when_request_md_cannot_be_read() {
     assert_no_write(
         "r2-sync",
@@ -492,6 +544,10 @@ fn r13__cases_sync_writes_no_header_when_request_md_cannot_be_read() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__evidence_add_writes_no_header_when_request_md_cannot_be_read() {
     assert_no_write(
         "r2-evidence",
@@ -516,6 +572,10 @@ fn r13__evidence_add_writes_no_header_when_request_md_cannot_be_read() {
 
 /// Round 052 (sweep): `run new` counted the plans of the other open runs after minting its own.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__run_new_mints_nothing_when_another_runs_plan_json_cannot_be_read() {
     let dir = sandbox("r2-run-new");
     populate(&dir);
@@ -556,6 +616,10 @@ fn r13__run_new_mints_nothing_when_another_runs_plan_json_cannot_be_read() {
 /// child ever loaded request.md, so an unreadable request left both writes behind and reported
 /// the child's cannot-decide as this verb's checked failure.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__ask_assume_writes_neither_ledger_when_request_md_cannot_be_read() {
     let dir = sandbox("r3-ask-assume");
     populate(&dir);
@@ -601,6 +665,10 @@ fn r13__ask_assume_writes_neither_ledger_when_request_md_cannot_be_read() {
 /// a file it cannot open, so a run whose meta.tsv is unreadable read as a run with no status,
 /// no owner and no branch — and every verdict computed from those fields was computed from air.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_meta_tsv_cannot_decide() {
     assert_cannot_decide(
         "r3-meta",
@@ -619,6 +687,10 @@ fn r13__an_unreadable_meta_tsv_cannot_decide() {
 /// file it cannot open, so the port would have read "no current run" and gone on to answer about
 /// a worktree it could not actually see.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unreadable_current_cannot_decide() {
     let dir = sandbox("r3-current");
     populate(&dir);

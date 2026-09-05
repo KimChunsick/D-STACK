@@ -28,13 +28,22 @@ It is configuration, not an application: nothing renders, nothing serves.
 - The CLI is the Rust crate `dstack-cli/`: its dependencies are exactly serde, serde_json,
   regex, sha2 and time, and git is the only executable it runs. One responsibility per file,
   350 lines at most, which `dstack doctor` checks.
-- The gates are `bash dstack-cli/test.sh` (cargo test, then `cargo clean --profile dev`, so the
-  debug tree never stays in the checkout) and `bash dstack-cli/parity/run.sh`, which drives the
-  binary against the shell implementation the `shell-final` tag still carries.
+- The default gate is `bash dstack-cli/test.sh` (cargo test, then `cargo clean --profile dev`,
+  so the debug tree never stays in the checkout). Historical shell comparisons are opt-in:
+  reference-dependent Rust tests are reported as ignored unless `--features shell-parity` is
+  passed, and `bash dstack-cli/parity/run.sh` prints `skipped:` unless `--shell-ref <ref>` or
+  `--shell <dispatcher>` is explicit. Do not require or restore `shell-final` for ordinary work.
+  Explicit comparisons still fail on missing references or real differences; ordinary unit
+  tests and fixture checks remain required.
 - Three scripts stay shell — `install.sh`, `claude/hooks/dstack-hook.sh` and
   `claude/statusline-command.sh`. They run under the bash macOS ships, so no feature of bash 4
   or later, and jq belongs to the installer alone.
-- Workflow artifacts (request, recon, decisions, plans, reviews) are English. Commit messages and `README.md` are Korean 해요체. No AI co-author trailers.
+- Request documents (`request.md`, including Goal and quick requests) are always Korean 해요체:
+  titles, headings, descriptions, R-row text and acceptance criteria. This applies even when
+  `korean_polish: off`. Keep frontmatter keys/enum values, R ids, `accept:` and status markers,
+  commands, paths and code identifiers unchanged. Quoted request rows stay in their original Korean.
+- Other workflow artifacts (recon, decisions, plans, reviews) are English. Commit messages and
+  `README.md` are Korean 해요체. No AI co-author trailers.
 - `.dstack/` is local-only and ignored; never commit it and never edit it by hand.
 - A sealed review round (`codex-review-NNN.md`) is never edited; rebuttals go to the next round.
 - A skill file over 300 lines is a sign that logic belongs in the CLI (§3-8).

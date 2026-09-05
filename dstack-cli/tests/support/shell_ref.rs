@@ -5,6 +5,7 @@
 // extracted once per test process — cargo runs each test binary as its own process, and a
 // directory named after that process is one no parallel binary can race for.
 //
+// Tests that use this reference are ignored unless --features shell-parity is enabled.
 // Not every test that includes the module needs both halves of it.
 #![allow(dead_code)]
 

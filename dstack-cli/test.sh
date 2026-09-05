@@ -2,6 +2,7 @@
 # test.sh — run the cargo test gate, then drop the debug tree it built.
 #
 # Usage: bash dstack-cli/test.sh [cargo test args...]
+# Historical shell comparisons are ignored by default; --features shell-parity opts in.
 #
 # The debug artifacts of one `cargo test` run weigh several hundred megabytes and nothing else
 # reads them (install.sh and parity/run.sh build --release). So the tree is cleaned after every

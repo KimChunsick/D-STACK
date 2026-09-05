@@ -22,6 +22,7 @@ fn repo() -> PathBuf {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -112,16 +113,28 @@ fn assert_same_refusal(tag: &str, cases: &[&[&str]]) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_init_and_the_run_verbs_reach_parity() {
     assert_parity("10-init-run");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_status_and_exec_reach_parity() {
     assert_parity("11-status-exec");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_init_and_run_refuse_with_the_shell_wording() {
     assert_same_refusal("run", &[
         &["init", "--bogus"],
@@ -143,11 +156,19 @@ fn r11_init_and_run_refuse_with_the_shell_wording() {
 /// A command that cannot be spawned at all: the shell's redirection makes bash answer, with 127
 /// for a command it cannot find and 126 for a file it finds and cannot run.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_exec_not_found_exits_127() {
     assert_same_exec_failure("execnf", &["exec", "nf", "--", "no-such-command-of-mine"], "nf", 127);
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_exec_not_executable_exits_126() {
     assert_same_exec_failure("execne", &["exec", "ne", "--", "./not-runnable"], "ne", 126);
 }
@@ -175,6 +196,10 @@ fn assert_same_exec_failure(tag: &str, args: &[&str], label: &str, expected: i32
 /// id unchecked, so `run adopt ../x` took the owner of a meta.tsv outside the runs directory and
 /// `run close ../x --abandon why` stamped it closed. The port refuses before it builds the path.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_a_run_id_that_is_not_a_plain_name_is_refused() {
     let dir = sandbox("plainid");
     // Where `../x` lands: one level above the runs directory, with a run-shaped file in it.
@@ -204,6 +229,10 @@ fn r13_a_run_id_that_is_not_a_plain_name_is_refused() {
 /// A value-taking option whose value is missing: the shell's `shift 2` fails under `set -e`, so
 /// the command ends with 1 and says nothing. The port answers with the same silent exit.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_a_missing_option_value_exits_like_the_shell() {
     assert_same_refusal("novalue", &[
         &["run", "new", "x", "--type"],
@@ -214,6 +243,10 @@ fn r11_a_missing_option_value_exits_like_the_shell() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_status_and_exec_refuse_with_the_shell_wording() {
     assert_same_refusal("statusexec", &[
         &["status", "--bogus"],

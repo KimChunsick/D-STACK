@@ -31,7 +31,7 @@ dstack doctor             # 도구, 에이전트, 훅, 규칙표를 한 번에 �
 | 조사와 인터뷰 | sonnet 에이전트가 코드를 읽어 recon.md를 쓰고, 질문은 대장으로 관리해요 | `dstack ask add|answer|assume` |
 | 계획 | Milestone → Plan → Task를 등록하고 파도 단위로 돌려요 | `dstack plan add`, `dstack next`, 스킬 `dstack-develop` |
 | 구현 | Plan마다 빈 맥락의 opus 워커가 dstack이 만든 worktree에서 일해요 | `dstack plan start --worktree`, `dstack worker report` |
-| 리뷰 | Plan이 끝날 때마다 Codex(gpt-5.6-sol)가 요청서 원문과 diff를 함께 봐요 | `dstack review --scope plan`, 스킬 `codex-review` |
+| 리뷰 | Plan이 끝날 때마다 Codex(gpt-6-astra)가 요청서 원문과 diff를 함께 봐요 | `dstack review --scope plan`, 스킬 `codex-review` |
 | 검증과 보고 | 증거를 대장에 기록하고 R별 상태를 계산해요 | `dstack evidence add`, `dstack verify`, `dstack report`, 스킬 `dstack-verify` |
 
 빠른 작업은 Goal 밖의 별도 트랙이에요: `dstack quick new <slug>`가 같은 요청서·대장·검사기를
@@ -50,7 +50,7 @@ dstack doctor             # 도구, 에이전트, 훅, 규칙표를 한 번에 �
 | `risk_axes` | none, ux, perf, security | recon.md의 위험 표에 넣을 축 |
 | `design_review` | required, auto, skip | 설계 확인 라운드 |
 | `review` | on, off | 라운드 수와 축만 조절해요. R별 판정은 끄지 못해요 |
-| `codex_effort` | medium, high, xhigh | Codex 추론 강도 |
+| `codex_effort` | medium, high, xhigh | 기본값은 high예요. 리뷰·리서치는 항상 high로 실행해요 |
 | `e2e` | capture, cli, none | 어떤 종류의 증거가 필요한지 |
 | `unit_tests` | on, off | Red/Green/Refactor와 테스트 증거 |
 | `visual` | design, regression, none | 화면 비교. 비교 도구가 들어 있지 않아 지금은 `none`만 증거를 남겨요 |
@@ -69,7 +69,7 @@ dstack doctor             # 도구, 에이전트, 훅, 규칙표를 한 번에 �
   바이너리를 찾아 넘겨주기만 하고, 찾지 못하면 exit 2로 끝나요. 반복해서 막힐 때의 탈출구는
   `dstack run pause`예요.
 - **서브에이전트는 Fable로 띄우지 않아요.** 에이전트 머리말의 `model`과, model이 빠진 Agent 호출을
-  opus로 바꿔 넣는 훅이 두 겹으로 지켜요. Codex는 `codex exec` 플래그로 gpt-5.6-sol에 고정해요.
+  opus로 바꿔 넣는 훅이 두 겹으로 지켜요. Codex는 `codex exec` 플래그로 gpt-6-astra와 추론 강도 high에 고정해요.
 - **`.dstack/`은 기기에만 있어요.** 커밋되지 않고, `dstack init`이 `.gitignore`에 넣어요.
 - **워커가 겪은 불편은 파일로 남아요.** 구현 워커가 dstack 때문에 막히거나 시간을 버리면
   `dstack issue new`로 한 건씩 적어 두고 하던 일을 이어가요. 파일은 저장소 밖
@@ -83,7 +83,7 @@ dstack-cli/                 명령 하나를 만드는 Rust 크레이트
   src/store/                meta.tsv·요청서·plan.json 같은 저장 파일의 읽기와 쓰기
   src/verbs/                동사별 구현. 파일 하나가 책임 하나이고 350줄이 상한이에요
   src/selftest/             붙박이 예제를 돌리는 검사기
-  parity/                   태그 `shell-final`에 남은 셸 구현과 출력을 맞대보는 비교 도구
+  parity/                   명시적으로 켰을 때만 과거 셸 구현과 출력을 비교하는 도구
   tests/                    cargo test가 도는 통합 테스트
 claude/hooks/dstack-hook.sh 유일한 훅 스크립트 (inject·stop·agent-model·pre-write)
 claude/skills/              dstack-workflow, dstack-develop, dstack-verify, dstack-quick,
@@ -109,7 +109,26 @@ deps.tsv                    외부 실행 파일 목록. dstack doctor가 전부
 - README·가이드·요청서·완료 보고: `korean_polish: on`이면 ko-polish 에이전트가 승인 전에 한 번
   다듬어요. 코드 주석과 규칙 파일은 자동으로 다시 쓰지 않아요.
 
-워크플로 산출물(요청서, recon, 결정, 계획, 리뷰 기록, 에이전트 간 프롬프트)은 영어예요.
+요청서는 일반 작업과 빠른 작업 모두 항상 한국어 해요체로 작성해요. 제목·설명·요구사항·완료
+기준까지 포함하고, `korean_polish: off`여도 같아요. 머리말의 필드명과 정해진 값, R 번호,
+`accept:`와 상태 표시, 명령어·경로·코드 식별자는 유지해요.
+그 밖의 워크플로 산출물(recon, 결정, 계획, 리뷰 기록, 에이전트 간 프롬프트)은 영어예요.
+요청서 원문을 인용할 때는 한국어 그대로 옮겨요.
+
+## 검사 실행
+
+기본 검사는 `bash dstack-cli/test.sh`로 실행해요. 일반 단위 테스트와 검사기 예제는 계속
+검증하고, 과거 셸 구현이 필요한 테스트는 건너뛴 이유와 함께 `ignored`로 표시해요.
+일반 작업에서는 `shell-final` 태그를 요구하거나 복원하지 않아요.
+
+과거 구현과의 비교가 필요할 때만 기준 자료를 준비한 뒤 직접 켜요.
+
+- Rust 비교 테스트: `bash dstack-cli/test.sh --features shell-parity`
+- 셸 비교 도구: `bash dstack-cli/parity/run.sh --shell-ref shell-final`
+- 다른 기준 실행 파일 사용: `bash dstack-cli/parity/run.sh --shell <실행 파일 경로>`
+
+비교 도구에 기준을 지정하지 않으면 `skipped:`를 출력하고 끝나요. 직접 켠 비교에서 기준 자료가
+없거나 실제 차이가 발견되면 실패로 처리해요.
 
 ## 자주 걸리는 것
 

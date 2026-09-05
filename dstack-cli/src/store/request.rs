@@ -54,10 +54,7 @@ pub fn field_default(work_type: &str, field: &str) -> &'static str {
             _ => "auto",
         },
         "review" => "on",
-        "codex_effort" => match work_type {
-            "docs-writing" => "medium",
-            _ => "high",
-        },
+        "codex_effort" => "high",
         "e2e" => match work_type {
             "web-ui" => "capture",
             "docs-writing" => "none",

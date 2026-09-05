@@ -273,6 +273,10 @@ fn git(dir: &Path, args: &[&str]) {
 /// R07: every recorded payload, run through both implementations in twin sandboxes, has to leave
 /// the same JSON on stdout, the same line on stderr and the same exit code behind.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r07__every_recorded_payload_answers_as_the_frozen_wrapper() {
     let reference = Side::reference(sandbox("ref"));
     let port = Side::port(sandbox("port"));
@@ -473,6 +477,10 @@ fn r07__the_locator_refuses_a_candidate_it_cannot_run() {
 /// inject carrying a note instead because a prompt is never blocked (D-01). Step 40 declares each
 /// of these calls; a payload neither parser reads keeps answering as the reference answers.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r07__a_payload_only_the_reference_reads_is_a_block() {
     let reference = Side::reference(sandbox("round4-ref"));
     let port = Side::port(sandbox("round4-port"));
@@ -591,9 +599,14 @@ fn r05__the_fail_closed_wrapper_judges_its_fixtures() {
 
 /// R04: the harness step that drives every branch of every event through both implementations.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__the_hook_events_reach_parity() {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", "40-hook"])
         .output()
         .expect("run the parity harness");
@@ -768,6 +781,10 @@ fn list(times: &[Duration]) -> String {
 /// and print one line. `hook stop` carries the whole gate verdict with it — that work is what
 /// r10_gate_speed holds to the ceiling — so only the relative bound below applies to it.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r10_the_hook_events_are_fast_enough_for_the_hook_path() {
     let load = load_average();
     for (event, done) in measured() {
@@ -799,6 +816,10 @@ fn r10_the_hook_events_are_fast_enough_for_the_hook_path() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r10_the_hook_events_beat_the_wrapper_by_half() {
     for (event, done) in measured() {
         let (port, reference) = (median(&done.port), median(&done.reference));

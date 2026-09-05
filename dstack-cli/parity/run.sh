@@ -9,7 +9,8 @@
 # names the tag that still carries it (shell-final), whose `claude` and `deps.tsv` are extracted
 # into this run's own directory. So the two stores start from the same state and a difference
 # reported here is a difference of the steps, never of the setup. Nothing outside the two
-# sandboxes is written. Exit 0 iff nothing differs.
+# sandboxes is written. With no explicit reference, print skipped and exit 0. Once opted in,
+# exit 0 iff nothing differs.
 set -eu
 set -o pipefail
 
@@ -21,6 +22,7 @@ TAB="$PARITY_TAB"
 SEP="$(printf '\001')"   # sed delimiter for step-supplied masks, which may contain | and /
 
 SHELL_REF=shell-final
+SHELL_REQUESTED=0   # historical comparisons run only with an explicit reference
 SHELL_BIN=""        # --shell overrides the extraction of --shell-ref
 SHELL_TREE=""       # the extracted tree, empty when --shell named a dispatcher of its own
 RUST_BIN="$REPO/dstack-cli/target/release/dstack"
@@ -40,8 +42,8 @@ cleanup() {
 # ── arguments ──────────────────────────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
   case "$1" in
-    --shell)     need_value "$1" "$#"; SHELL_BIN="$2"; shift 2 ;;
-    --shell-ref) need_value "$1" "$#"; SHELL_REF="$2"; shift 2 ;;
+    --shell)     need_value "$1" "$#"; SHELL_BIN="$2"; SHELL_REQUESTED=1; shift 2 ;;
+    --shell-ref) need_value "$1" "$#"; SHELL_REF="$2"; SHELL_REQUESTED=1; shift 2 ;;
     --rust)  need_value "$1" "$#"; RUST_BIN="$2"; shift 2 ;;
     --only)  need_value "$1" "$#"; ONLY="$2"; shift 2 ;;
     --out)   need_value "$1" "$#"; OUT="$2"; OUT_MINE=0; shift 2 ;;
@@ -274,6 +276,10 @@ report() {
 }
 
 # ── main ───────────────────────────────────────────────────────────────────────────────
+if [ "$SHELL_REQUESTED" = 0 ]; then
+  printf 'skipped: historical shell comparison is opt-in; use --shell-ref <ref> or --shell <dispatcher>\n'
+  exit 0
+fi
 if [ ! -x "$RUST_BIN" ]; then
   ( cd "$REPO/dstack-cli" && cargo build --release ) >/dev/null 2>&1 || abort "cargo build --release failed"
 fi

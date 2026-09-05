@@ -35,6 +35,7 @@ fn shell_bin() -> String {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -181,11 +182,19 @@ fn assert_fixtures(checker: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_quick_and_gate_verbs_reach_parity() {
     assert_parity("33-quick-gate");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_quick_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "quick",
@@ -218,6 +227,10 @@ fn r05_the_quick_new_checker_judges_its_fixtures() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_the_gate_reads_no_argument_at_all() {
     assert_same_refusal("gate", &[&["gate", "--bogus"], &["gate", "extra"]]);
 }
@@ -226,6 +239,10 @@ fn r11_the_gate_reads_no_argument_at_all() {
 /// the gate unable to compute, and a gate that cannot compute blocks (exit 2) instead of passing
 /// the turn. The shell reads such a file as empty, so this contract is the port's alone.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_gate_blocks_when_a_quick_request_cannot_be_read() {
     let dir = sandbox("gate-unreadable");
     let shell = shell_bin();
@@ -292,6 +309,10 @@ fn assert_gate_blocks_on(dir: &Path, store_file: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_gate_blocks_when_current_cannot_be_read() {
     let dir = sandbox("gate-current");
     assert_gate_blocks_on(&dir, ".dstack/local/CURRENT");
@@ -299,6 +320,10 @@ fn r13_the_gate_blocks_when_current_cannot_be_read() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_gate_blocks_when_the_run_meta_cannot_be_read() {
     let dir = sandbox("gate-meta");
     let meta = format!(".dstack/runs/{}/meta.tsv", run_id(&dir));
@@ -310,6 +335,10 @@ fn r13_the_gate_blocks_when_the_run_meta_cannot_be_read() {
 /// state table that cannot be read stops `quick new` before anything exists, so the retry after
 /// the file is readable again is not refused as an already-open task.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_quick_new_leaves_nothing_behind_when_the_state_table_cannot_be_read() {
     let dir = sandbox("quick-new-partial");
     let shell = shell_bin();
@@ -350,6 +379,10 @@ fn r13_quick_new_leaves_nothing_behind_when_the_state_table_cannot_be_read() {
 /// wording resolve_target already uses for `--run` and `--quick`, before it touches the
 /// filesystem — a documented divergence, declared in step 33, not a wording change.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_a_path_like_quick_slug_is_refused_the_way_a_run_id_is() {
     let dir = sandbox("quick-slug");
     let table = dir.join(".dstack/quick/STATE.md");

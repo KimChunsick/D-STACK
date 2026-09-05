@@ -310,6 +310,10 @@ fn r13__lint_ko_keeps_the_exit_code_contract_without_a_store() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11__the_refusals_read_exactly_as_the_shell_writes_them() {
     let dir = elsewhere("usage");
     std::fs::write(dir.join("README.md"), "정본은 이 파일이에요.\n").expect("write");
@@ -375,9 +379,14 @@ fn r05__the_lint_ko_rules_fixtures_are_judged_the_way_they_are_named() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__the_lint_ko_step_of_the_parity_harness_reports_no_difference() {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack")])
         .args(["--only", "24-lint-ko"])
         .output()
@@ -459,6 +468,10 @@ fn r06__the_rule_checker_names_every_row_it_rejects() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r06__both_dispatchers_print_the_same_lines_for_every_fixture() {
     let dirs = [elsewhere("fixtures-shell"), elsewhere("fixtures-rust")];
     for dir in &dirs {

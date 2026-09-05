@@ -77,12 +77,20 @@ dstack run new <slug> --type <work_type>
 
 ## 4. Draft the request (R40–R44)
 
-1. `dstack request new --type <work_type> --title "<title>"` copies the template for that type.
+Always write the request in Korean 해요체: title, headings, description, R-row text and acceptance
+criteria. This applies to every work type, route and `korean_polish` setting, including new rows,
+splits and rows created by `ask assume`. Use Korean for the requirement and `--accept` arguments
+from the start; polishing never translates R rows. Keep frontmatter keys/enum values, R ids,
+`accept:` and status markers, commands, paths and code identifiers unchanged. Read the draft before
+approval and correct English prose through the request workflow. Never rewrite an approved request
+just to translate it. Copy its frozen R rows into downstream briefs verbatim in Korean.
+
+1. `dstack request new --type <work_type> --title "<한국어 제목>"` copies the template for that type.
 2. Fill the frontmatter with the §11 defaults, then narrow anything the user actually asked for.
    The repository policy block in PROJECT.md is the ceiling; a request may only narrow (R75).
-3. One row per requirement: `dstack req add "<one line>" --accept "<observable criterion>"`.
+3. One row per requirement: `dstack req add "<한국어 요구사항>" --accept "<한국어 완료 기준>"`.
    The CLI mints the number. An accept criterion names what is *observed*, not what is done —
-   "the 401 body carries no stack trace", not "handle errors".
+   "401 응답 본문에 스택 추적이 포함되지 않아요", not "오류를 처리해요".
 4. `dstack check request` after every batch. It counts rows, pending, withdrawn, deferred,
    superseded and Q states, and warns above **12 rows or 60 lines** (R43). On a warning, propose
    one of two splits and let the user pick:
@@ -217,7 +225,7 @@ them on the approval screen. There is no computed tier and no prompt token.
 | `risk_axes` | ux | security | none | none | none |
 | `design_review` | auto | auto | auto | auto | skip |
 | `review` | on | on | on | on | on |
-| `codex_effort` | high | high | high | high | medium |
+| `codex_effort` | high | high | high | high | high |
 | `e2e` | capture | cli | cli | cli | none |
 | `unit_tests` | on | on | on | on | off |
 | `visual` | none | none | none | none | none |
@@ -233,8 +241,8 @@ them on the approval screen. There is no computed tier and no prompt token.
 | E2E execution, capture | `e2e-runner` | sonnet |
 | Frontend implementation (components, hooks, styles, frontend tests, frontend build config) | `frontend-dev` | opus |
 | Every other implementation | `general-dev` | opus |
-| External research | **codex-research** skill | Codex `gpt-5.6-sol`, effort = `codex_effort` |
-| Code review | **codex-review** skill | Codex `gpt-5.6-sol`, effort = `codex_effort` |
+| External research | **codex-research** skill | Codex `gpt-6-astra`, effort fixed at `high` |
+| Code review | **codex-review** skill | Codex `gpt-6-astra`, effort fixed at `high` |
 
 A subagent starts with an empty context: the brief carries the project summary, the milestone
 context, the relevant recon rows, the R rows verbatim and the D rows they point to (R68).

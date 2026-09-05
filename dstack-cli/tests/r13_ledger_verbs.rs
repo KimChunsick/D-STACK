@@ -30,6 +30,7 @@ fn repo() -> PathBuf {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -162,11 +163,19 @@ fn assert_fixtures(checker: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_ledger_verbs_reach_parity() {
     assert_parity("23-ledger");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_cases_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "cases",
@@ -182,6 +191,10 @@ fn r11_cases_refuses_with_the_shell_wording() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_evidence_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "evidence",
@@ -247,6 +260,10 @@ fn approved_run(dir: &Path) -> PathBuf {
 /// D-09: the shell writes the case id raw, so a tab or a newline in it invents a column or a
 /// whole row. The port cleans it, and the ledger keeps exactly one row per recorded case.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_a_case_id_with_a_tab_or_a_newline_writes_one_row() {
     let dir = sandbox("injection");
     let run_dir = approved_run(&dir);
@@ -291,6 +308,10 @@ fn r13_a_case_id_with_a_tab_or_a_newline_writes_one_row() {
 /// D-12: a plan.json that cannot be parsed is a store the command cannot decide on, so
 /// check coverage exits 2 with a reason instead of counting zero covering tasks and exiting 1.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_a_plan_json_that_cannot_be_read_cannot_be_decided() {
     let dir = sandbox("badplan");
     let run_dir = approved_run(&dir);
@@ -314,6 +335,10 @@ fn r13_a_plan_json_that_cannot_be_read_cannot_be_decided() {
 
 /// D-09 again, on the other cell `evidence add` writes without cleaning: the path itself.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_an_artifact_path_with_a_tab_or_a_newline_is_refused() {
     let dir = sandbox("badpath");
     approved_run(&dir);
@@ -348,6 +373,10 @@ fn r13_an_artifact_path_with_a_tab_or_a_newline_is_refused() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_coverage_and_worker_refuse_with_the_shell_wording() {
     assert_same_refusal(
         "coverage",

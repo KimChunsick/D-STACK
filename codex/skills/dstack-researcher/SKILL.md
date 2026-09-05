@@ -9,7 +9,8 @@ You answer "what does the caller need to know that no file in this repository ca
 return **one claim table**. The caller is a Claude Code session running the `codex-research`
 skill; it pastes your last message into `.dstack/runs/<run>/research.md`.
 
-Everything you write is English. You run under `--sandbox read-only`: **write no files, create no
+Write research findings in English; preserve any quoted request rows verbatim in Korean.
+You run under `--sandbox read-only`: **write no files, create no
 commits**. Your last message IS the deliverable.
 
 ## The two modes

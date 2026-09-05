@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Adversarial code review of one finished Plan (and the ledger pass that closes a Milestone or Goal) run by Codex gpt-5.6-sol against the frozen request. Use it after the last Task of a Plan is committed and before `dstack plan done`, and again when a Milestone or the Goal closes. Korean triggers a user may type — "리뷰 돌려줘", "코드리뷰 해줘", "Plan 리뷰", "리뷰 한 라운드 더", "마일스톤 대장 점검", "리뷰 봉인해줘".
+description: Adversarial code review of one finished Plan (and the ledger pass that closes a Milestone or Goal) run by Codex gpt-6-astra against the frozen request. Use it after the last Task of a Plan is committed and before `dstack plan done`, and again when a Milestone or the Goal closes. Korean triggers a user may type — "리뷰 돌려줘", "코드리뷰 해줘", "Plan 리뷰", "리뷰 한 라운드 더", "마일스톤 대장 점검", "리뷰 봉인해줘".
 ---
 
 # codex-review — one Plan, one bundle, sealed rounds
@@ -31,7 +31,7 @@ it in the progress message. A phase that quietly does not run is a phase nobody 
 |---|---|---|
 | `review: on` (default) | — | up to 3 rounds per Plan, all five axes |
 | `review: off` | — | 1 round, axes reduced to goal achievement + security. The per-R verdict table is still required and `absent` still blocks a positive seal |
-| `codex_effort` | medium\|high\|xhigh | `model_reasoning_effort` for every round (R23) |
+| `codex_effort` | high for new requests; legacy values remain readable | Every round uses `model_reasoning_effort=high`, including the sealing round (R23) |
 | `risk_axes` | ux\|perf\|security | the named axis is called out first in the prompt; it never removes an axis |
 
 ## One round, four steps
@@ -70,15 +70,15 @@ Then ONE Bash call with `run_in_background: true`, and end the turn. The complet
 is the resume signal; never poll, never emit a "still running" turn.
 
 ```bash
-dstack exec review-P1-001 -- codex exec --ignore-user-config -m gpt-5.6-sol -c model_reasoning_effort=high -C "$WT" --sandbox read-only -o "$T/review/raw-P1-001.md" "$(cat "$T/review/prompt-P1-001.txt")" </dev/null
+dstack exec review-P1-001 -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -C "$WT" --sandbox read-only -o "$T/review/raw-P1-001.md" "$(cat "$T/review/prompt-P1-001.txt")" </dev/null
 ```
 
 - `</dev/null` is not optional (D-07). With a stdin that is not a terminal the reviewer waits for
   more prompt input until EOF, and a background Bash call never closes it: seven rounds once sat
   idle for half an hour that way.
-- `high` is the default. Replace it with the request's `codex_effort` value (`medium|high|xhigh`)
-  on every round — the three flags `--ignore-user-config -m gpt-5.6-sol -c model_reasoning_effort=…`
-  are what `dstack doctor` counts (R23).
+- Every round uses `high`, including quick tasks and the final sealing round. Legacy request
+  values do not override it. The three flags `--ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high`
+  are what `dstack doctor` checks (R23).
 - `$WT` is the `worktree:` line the bundle prints. `--sandbox read-only`: review modifies nothing.
 - The label is `review-<plan>-<round-in-this-plan>`. The sealed file's number is a target-wide
   sequence and may differ; `<T>/review/index.tsv` ties label, round and scope together.
@@ -136,7 +136,7 @@ as UNMET, so a `partial` you accept is a decision you write in the response file
 | Fresh context | every round is a new Codex run; never resume a session to "continue" a review |
 | Counting | count HIGH and MEDIUM in the round you just sealed only — the review directory accumulates history, and grepping across rounds re-counts findings you already fixed |
 | Stall | if HIGH+MEDIUM does not fall between two consecutive rounds, stop before the cap: the loop is stuck and a fourth round will not help |
-| Effort | the last (sealing) round may raise `codex_effort` one step (`medium→high`, `high→xhigh`); write the one-line reason in the response file (R23) |
+| Effort | fixed at `high` for every round, including the last (sealing) round (R23) |
 
 **At the cap or on a stall**: append every unresolved finding, verbatim with its `file:line` and
 severity, to `<T>/findings.md` as open list items (the Milestone ledger pass reads exactly those

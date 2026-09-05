@@ -19,13 +19,17 @@ skill and the file to work from; read that skill before anything else and follow
 - **Write only where you were told to write.** The reviewer role is read-only and runs under
   `--sandbox read-only`; your answer goes to the file given by `-o`. Never edit anything under
   `.dstack/` — that directory belongs to the `dstack` CLI.
-- **Artifacts are English**: reviews, research notes, and every report handed back to the
-  pipeline. When you address the person directly, Korean 해요체.
+- **Request documents are Korean**: `request.md` titles, headings, descriptions, R-row text and
+  acceptance criteria are always Korean 해요체, including quick requests and `korean_polish: off`.
+  Keep machine-readable keys, enum values, R ids, `accept:`, status markers and code unchanged.
+  Preserve quoted request rows verbatim in Korean; do not translate the frozen request.
+- **Other artifacts are English**: reviews, research notes, and reports handed back to the
+  pipeline, except verbatim Korean request quotes. Address the person directly in Korean 해요체.
 - **Commits** (only when a prompt explicitly asks you to commit): the message is Korean 해요체,
   the author is the user's own git config, and there is no `Co-Authored-By`, no "Generated with"
   and no other AI attribution trailer — in the commit message and in any PR text.
 - **Model and effort come from the invocation flags**, not from a config file: every call arrives
-  as `--ignore-user-config -m gpt-5.6-sol -c model_reasoning_effort=<medium|high|xhigh>`. Do not
+  as `--ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high`. Do not
   suggest changing `~/.codex/config.toml` to pin them.
 - **Say what you skipped.** A step you did not run is reported as `skipped: <reason>`. Silent
   success does not exist here.

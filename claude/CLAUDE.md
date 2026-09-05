@@ -19,8 +19,14 @@ implementation worker files the friction it hit there, never by hand.
 - Talk to the user in Korean 해요체 following the `dstack-korean` output style (natural Korean,
   no transliterated jargon, no AI-sounding phrasing). This applies to questions, progress,
   decisions, the final response, commit messages and Korean comments.
-- Workflow artifacts are English: request.md, recon.md, decisions.md, plan/roadmap/state,
-  review rounds, research.md, and every prompt or report exchanged between agents or models.
+- Request documents (`request.md`) are always written in Korean 해요체, for both Goal and quick
+  tasks: titles, headings, descriptions, R-row text and acceptance criteria. This is mandatory
+  even with `korean_polish: off`; that field controls polishing, not the request language.
+  Keep frontmatter keys/enum values, R ids, `accept:` and status markers, commands, paths and code
+  identifiers unchanged. Write new, split and assumption-derived R rows in Korean as well.
+- Other workflow artifacts are English: recon.md, decisions.md, plan/roadmap/state, review rounds,
+  research.md, and prompts or reports exchanged between agents or models. Preserve quoted request
+  rows in their original Korean; never translate the frozen request for a review or research pass.
 - Product copy, code comments and ordinary project docs follow the target repository.
 
 ## 0.2 Delegation and model policy (R25)
@@ -29,7 +35,7 @@ implementation worker files the friction it hit there, never by hand.
 |---|---|---|---|
 | Code reconnaissance, verification runs, Korean polish | subagent | `sonnet` (agents `recon`, `e2e-runner`, `ko-polish`) | read-only or artifact-only |
 | Implementation of a Plan | subagent | `opus` (`frontend-dev`, `general-dev`) | one Plan per worker, worktree made by dstack |
-| Code review, external research | Codex | `gpt-5.6-sol`, `model_reasoning_effort` = request `codex_effort` | `codex-review`, `codex-research` skills |
+| Code review, external research | Codex | `gpt-6-astra`, `model_reasoning_effort=high` for every call | `codex-review`, `codex-research` skills |
 | Anything else delegated | subagent | `opus` | |
 
 Always pass `model` explicitly to the Agent tool and to Workflow `agent()` calls: `sonnet` or

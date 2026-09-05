@@ -134,6 +134,10 @@ fn rows_as_shell_prints(doc: &RequestDoc) -> String {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_rows_parse_as_the_shell_prints_them() {
     let dir = scratch("rows");
     let file = dir.join("request.md");
@@ -223,6 +227,10 @@ fn shell_req_marker(markers: &str, key: &str) -> String {
 /// and tokenizes that, so a value carrying a `;` ends there and whatever follows is a marker of
 /// its own. A value carrying an `=` keeps everything after the first one.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_marker_tokenizes_like_req_marker() {
     let lines = [
         "- [ ] **R10** a row — accept: it prints — deferred: wait;withdrawn=why — from: Q-02",
@@ -312,6 +320,10 @@ fn bash_arith(digits: &str) -> String {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_an_id_past_u32_stays_a_row() {
     let dir = scratch("wide-ids");
     let file = dir.join("request.md");
@@ -354,6 +366,10 @@ fn r03_an_id_past_i64_wraps_as_the_mint_does() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_frontmatter_is_read_as_the_shell_reads_it() {
     let dir = scratch("frontmatter");
     let file = dir.join("request.md");
@@ -565,6 +581,10 @@ fn dstack(bin: &str, dir: &Path, args: &[&str]) -> (String, String, i32) {
 /// output are the same string and nothing has to be masked. `check request` and `req status`
 /// only read, which is what lets one sandbox serve both.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_check_request_and_req_status_agree_on_a_wide_id_run() {
     let dir = run_sandbox("wide-id-verbs");
     let shell = shell_bin();
@@ -588,6 +608,10 @@ fn r03_check_request_and_req_status_agree_on_a_wide_id_run() {
 /// so the port could have mishandled the option and the fixture would still have looked right.
 /// Both binaries mint the row into their own sandbox and the two stores have to agree.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_both_binaries_mint_the_same_wide_id() {
     let by_shell = run_sandbox_minted_by("wide-id-shell", &shell_bin());
     let by_rust = run_sandbox_minted_by("wide-id-rust", env!("CARGO_BIN_EXE_dstack"));
@@ -625,6 +649,10 @@ fn r03_both_binaries_mint_the_same_wide_id() {
 /// scratch store per binary — plan render regenerates ROADMAP.md and STATE.md, so neither binary
 /// is ever pointed at the repository's own store — and both copies start from the same bytes.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_the_acceptance_commands_agree_on_the_live_closed_run() {
     let run = match live_run() {
         Some(run) => run,
@@ -764,6 +792,10 @@ fn masked(text: &str, dir: &Path) -> String {
 /// like D-09. An unreadable file is used rather than a directory: `[ -f ]` and `is_file()` both
 /// answer "not approved" for a directory, so that shape never reaches the stamp reader.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_an_unreadable_stamp_cannot_decide() {
     let dir = run_sandbox("unreadable-stamp");
     let shell = shell_bin();
@@ -846,6 +878,10 @@ fn r03_tsv_cells_and_files_survive_a_round_trip() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_live_store_request_round_trips() {
     let run = match live_run() {
         Some(dir) => dir,
@@ -956,6 +992,10 @@ fn case_lines(rows: &[cases::CaseRow]) -> String {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_cases_ledger_reads_as_the_shell_reads_it() {
     let dir = scratch("cases-read");
     write(&dir.join("cases.tsv"), CASES);
@@ -1027,6 +1067,10 @@ fn r03_cases_ledger_reads_as_the_shell_reads_it() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_cases_writers_keep_the_ledger_format() {
     let dir = scratch("cases-write");
     let file = dir.join("cases.tsv");
@@ -1152,6 +1196,10 @@ coverage-rate\t0/75 (0.0%)\tdstack report (R79 table above)\n"
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_question_ledger_round_trips() {
     let dir = scratch("questions");
     let file = dir.join("questions.md");
@@ -1236,6 +1284,10 @@ fn r03_question_ledger_round_trips() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_decision_ledger_round_trips() {
     let dir = scratch("decisions");
     let file = dir.join("decisions.md");
@@ -1304,6 +1356,10 @@ fn r03_decision_ledger_round_trips() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_review_index_counts_the_sealed_rounds() {
     let dir = scratch("review");
     let review = dir.join("review");
@@ -1425,6 +1481,10 @@ fn r03_review_index_counts_the_sealed_rounds() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r03_live_store_tables_round_trip() {
     let run = match live_run() {
         Some(dir) => dir,

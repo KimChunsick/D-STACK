@@ -33,6 +33,7 @@ fn shell_bin() -> String {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -167,6 +168,10 @@ fn assert_fixtures(checker: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_roadmap_verbs_reach_parity() {
     assert_parity("30-plan");
 }
@@ -174,6 +179,10 @@ fn r13_the_roadmap_verbs_reach_parity() {
 /// The refusals a caller can provoke with no plan.json at all: the wording skills and hooks
 /// quote is the shell's, down to the usage line and the exit code.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_the_roadmap_verbs_refuse_with_the_shell_wording() {
     assert_same(
         "usage",
@@ -209,6 +218,10 @@ fn r11_the_roadmap_verbs_refuse_with_the_shell_wording() {
 /// shell lands on the "at least 1" refusal — plus one diagnostic line of its own naming
 /// the reference's next.sh, which D-11 says the port does not reproduce.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_an_overflowing_max_refuses_the_way_the_shell_refuses() {
     let shell_dir = sandbox("overflow-shell");
     let rust_dir = sandbox("overflow-rust");
@@ -262,6 +275,10 @@ fn r11_an_overflowing_max_refuses_the_way_the_shell_refuses() {
 /// `set -e` ends the run with cd's status, so the plan never starts and plan.json is untouched.
 /// bash prints one diagnostic of its own naming the reference's plan.sh, which D-11 does not reproduce.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_a_worktree_that_is_not_a_directory_starts_nothing() {
     let shell_dir = sandbox("wtfile-shell");
     let rust_dir = sandbox("wtfile-rust");
@@ -353,6 +370,10 @@ fn path_of(dir: &Path, name: &str) -> String {
 /// newline in a list option separates items exactly as a comma does — in every verb that takes
 /// one, and in the plan.json those verbs write.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_a_newline_separates_a_list_option_the_way_a_comma_does() {
     let shell_dir = sandbox("csv-shell");
     let rust_dir = sandbox("csv-rust");

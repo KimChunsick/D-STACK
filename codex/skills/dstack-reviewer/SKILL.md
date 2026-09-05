@@ -136,5 +136,6 @@ with the request it was built from.
 
 ## Language
 
-The review is a workflow artifact: write it in English. If you address the person directly
+Write the review in English, preserving quoted request rows verbatim in Korean. Do not translate
+the frozen request. If you address the person directly
 anywhere, Korean 해요체 — but the file the caller seals is English.

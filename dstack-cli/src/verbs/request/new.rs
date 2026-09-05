@@ -54,10 +54,8 @@ pub fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
         )));
     }
     if title.is_empty() {
-        title = meta_get(&target.dir, "slug")?.unwrap_or_default();
-    }
-    if title.is_empty() {
-        title = target.id.clone();
+        let slug = meta_get(&target.dir, "slug")?.filter(|slug| !slug.is_empty());
+        title = format!("요청서: {}", slug.as_deref().unwrap_or(&target.id));
     }
     let text = std::fs::read_to_string(&template)
         .map_err(|e| Error::cannot_decide(format!("cannot read {}: {e}", template.display())))?;

@@ -81,7 +81,7 @@ off is recorded, never silently dropped:
 | `review: on\|off` | rounds and axes of `codex-review`; the per-R covered/partial/absent verdict never turns off (R69) | `skipped: review=off (verdict still required)` |
 | `e2e: capture\|cli\|none` | which evidence kind the milestone's e2e cases take — run once per milestone, never per Plan (verify §1) | `skipped: e2e=none` |
 | `korean_polish: on` | `ko-polish` on human-facing prose only | `skipped: korean_polish=off` |
-| `codex_effort` | `model_reasoning_effort` of every Codex run | — |
+| `codex_effort` | review and research use fixed `model_reasoning_effort=high`; legacy values remain readable | — |
 
 ### 4.1 Red/Green/Refactor (R62)
 
@@ -140,7 +140,7 @@ locking"); the lint that a pre-commit hook would do is already done by the pre-w
 | Recon before the interview | `recon` | sonnet |
 | Running a verification profile | `e2e-runner` | sonnet |
 | Korean polish of human-facing prose | `ko-polish` | sonnet |
-| Code review, external research | Codex `gpt-5.6-sol` | `model_reasoning_effort` = `codex_effort` |
+| Code review, external research | Codex `gpt-6-astra` | `model_reasoning_effort=high` for every call |
 
 A Plan that touches frontend code goes to `frontend-dev` even inside a full-stack Plan; split
 the Plan when both sides move together and give each brief the other side's contract.
@@ -233,11 +233,11 @@ Korean progress line to the user, e.g. "P3 워커가 R07·R09를 보고했고 �
   ONE background Bash call and the turn ends; the completion notification resumes the session:
 
 ```
-dstack exec <label> -- codex exec --ignore-user-config -m gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only -o <out-file> "$(cat <bundle-path>)"
+dstack exec <label> -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high --sandbox read-only -o <out-file> "$(cat <bundle-path>)"
 ```
 
-Substitute the request's `codex_effort` for `high`. Raising it one step for a final sealing
-review is allowed if the reason is written in one line.
+Keep `high` for every call, including quick tasks and the final sealing review. Legacy
+request values do not override the fixed effort.
 
 ## 9. Resume, insert, remove (R61(5), R67)
 

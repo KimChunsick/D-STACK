@@ -112,7 +112,7 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
     say!(ctx, "  request: {}", request.display());
     say!(ctx, "  state:   {}", roots.quick.join("STATE.md").display());
     say!(ctx, "  fields:  work_type={work_type} route=quick external_research={research_field} risk_axes=none design_review=skip");
-    say!(ctx, "           review={review_field} codex_effort=medium e2e={e2e_field} unit_tests=off visual=none korean_polish=on");
+    say!(ctx, "           review={review_field} codex_effort=high e2e={e2e_field} unit_tests=off visual=none korean_polish=on");
     say!(
         ctx,
         "  CURRENT untouched: {}",
@@ -143,7 +143,10 @@ fn template_body(ctx: &Context, work_type: &str, slug: &str) -> Result<String> {
     if !path.is_file() {
         return Ok(String::new());
     }
-    Ok(strip_frontmatter(&read(&path)?, slug))
+    Ok(strip_frontmatter(
+        &read(&path)?,
+        &format!("빠른 작업: {slug}"),
+    ))
 }
 
 fn strip_frontmatter(template: &str, title: &str) -> String {
@@ -191,7 +194,7 @@ fn request_text(
     text.push_str("risk_axes: none\n");
     text.push_str("design_review: skip\n");
     text.push_str(&format!("review: {review}\n"));
-    text.push_str("codex_effort: medium\n");
+    text.push_str("codex_effort: high\n");
     text.push_str(&format!("e2e: {e2e}\n"));
     text.push_str("unit_tests: off\n");
     text.push_str("visual: none\n");
@@ -202,11 +205,11 @@ fn request_text(
         text.push('\n');
         return text;
     }
-    text.push_str(&format!("# {slug}\n\n"));
-    text.push_str("Quick task (R99). Minimum: one R row with an accept criterion, one task, one\n");
-    text.push_str("evidence row, one report. Add rows with:\n\n");
+    text.push_str(&format!("# 빠른 작업: {slug}\n\n"));
+    text.push_str("빠른 작업이에요(R99). 완료 기준이 있는 요구사항 행, 작업, 증거, 보고서가 각각 하나 이상 필요해요.\n");
+    text.push_str("요청서의 제목, 설명, 요구사항과 완료 기준은 항상 한국어 해요체로 적어요.\n\n## 요구사항\n\n");
     text.push_str(&format!(
-        "    dstack req add \"<one line>\" --accept \"<observable criterion>\" --quick {slug}\n"
+        "    dstack req add \"<한국어 요구사항>\" --accept \"<한국어 완료 기준>\" --quick {slug}\n"
     ));
     text
 }
@@ -219,6 +222,19 @@ fn read(path: &Path) -> Result<String> {
 #[allow(non_snake_case)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn r23__goal_and_quick_requests_default_to_high_effort_for_every_work_type() {
+        for work_type in req_enum("work_type") {
+            assert_eq!(
+                field_default(work_type, "codex_effort"),
+                "high",
+                "{work_type}"
+            );
+            let written = request_text("tidy", work_type, "one-pass", "on", "none", "");
+            assert!(written.contains("\ncodex_effort: high\n"), "{work_type}");
+        }
+    }
 
     #[test]
     fn r13__the_template_loses_its_frontmatter_and_takes_the_title() {
@@ -234,7 +250,7 @@ mod tests {
     fn r13__a_template_with_nothing_but_frontmatter_falls_back_to_the_minimum() {
         let written = request_text("tidy", "cli", "none", "off", "none", "");
         assert!(written.ends_with(
-            "    dstack req add \"<one line>\" --accept \"<observable criterion>\" --quick tidy\n"
+            "    dstack req add \"<한국어 요구사항>\" --accept \"<한국어 완료 기준>\" --quick tidy\n"
         ));
         assert!(written.contains("\nroute: quick\n"));
         let with_body = request_text("tidy", "cli", "one-pass", "on", "cli", "# tidy\n\nbody");

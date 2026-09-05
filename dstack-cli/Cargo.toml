@@ -9,6 +9,11 @@ publish = false
 name = "dstack"
 path = "src/main.rs"
 
+[features]
+default = []
+# Historical comparison tests require the archived shell-final reference.
+shell-parity = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

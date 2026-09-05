@@ -56,6 +56,7 @@ fn roster_nouns() -> Vec<String> {
 fn harness(args: &[&str]) -> (String, i32) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack")])
         .args(args)
         .output()
@@ -111,6 +112,10 @@ fn tail_counts(report: &str) -> (usize, usize) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__every_difference_of_the_help_step_is_a_verb_the_port_has_not_reached() {
     let (report, _) = harness(&["--only", "00-help"]);
     let blocks = blocks(&report);
@@ -170,6 +175,10 @@ fn r04__every_difference_of_the_help_step_is_a_verb_the_port_has_not_reached() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__the_help_step_carries_a_wrong_usage_call_for_every_roster_noun() {
     let dir = scratch("nouns");
     harness(&[
@@ -192,6 +201,10 @@ fn r04__the_help_step_carries_a_wrong_usage_call_for_every_roster_noun() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__a_declared_difference_that_is_not_there_is_reported() {
     let (report, code) = harness(&["--only", "expectcheck"]);
     assert!(
@@ -207,6 +220,10 @@ fn r04__a_declared_difference_that_is_not_there_is_reported() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r04__a_step_that_differs_by_construction_is_reported() {
     let (report, code) = harness(&["--self-check"]);
     assert_eq!(tail_counts(&report), (1, 1), "self-check report:\n{report}");

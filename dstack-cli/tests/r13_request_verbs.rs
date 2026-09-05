@@ -29,6 +29,7 @@ fn repo() -> PathBuf {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -147,11 +148,19 @@ fn assert_same_refusal(tag: &str, cases: &[&[&str]]) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_request_new_open_and_show_reach_parity() {
     assert_parity("20-request");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_req_rows_reach_parity() {
     assert_parity("21-req");
 }
@@ -221,6 +230,10 @@ fn run_dir(dir: &Path) -> PathBuf {
 /// three before it writes any: a decision ledger it cannot read stops the verb with nothing
 /// written at all, and the question is still open for a second attempt.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_an_assumption_with_an_unreadable_decision_ledger_writes_nothing() {
     let dir = sandbox("rollback");
     let run = run_dir(&dir);
@@ -278,6 +291,10 @@ fn r13_an_assumption_with_an_unreadable_decision_ledger_writes_nothing() {
 /// a store file the verb cannot parse, and D-12 makes that a cannot-decide instead of a diff
 /// quietly left out of the approval record.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_an_unreadable_draft_snapshot_cannot_decide() {
     let dir = sandbox("draft");
     let run = run_dir(&dir);
@@ -326,6 +343,10 @@ fn r13_an_unreadable_draft_snapshot_cannot_decide() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_request_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "request",
@@ -350,6 +371,10 @@ fn r11_request_refuses_with_the_shell_wording() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_req_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "req",

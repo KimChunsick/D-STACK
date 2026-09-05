@@ -10,8 +10,8 @@ use crate::selftest::{Selftest, Verdict};
 /// The flags a `codex exec` line is not allowed to be missing, in the order the note lists them.
 const FLAGS: [&str; 3] = [
     "--ignore-user-config",
-    "-m gpt-5.6-sol",
-    "-c model_reasoning_effort=",
+    "-m gpt-6-astra",
+    "-c model_reasoning_effort=high",
 ];
 
 pub fn section(ctx: &mut Context) -> Result<bool> {
@@ -58,7 +58,7 @@ fn scan(ctx: &mut Context, file: &Path) -> (usize, usize) {
         let missing: Vec<&str> = FLAGS
             .iter()
             .copied()
-            .filter(|flag| !line.contains(flag))
+            .filter(|flag| !has_flag(line, flag))
             .collect();
         if !missing.is_empty() {
             bad += 1;
@@ -72,6 +72,16 @@ fn scan(ctx: &mut Context, file: &Path) -> (usize, usize) {
         }
     }
     (total, bad)
+}
+
+/// Require whole flag values, allowing a closing Markdown code span after the final value.
+fn has_flag(line: &str, flag: &str) -> bool {
+    line.match_indices(flag).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + flag.len()..].chars().next();
+        before.is_none_or(char::is_whitespace)
+            && after.is_none_or(|ch| ch.is_whitespace() || ch == '`')
+    })
 }
 
 /// claude/lint/fixtures/codex-flags/*.md — one Codex invocation per fixture.
@@ -96,6 +106,23 @@ impl Selftest for Checker {
 mod tests {
     use super::*;
     use crate::core::paths::base_name;
+
+    #[test]
+    fn r23__model_and_effort_are_exact() {
+        let mut ctx = super::super::tests::context();
+        let dir = ctx.home.home.join("lint/fixtures/codex-flags");
+        for (name, bad) in [
+            ("good-flags.md", 0),
+            ("good-final-effort.md", 0),
+            ("bad-old-model.md", 1),
+            ("bad-medium-effort.md", 1),
+            ("bad-xhigh-effort.md", 1),
+            ("bad-model-suffix.md", 1),
+            ("bad-effort-suffix.md", 1),
+        ] {
+            assert_eq!(scan(&mut ctx, &dir.join(name)), (1, bad), "{name}");
+        }
+    }
 
     #[test]
     fn r23__every_codex_line_of_this_repository_carries_the_flags() {

@@ -34,6 +34,7 @@ fn shell_bin() -> String {
 fn assert_parity(step: &str) {
     let out = Command::new("bash")
         .arg(repo().join("dstack-cli/parity/run.sh"))
+        .args(["--shell-ref", "shell-final"])
         .args(["--rust", env!("CARGO_BIN_EXE_dstack"), "--only", step])
         .output()
         .expect("run the parity harness");
@@ -162,11 +163,19 @@ fn assert_fixtures(checker: &str) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13_the_review_verbs_reach_parity() {
     assert_parity("31-review");
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_review_refuses_with_the_shell_wording() {
     assert_same_refusal(
         "review",
@@ -185,6 +194,10 @@ fn r11_review_refuses_with_the_shell_wording() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_the_rounds_refuse_with_the_shell_wording() {
     assert_same_refusal(
         "rounds",

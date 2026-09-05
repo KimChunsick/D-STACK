@@ -93,6 +93,10 @@ fn assert_same(tag: &str, cases: &[&[&str]]) {
 /// The option is the last argument, so the shell's `shift 2` fails under `set -e`: exit 1 with
 /// nothing printed. Every value-taking option of the ported verbs ends the same way.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_a_last_option_without_its_operand_exits_silently() {
     assert_same(
         "novalue",
@@ -109,6 +113,10 @@ fn r11_a_last_option_without_its_operand_exits_silently() {
 /// option keeps the pinned wording, `--` is a separator and not an option, and a verb that takes
 /// no option ignores what it was given.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_the_other_option_forms_keep_their_answers() {
     assert_same(
         "forms",
@@ -128,6 +136,10 @@ fn r11_the_other_option_forms_keep_their_answers() {
 /// The same silent exit through core::args::opt: every verb that resolves a target reads --run
 /// and --quick there, so the option as the last argument ends the command with 1 and no output.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_a_target_option_without_its_operand_exits_silently() {
     assert_same(
         "target",
@@ -146,6 +158,10 @@ fn r11_a_target_option_without_its_operand_exits_silently() {
 /// the shell joins the empty id and works on the runs directory itself (it even leaves a
 /// meta.tsv there), while the port refuses the id before anything is touched.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r11_an_empty_value_after_the_equals_sign_is_a_value() {
     let shell_dir = sandbox("equals-shell");
     let rust_dir = sandbox("equals-rust");

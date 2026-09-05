@@ -43,7 +43,7 @@ dstack quick new <slug> [--type web-ui|http-api|cli|library|docs-writing] [--dis
 | `--full` | `--research --review --validate` together | Everything |
 
 Fixed for every quick task: `route: quick`, `risk_axes: none`, `design_review: skip`,
-`codex_effort: medium` (R23), `unit_tests: off`, `visual: none`, `korean_polish: on`.
+`codex_effort: high` (R23), `unit_tests: off`, `visual: none`, `korean_polish: on`.
 Flags compose: `--research --review --validate` is the same as `--full`.
 
 **Tool refusal (R105)**: `quick new` checks `deps.tsv` before it creates anything and refuses
@@ -58,8 +58,14 @@ with `--status blocked --note "tool-unavailable <name>"`.
 
 ## 3. Write the R rows
 
+Every quick request is Korean 해요체: title, headings, description, R-row text and acceptance
+criteria, even with `korean_polish: off`. Write new, split and assumption-derived rows in Korean
+from the start. Keep frontmatter keys/enum values, R ids, `accept:` and status markers, commands,
+paths and code identifiers unchanged. Check the draft's language before approval; never translate
+an already approved request. Preserve its Korean R rows verbatim in downstream briefs.
+
 ```
-dstack req add "<one line>" --accept "<observable criterion>" --quick <slug>
+dstack req add "<한국어 요구사항>" --accept "<한국어 완료 기준>" --quick <slug>
 ```
 
 Minimum for a quick task (R99): **at least one R row** (one line + an accept criterion), the
@@ -84,7 +90,7 @@ user approves. Without `--discuss` this whole phase is written down as
 ## 5. Research, only with `--research` (R54, R97)
 
 One research pass and one audit through the **codex-research** skill at
-`codex_effort: medium`, output at `.dstack/quick/<slug>/research.md`. There is no re-audit loop.
+`codex_effort: high`, output at `.dstack/quick/<slug>/research.md`. There is no re-audit loop.
 Off by default; the skip line is `external research: skipped — external_research=none`.
 
 ## 6. Approve, then work
@@ -115,7 +121,7 @@ Off by default; the skip line is `external research: skipped — external_resear
 
 There is no Plan, so `dstack review --scope` refuses on a quick target. Invoke the
 **codex-review** skill directly on the task's own diff plus the R rows verbatim, at
-`codex_effort: medium`. The per-R `covered | partial | absent` verdict still applies, and an
+`codex_effort: high`. The per-R `covered | partial | absent` verdict still applies, and an
 `absent` row still blocks the positive close. With `review: off` write the skip line
 `review: skipped — review=off` into the report prose; this is the only place in the whole
 pipeline where that line is truthful.

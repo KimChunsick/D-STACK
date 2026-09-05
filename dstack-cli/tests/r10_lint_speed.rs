@@ -224,6 +224,10 @@ fn list(times: &[Duration]) -> String {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r10_lint_ko_stdin_is_fast_enough_for_the_hook_path() {
     let done = measured();
     let median = median(&done.rust);
@@ -247,6 +251,10 @@ fn r10_lint_ko_stdin_is_fast_enough_for_the_hook_path() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r10_lint_ko_stdin_beats_the_shell_by_half() {
     let done = measured();
     let (rust, shell) = (median(&done.rust), median(&done.shell));

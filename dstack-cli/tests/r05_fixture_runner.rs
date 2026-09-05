@@ -32,12 +32,8 @@ fn repo() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
 }
 
-/// Everything the three tests below read. The sweep and the two timed runs each drive every
-/// fixture of the repository, so they run once and in sequence: cargo runs the tests of a file in
-/// parallel, and three sweeps at a time would each inflate the others' numbers.
+/// The optional timing comparison shares the ordinary fixture sweep, then runs each side once.
 struct Work {
-    counts: Counts,
-    printed: String,
     rust: Duration,
     shell: Duration,
     ceiling: Duration,
@@ -50,7 +46,7 @@ struct Work {
 fn work() -> &'static Work {
     static ONCE: OnceLock<Work> = OnceLock::new();
     ONCE.get_or_init(|| {
-        let (counts, printed) = sweep();
+        checked();
         let (binary, note) = release_binary();
         println!("timing {} ({note})", binary.display());
         let (rust, rust_code, rust_out) = timed(&binary, &[]);
@@ -63,8 +59,6 @@ fn work() -> &'static Work {
             shell.as_secs_f64() / 4.0
         );
         Work {
-            counts,
-            printed,
             rust,
             shell,
             ceiling: Duration::from_secs(SHELL_BASELINE / 4),
@@ -72,6 +66,12 @@ fn work() -> &'static Work {
             shell_run: (shell_code, last_line(&shell_out)),
         }
     })
+}
+
+/// Keep ordinary fixture verification independent of the optional historical timing baseline.
+fn checked() -> &'static (Counts, String) {
+    static ONCE: OnceLock<(Counts, String)> = OnceLock::new();
+    ONCE.get_or_init(sweep)
 }
 
 /// The runner of `doctor --self`, called in process the way the verb calls it.
@@ -162,17 +162,16 @@ fn load_average() -> Option<f64> {
 
 #[test]
 fn r05__the_fixture_runner_passes_over_every_fixture() {
-    let done = work();
-    let counts = &done.counts;
+    let (counts, printed) = checked();
     assert_eq!(
         counts.failed, 0,
         "a fixture did not get its verdict:\n{}",
-        done.printed
+        printed
     );
     assert_eq!(
         counts.zero, 0,
         "a checker without both kinds of fixture:\n{}",
-        done.printed
+        printed
     );
     assert!(
         counts.checkers >= CHECKERS,
@@ -248,6 +247,10 @@ fn r05__the_fixture_directories_and_the_registry_are_the_same_set() {
 /// the port comes out a little over three times faster, not four; what R10 names is the absolute
 /// bound, asked of an idle machine, and the relative one carries the verdict under load.
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r10__doctor_self_is_under_a_quarter_of_the_shell_baseline() {
     let done = work();
     // A duration is only worth reading when the run it came from passed: a `doctor --self` that

@@ -52,6 +52,10 @@ fn stderr(out: &Output) -> String {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__the_roster_is_the_shell_roster_plus_the_hook_line() {
     let ported = dstack(&["help"]);
     let shell = shell(&["help"]);
@@ -95,6 +99,10 @@ fn r13__no_arguments_print_the_roster() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unknown_noun_is_refused_as_the_shell_refuses_it() {
     let ported = dstack(&["bogus"]);
     let shell = shell(&["bogus"]);
@@ -109,6 +117,10 @@ fn r13__an_unknown_noun_is_refused_as_the_shell_refuses_it() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "shell-parity"),
+    ignore = "skipped: historical shell comparison is opt-in (--features shell-parity)"
+)]
 fn r13__an_unknown_verb_names_its_noun() {
     for (args, message) in [
         (
