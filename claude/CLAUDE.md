@@ -70,3 +70,13 @@ an unmet requirement is stated as such, in the report and in the ledger (`abstai
 Author is the user's git config. Messages are Korean 해요체. No `Co-Authored-By`, no
 "Generated with" trailer — in commits, PR descriptions, and commits made by delegated Codex or
 worker runs.
+
+## Prompt reuse
+
+Use `dstack prompt render` for review, research, audit and implementation briefs. Its role
+instructions are copied from their canonical source before variable task context; do not
+prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable
+within each role. Append fresh state in task context and preserve necessary safety checks and
+independent review/audit sessions. Never pad prompts or send keepalive calls to inflate cache
+hits. `dstack exec` records supported CLI completion usage in `usage.json`; missing data is
+`skipped`, not a measured zero. See `claude/prompt-caching.md` for provider limits and accounting.

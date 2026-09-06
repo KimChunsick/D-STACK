@@ -1,5 +1,5 @@
 // verbs/doctor/codex.rs
-// doctor section 3: every `codex exec` line carries the three flags R23 requires.
+// doctor section 3: every `codex exec` line carries the fixed model flags and JSON telemetry flag.
 
 use std::path::{Path, PathBuf};
 
@@ -8,19 +8,21 @@ use crate::core::error::Result;
 use crate::selftest::{Selftest, Verdict};
 
 /// The flags a `codex exec` line is not allowed to be missing, in the order the note lists them.
-const FLAGS: [&str; 3] = [
+const FLAGS: [&str; 4] = [
     "--ignore-user-config",
     "-m gpt-6-astra",
     "-c model_reasoning_effort=high",
+    "--json",
 ];
 
 pub fn section(ctx: &mut Context) -> Result<bool> {
     say!(
         ctx,
-        "codex exec flags (R23): every line needs {}, {}, {}",
+        "codex exec flags (R23): every line needs {}, {}, {}, {}",
         FLAGS[0],
         FLAGS[1],
-        FLAGS[2]
+        FLAGS[2],
+        FLAGS[3]
     );
     let (mut total, mut bad) = (0, 0);
     for file in files(ctx) {

@@ -2,6 +2,8 @@
 
 You are called by the D-STACK pipeline in one of two roles. The prompt always names the role
 skill and the file to work from; read that skill before anything else and follow it exactly.
+When `dstack prompt render` supplies the skill verbatim inline, read that supplied copy;
+do not load the same source again merely to initialize the role.
 
 | Role | Skill | Input | Output |
 |---|---|---|---|

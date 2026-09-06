@@ -40,16 +40,21 @@ re-spawning (see the sources table). Re-reading `research.md` is free; re-runnin
 
 ## Step 1 — write the prompt file
 
-Write `<run-dir>/research-prompt-<NNN>.md` (the run directory is the path `dstack run new` and
+Write `<run-dir>/research-context-<NNN>.md` (the run directory is the path `dstack run new` and
 `dstack status` print). Instructions are English; quoted request rows remain Korean:
 
 | Section | Content |
 |---|---|
+| Repo context | The R rows verbatim, the relevant `decisions.md` rows, and the recon findings that bound the answer. |
 | Question set | 1–6 questions, each tied to the R ids it would change. A question that changes no R is not asked (R51's rule, applied to research). |
 | Both sides | For each question: what is needed, the case FOR the request's current assumption, the case AGAINST it, and the strongest opposing view with a source. |
-| Repo context | The R rows verbatim, the relevant `decisions.md` rows, and the recon findings that bound the answer. |
-| Contract | "Follow the `dstack-researcher` skill." — the claim table, citation rule and abstain default live there, not in this prompt. |
 | Deadline shape | 3–8 claim rows. More rows is not a better pass. |
+
+Render the role skill unchanged before the context; do not handwrite or paraphrase its prefix:
+
+```bash
+dstack prompt render --role research --context <run-dir>/research-context-001.md > <run-dir>/research-prompt-001.md || exit
+```
 
 ## Step 2 — the research invocation (R98, R23)
 
@@ -57,7 +62,7 @@ ONE background Bash call whose terminal step is the run itself; then END THE TUR
 notification is the resume signal. Never `nohup`/`disown`/`&`.
 
 ```bash
-dstack exec "research-001" -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -c tools.web_search=true --sandbox read-only -o <run-dir>/research-pass-001.md "$(cat <run-dir>/research-prompt-001.md)"
+dstack exec "research-001" -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -c tools.web_search=true --sandbox read-only --json -o <run-dir>/research-pass-001.md - < <run-dir>/research-prompt-001.md
 ```
 
 | Flag | Why it is there |
@@ -69,10 +74,17 @@ dstack exec "research-001" -- codex exec --ignore-user-config -m gpt-6-astra -c 
 
 ## Step 3 — the audit invocation (fresh context)
 
-Same shape, one background call, after the first returns:
+Write the audit context with the original claim table and cited sources, then render it before
+launching one background call after the first returns:
 
 ```bash
-dstack exec "research-audit-001" -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -c tools.web_search=true --sandbox read-only -o <run-dir>/research-audit-001.md "$(cat <run-dir>/research-audit-prompt-001.md)"
+dstack prompt render --role audit --context <run-dir>/research-audit-context-001.md > <run-dir>/research-audit-prompt-001.md || exit
+```
+
+Same invocation shape:
+
+```bash
+dstack exec "research-audit-001" -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -c tools.web_search=true --sandbox read-only --json -o <run-dir>/research-audit-001.md - < <run-dir>/research-audit-prompt-001.md
 ```
 
 The audit prompt says: audit mode, per the `dstack-researcher` skill; here is the claim table from
@@ -177,3 +189,11 @@ the file lives under `.dstack/` and Codex runs `--sandbox read-only`.
 
 Report to the user in Korean, one line: "외부 리서치 한 번 돌렸어요. 인정 4건, 반박 1건, 보류 2건이고
 R04·R07에 영향이 있어요."
+
+## Prompt reuse and measurement
+
+Research and audit share the verbatim researcher skill prefix; their mode and question/table
+are appended as task context. Keep flags, model, effort and tool order stable. Preserve the
+fresh audit session: reusing a prefix never authorizes resuming the research conversation.
+`--json` enables the `usage.json` sidecar in `dstack exec`; absent telemetry stays `skipped`.
+See `claude/prompt-caching.md`.

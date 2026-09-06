@@ -54,6 +54,8 @@ fn files(ctx: &Context) -> Vec<(PathBuf, bool)> {
     files.extend(super::glob(&home.join("output-styles"), ".md"));
     files.extend(super::glob(&home.join("hooks"), ".sh"));
     files.extend(super::glob(&home.join("templates/request"), ".md"));
+    files.extend(super::glob(&home.join("templates/prompts"), ".md"));
+    files.push(home.join("prompt-caching.md"));
     for name in ["README.md", "CLAUDE.md", "AGENTS.md", "codex/AGENTS.md"] {
         files.push(repo.join(name));
     }

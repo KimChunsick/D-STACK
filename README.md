@@ -141,3 +141,19 @@ deps.tsv                    외부 실행 파일 목록. dstack doctor가 전부
   그 사유는 완료 보고에 그대로 실려요.
 - 나중에 할 것(§10): `doctor --drift`, MCP 설정 추적, Codex 설정 틀, 응답 변조 정책은 `DEFERRED`로
   따로 세요.
+
+### 프롬프트 재사용과 캐시 사용량
+
+리뷰·리서치·감사·구현 작업 지시는 `dstack prompt render`로 만들어요. 역할 지침 원문을
+앞에 고정하고, 회차·경로·작업 내용은 뒤에 붙여요. 요청서의 한국어 원문도 그대로 보존해요.
+Codex 호출은 JSON 로그를 남기고, `dstack exec`가 `usage.json`에 캐시 읽기·쓰기 토큰과
+전체 입력 대비 읽기 비율을 기록해요. Claude의 CLI 결과 로그도 같은 기준으로 집계해요.
+사용량을 받지 못하면 측정 생략으로 표시해요.
+
+```bash
+dstack prompt render --role review --context context.md > prompt.txt
+dstack prompt usage --provider codex <실행-로그-경로>/out.txt
+```
+
+실제 적중 여부는 클라이언트의 캐시 경계·유효시간·요청 구성에도 달려 있어요.
+[적용 범위와 측정 방법](claude/prompt-caching.md)을 확인해 주세요.

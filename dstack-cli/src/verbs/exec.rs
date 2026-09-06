@@ -99,6 +99,7 @@ fn exec(ctx: &mut Context, args: &[String]) -> Result<()> {
         size(&dir.join("out.txt")),
         size(&dir.join("err.txt"))
     ));
+    super::prompt::usage::capture(ctx, command, &dir);
     if code == 0 {
         return Ok(());
     }

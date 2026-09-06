@@ -142,7 +142,7 @@ fn r08__the_install_links_the_binary_and_the_link_runs() {
         .expect("run the installed dstack");
     let help = String::from_utf8(out.stdout).expect("utf-8");
     assert!(
-        help.lines().any(|line| line == "verbs: 62"),
+        help.lines().any(|line| line == "verbs: 64"),
         "the installed link is the port:\n{help}"
     );
 }
@@ -242,7 +242,7 @@ fn r01__the_release_binary_runs_help() {
     assert!(out.status.success(), "dstack help exits 0");
     let help = String::from_utf8(out.stdout).expect("utf-8");
     assert!(
-        help.lines().any(|line| line == "verbs: 62"),
+        help.lines().any(|line| line == "verbs: 64"),
         "the roster of the built binary:\n{help}"
     );
 }

@@ -18,7 +18,7 @@ use std::process::{Command, Output};
 const WORKER_DOCS: [&str; 3] = [
     "claude/agents/general-dev.md",
     "claude/agents/frontend-dev.md",
-    "claude/skills/dstack-develop/SKILL.md",
+    "claude/templates/prompts/worker.md",
 ];
 
 /// The threshold of D-04, by what it has to say rather than by a sentence: each row is one thing,

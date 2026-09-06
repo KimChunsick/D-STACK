@@ -10,7 +10,7 @@ use crate::core::verb::Verb;
 /// dstack help renders it and the doctor sweep reads it, so a roster entry no handler answers
 /// is a stated "not ported yet", never a silent gap.
 #[rustfmt::skip]
-pub const ROSTER: [(&str, &str); 62] = [
+pub const ROSTER: [(&str, &str); 64] = [
     ("init", "bootstrap the .dstack store in this repository (never expands cases)"),
     ("run new", "mint a run: .dstack/runs/<UTC>_<slug>, write CURRENT, check tools (--type, --worktree)"),
     ("run adopt", "take over a run after /clear or resume (stale owner auto-adopts, --force otherwise)"),
@@ -19,6 +19,8 @@ pub const ROSTER: [(&str, &str); 62] = [
     ("run close", "verify then stamp closed_at and clear CURRENT (--abandon <why> skips verify)"),
     ("run pause", "status paused and CURRENT cleared: the escape hatch from a repeating Stop block"),
     ("exec", "run a long command in the background capture dir: dstack exec <label> -- <cmd>"),
+    ("prompt render", "render verbatim role instructions before variable task context (--role, --context)"),
+    ("prompt usage", "normalize Codex/Claude JSONL completion usage (--provider codex|claude <file>...)"),
     ("request new", "create request.md from the work_type template (--type, --title)"),
     ("request open", "snapshot the agent draft and open the file in VSCode (code -g, never -w)"),
     ("request approve", "validate, clear pending rows, record the sha256, diff vs draft, sync cases"),
@@ -77,7 +79,7 @@ pub const ROSTER: [(&str, &str); 62] = [
 
 /// The nouns claude/bin/dstack runs without a git repository, plus hook (D-01) and issue,
 /// whose folder is outside the store and whose run and plan are read only when there is one (D-05).
-const NO_ROOTS: [&str; 5] = ["help", "doctor", "lint-ko", "hook", "issue"];
+const NO_ROOTS: [&str; 6] = ["help", "doctor", "lint-ko", "hook", "issue", "prompt"];
 
 pub struct Registry {
     handlers: Vec<Box<dyn Verb>>,
@@ -163,8 +165,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn r13__roster_has_sixty_entries() {
-        assert_eq!(ROSTER.len(), 62);
+    fn r13__roster_has_sixty_four_entries() {
+        assert_eq!(ROSTER.len(), 64);
     }
 
     #[test]
@@ -181,7 +183,7 @@ mod tests {
     fn r13__verb_list_is_the_roster_order() {
         let registry = Registry::new(Vec::new());
         let list = registry.verb_list();
-        assert_eq!(list.len(), 62);
+        assert_eq!(list.len(), 64);
         assert_eq!(list[0], "init");
         assert_eq!(list[list.len() - 1], "help");
     }

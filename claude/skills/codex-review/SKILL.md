@@ -54,31 +54,29 @@ If the command fails with `bundle exceeds 512KB: split the plan`, split the Plan
 Write the prompt to a file first (it carries quotes and newlines):
 
 ```bash
-cat > "$T/review/prompt-P1-001.txt" <<'EOF'
-You are the D-STACK reviewer role. Read ~/.codex/skills/dstack-reviewer/SKILL.md and follow it exactly.
+cat > "$T/review/context-P1-001.txt" <<'EOF'
 Bundle (your only statement of intent — read it before anything else): <abs path to bundle>
 Scope: plan P1 — round 001 of at most 3.
 Previous sealed round: <abs path to codex-review-NNN.md, or "none">
 Our answer to it: <abs path to response-NNN.md, or "none">
-Axes this round: goal achievement, security, UI·UX&DX, performance, architecture & code quality
 First risk axis to weigh: <risk_axes value, or "none declared">
-Write your whole output to the file given by -o. Modify no file in the worktree.
 EOF
+dstack prompt render --role review --context "$T/review/context-P1-001.txt" > "$T/review/prompt-P1-001.txt" || exit
 ```
 
 Then ONE Bash call with `run_in_background: true`, and end the turn. The completion notification
 is the resume signal; never poll, never emit a "still running" turn.
 
 ```bash
-dstack exec review-P1-001 -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -C "$WT" --sandbox read-only -o "$T/review/raw-P1-001.md" "$(cat "$T/review/prompt-P1-001.txt")" </dev/null
+dstack exec review-P1-001 -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -C "$WT" --sandbox read-only --json -o "$T/review/raw-P1-001.md" - < "$T/review/prompt-P1-001.txt"
 ```
 
-- `</dev/null` is not optional (D-07). With a stdin that is not a terminal the reviewer waits for
-  more prompt input until EOF, and a background Bash call never closes it: seven rounds once sat
-  idle for half an hour that way.
+- A finite stdin is mandatory (D-07). `- < "$T/review/prompt-P1-001.txt"` supplies the complete
+  prompt and reaches EOF. Never inherit an open background stdin; never replace this file
+  redirection with `/dev/null`, which would discard the rendered prompt.
 - Every round uses `high`, including quick tasks and the final sealing round. Legacy request
   values do not override it. The three flags `--ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high`
-  are what `dstack doctor` checks (R23).
+  and `--json` are what `dstack doctor` checks (R23).
 - `$WT` is the `worktree:` line the bundle prints. `--sandbox read-only`: review modifies nothing.
 - The label is `review-<plan>-<round-in-this-plan>`. The sealed file's number is a target-wide
   sequence and may differ; `<T>/review/index.tsv` ties label, round and scope together.
@@ -212,3 +210,12 @@ sealed changes and no round is invented: `review/closed.tsv` records "after roun
 every R the scope covers reads `ABSTAIN` in verify/report until a newer round seals a verdict
 for it. The owner then accepts each with `dstack verify --accept-abstain R,R --why "…"` (R79);
 a `partial`/`absent` verdict already sealed stays a failure. Never write a skipped-*.md by hand.
+
+## Prompt reuse and measurement
+
+Use `dstack prompt render` for every round, including quick and milestone reviews. It embeds
+the canonical role skill unchanged before task paths and round data; do not rewrite that prefix.
+Pass the rendered file through stdin exactly as shown. Keep the tool set and invocation flags
+stable for this role, and keep each review in a fresh session. `--json` lets `dstack exec` save
+`usage.json` beside its logs; `-o` still contains only the review. A prefix hash is diagnostic,
+not proof of a server cache hit. See `claude/prompt-caching.md` for measurement and API limits.

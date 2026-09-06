@@ -147,7 +147,9 @@ the Plan when both sides move together and give each brief the other side's cont
 
 ## 6. Worker brief template (R68)
 
-Copy this block, fill every section, send nothing else. The worker starts empty-handed.
+Fill this task-context block, then render it with the fixed worker contract. Send the rendered
+file verbatim to the selected agent; do not prepend a greeting, run id or regenerated rules.
+The agent definition already supplies its specialization. The worker starts empty-handed.
 
 ```
 # Plan P3 — <slug>   (run <run-id>, milestone M2)
@@ -181,21 +183,17 @@ current_plan: P3 | ready: P4 | in_progress: P3, P5 | blocked: P6 | last_commit: 
 ## Where you work
 worktree: <abs path>   branch: <branch>   base HEAD: <sha>
 artifact dir: .dstack/runs/<run-id>/artifacts/P3/   ← the only path under .dstack/ you may write
-First action: run `dstack run verify` and report its output. If pwd, common-dir, branch or
-HEAD differ from the three lines above, stop and report "delegation void: location mismatch".
+unit_tests: <on|off>
 
-## Rules
-- One Task = one commit, `git commit --no-verify`, Korean 해요체 message, no AI trailer.
-- unit_tests: <on|off>. When on: Red (failing output → artifact dir) → Green → Refactor,
-  all inside one Task.
-- Korean text follows `~/.claude/output-styles/dstack-korean.md`; read it before the first
-  Korean sentence. (Output styles do not reach subagents — R92.)
-- Friction with `dstack` itself — a detour, a refusal that stopped you, wording that cost you
-  time — is filed with `dstack issue new` (every value in single quotes, or the shell expands
-  the incident text) and never by hand; an idea you merely had is not filed.
-- Report every R id above exactly once as `R<NN>: satisfied|unsatisfied|blocked — <why>`.
-  An R you could not satisfy is reported, never quietly dropped.
 ```
+
+```bash
+dstack prompt render --role worker --context <brief-context-file> > <brief-file> || exit
+```
+
+The fixed contract lives in `claude/templates/prompts/worker.md`; change it only when policy
+changes. Put project context before Plan details and paths. Keep tool definitions and agent
+model/effort stable within a role; never remove needed tools or location checks to chase hits.
 
 ## 7. After each worker returns — the main session checklist
 
@@ -230,10 +228,12 @@ Korean progress line to the user, e.g. "P3 워커가 R07·R09를 보고했고 �
   ledger-pass bundle: only the open items of `findings.md` and integration behaviour, with the
   prompt contracting the reviewer not to open new-scope findings. Oversize → split per Plan.
 - The Codex call itself belongs to `codex-review`. It is a long external run, so it goes in
-  ONE background Bash call and the turn ends; the completion notification resumes the session:
+  ONE background Bash call and the turn ends; the completion notification resumes the session.
+  First render the review context with `dstack prompt render --role review` as `codex-review`
+  specifies; never pass the bare bundle as the prompt:
 
 ```
-dstack exec <label> -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high --sandbox read-only -o <out-file> "$(cat <bundle-path>)"
+dstack exec <label> -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high --sandbox read-only --json -o <out-file> - < <rendered-review-prompt>
 ```
 
 Keep `high` for every call, including quick tasks and the final sealing review. Legacy

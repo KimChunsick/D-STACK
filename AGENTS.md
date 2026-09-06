@@ -47,3 +47,13 @@ It is configuration, not an application: nothing renders, nothing serves.
 - `.dstack/` is local-only and ignored; never commit it and never edit it by hand.
 - A sealed review round (`codex-review-NNN.md`) is never edited; rebuttals go to the next round.
 - A skill file over 300 lines is a sign that logic belongs in the CLI (§3-8).
+
+## Prompt reuse
+
+Use `dstack prompt render` for review, research, audit and implementation briefs. Its role
+instructions are copied from their canonical source before variable task context; do not
+prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable
+within each role. Append fresh state in task context and preserve necessary safety checks and
+independent review/audit sessions. Never pad prompts or send keepalive calls to inflate cache
+hits. `dstack exec` records supported CLI completion usage in `usage.json`; missing data is
+`skipped`, not a measured zero. See `claude/prompt-caching.md` for provider limits and accounting.
