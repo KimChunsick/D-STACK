@@ -2,6 +2,7 @@
 // Crate root: the module tree of the port (core, store, verbs, selftest).
 
 pub mod core;
+pub mod handoff;
 pub mod selftest;
 pub mod store;
 pub mod verbs;

@@ -28,7 +28,8 @@ It is configuration, not an application: nothing renders, nothing serves.
 
 - The CLI is the Rust crate `dstack-cli/`: its dependencies are exactly serde, serde_json,
   regex, sha2 and time. Ordinary verbs invoke only git; `mode exec` explicitly launches the
-  selected claude/codex provider, and `exec` runs its user-supplied command. One responsibility per file,
+  selected claude/codex sub, `handoff` explicitly invokes the destination claude/codex summarizer,
+  and `exec` runs its user-supplied command. One responsibility per file,
   350 lines at most, which `dstack doctor` checks.
 - The default gate is `bash dstack-cli/test.sh` (cargo test, then `cargo clean --profile dev`,
   so the debug tree never stays in the checkout). Historical shell comparisons are opt-in:
@@ -53,6 +54,8 @@ It is configuration, not an application: nothing renders, nothing serves.
 ## Prompt reuse
 
 Use `dstack mode exec` for review, research and audit; it renders the canonical role internally.
+`dstack handoff` renders the bounded destination summarizer from `claude/templates/prompts/handoff.md`
+with `--role handoff`; that role returns strict JSON and never starts a main workflow or writes state.
 Use `dstack prompt render` directly for implementation briefs. Its role
 instructions are copied from their canonical source before variable task context; do not
 prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable

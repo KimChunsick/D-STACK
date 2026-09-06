@@ -51,6 +51,7 @@ fn render(ctx: &mut Context, args: &[String]) -> Result<()> {
         "research" => ("codex/skills/dstack-researcher/SKILL.md", "research pass"),
         "audit" => ("codex/skills/dstack-researcher/SKILL.md", "audit mode"),
         "worker" => ("claude/templates/prompts/worker.md", "implementation"),
+        "handoff" => ("claude/templates/prompts/handoff.md", "handoff"),
         _ => return Err(render_usage()),
     };
     // Read everything before writing anything: missing files never yield a usable partial prompt.
@@ -86,6 +87,6 @@ fn render(ctx: &mut Context, args: &[String]) -> Result<()> {
 
 fn render_usage() -> Error {
     Error::failed(
-        "usage: dstack prompt render --role review|research|audit|worker --context <file>",
+        "usage: dstack prompt render --role review|research|audit|worker|handoff --context <file>",
     )
 }

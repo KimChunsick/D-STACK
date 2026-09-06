@@ -51,8 +51,9 @@ dstack run adopt                              # 기존 조합을 유지하며 �
 dstack run adopt --refresh-mode               # 현재 프로젝트 설정으로 명시적으로 바꿔 받아요
 ```
 
-실행 중인 앱과 메인 설정이 다르면 인계 방법을 출력하고 작업을 멈춰요. 새 환경에서 인계한 뒤
-다시 확인해요. Claude 메인은 `Agent`로 구현에 opus, 탐색·검증에 sonnet을 쓰고, Codex 메인은
+일반 작업에서 실행 중인 앱과 메인 설정이 다르면 인계 방법을 출력하고 작업을 멈춰요.
+사용자가 인계를 명시적으로 요청했을 때는 아래 절차로 준비와 재개만 진행할 수 있어요.
+Claude 메인은 `Agent`로 구현에 opus, 탐색·검증에 sonnet을 쓰고, Codex 메인은
 기본 `spawn_agent`로 새 맥락의 워커를 실행해요. Codex 워커는 메인 세션의 모델과 추론 강도를
 물려받아요. D-STACK 호출 기준은 gpt-6-astra와 high이고, 실제 관찰한 엔진을 기록해요.
 
@@ -70,6 +71,60 @@ dstack mode exec research-audit-001 --role audit --context audit-context.md --ou
 실패하면 해당 오류를 남겨요. 다른 환경으로 자동 전환하지 않아요. 선택한 환경의 CLI와 로그인이
 필요하고, `dstack doctor`가 필요한 CLI를 확인해요. 기존 스킬 이름 `codex-review`·`codex-research`와
 봉인된 파일 이름 `codex-review-NNN.md`는 그대로 유지하며 선택한 서브 환경을 사용해요.
+
+## 다른 메인 환경에 이어서 맡겨요
+
+예를 들어 Codex에서 “기존 Claude 작업을 Codex로 인계해 줘”라고 요청하면 공유 스킬
+`dstack-handoff`가 기존 Goal의 기록을 모아요. 메인 설정과 현재 앱이 달라도 인계 준비와
+재개만 허용해요. 일반 작업은 새 메인 세션에서 재개 명령이 성공한 뒤에 시작해요.
+사용량을 자동 감시하거나 실행 중인 대화의 엔진을 바꾸지는 않아요.
+
+기존 작업과 같은 worktree에서 실행해요. 먼저 실행 계획을 확인한 뒤 인계 자료를 만들어요.
+
+```bash
+dstack handoff --to codex --run <run-id> --dry-run
+dstack handoff --to codex --run <run-id>
+```
+
+반대 방향은 `--to claude`를 써요. `--dry-run`은 파일을 쓰거나 모델을 호출하지 않아요.
+실제 요약은 목적지 환경의 모델을 high 강도로 호출해 만들어요. 기존 메인이나 서브 설정에
+따라 요약 모델을 바꾸지 않고, 실패했을 때 다른 모델로 대신 실행하지 않아요.
+
+기록은 저장된 `owner_session`과 `transcript_path`를 기준으로 찾아요. 경로가 없으면 같은
+세션의 로컬 Claude/Codex JSONL을 찾아요. 다른 세션의 최신 기록을 대신 쓰지 않아요.
+사용자 지정 홈이나 자동 탐색을 지원하지 않는 보관 경로는 파일을 직접 지정해요.
+
+```bash
+dstack handoff --to codex --run <run-id> --session <source-session-id> --history <source.jsonl>
+```
+
+`--session`은 저장된 소유 세션과 같아야 해요. 파일이 없거나 세션·worktree가 다르고,
+형식이나 크기 제한을 어기면 오류를 내요. 기록 일부를 생략했다는 경고는 인계 자료에도 남아요.
+준비 중에는 기존 세션과 워커의 작업, 실행 중인 명령을 멈춰 기록이 바뀌지 않게 해요.
+
+CLI만 `.dstack/runs/<run-id>/handoffs/<handoff-id>/`에 `context.md`, `packet.json`,
+`summary.json`, `RESUME.md`와 준비 완료 해시를 써요. 요약이 성공해도 아직 메인과 소유자는
+바뀌지 않아요. 출력된 정확한 worktree에서 목적지 앱의 새 메인 세션을 열고 `RESUME.md`를 읽어요.
+새 세션에는 기존 세션과 다른 비어 있지 않은 세션 식별자가 있어야 해요.
+
+기존 세션과 그 세션의 모든 워커가 종료됐다는 명시적인 확인을 받은 뒤 재개해요.
+
+```bash
+dstack handoff resume <handoff-id> --host codex --source-stopped --run <run-id>
+dstack mode show --host codex --run <run-id>
+dstack status
+```
+
+재개는 원본 기록·대장·Git 파일 내용이 준비 시점과 같고, 인계 자료가 변조되지 않았으며,
+미완료 실행 기록이 없는지 검사해요. 해당 Goal의 메인·소유자 정보와 `CURRENT`만 바꾸고,
+프로젝트 기본값·서브·기존 증거는 유지해요. 오래되거나 실패한 자료는 새로 준비해야 해요.
+인수 도중 프로세스가 끊겨 `resuming` 표시가 남으면 자동 재시도를 막아요. 처리 기록과 실제
+메타데이터를 확인하고, 막는 표시를 임의로 지우거나 강제로 재개하지 않아요.
+
+이후에는 `dstack-develop`·`dstack-verify`의 기존 검사를 이어가요. 구현 완료 기록만으로
+요구사항 검증까지 통과했다고 판단하지 않고, 실패한 시도·남은 검사·근거 위치를 함께 넘겨요.
+일반 `dstack run adopt --refresh-mode`는 기존처럼 프로젝트 설정을 다시 받아오는 명령이에요.
+이 인계 절차는 기존 Goal에 적용하고 quick 작업에는 적용하지 않아요.
 
 ## 작업 흐름
 
@@ -139,7 +194,7 @@ dstack-cli/                 명령 하나를 만드는 Rust 크레이트
   tests/                    cargo test가 도는 통합 테스트
 claude/hooks/dstack-hook.sh 유일한 훅 스크립트 (inject·stop·agent-model·pre-write)
 claude/skills/              dstack-workflow, dstack-develop, dstack-verify, dstack-quick,
-                            codex-review, codex-research, unit-test
+                            dstack-handoff, codex-review, codex-research, unit-test
 claude/agents/              frontend-dev, general-dev(opus) · recon, e2e-runner, ko-polish(sonnet)
 claude/runtime.md           양쪽 환경이 함께 읽는 실행·위임·검사 지침
 claude/templates/request/   작업 종류별 요청서 틀
@@ -179,6 +234,11 @@ deps.tsv                    외부 실행 파일 목록. dstack doctor가 전부
 검사해요. 실제 홈에 설치하지 않아요. 실제 모델 세션을 실행하지 못한 검증은 환경별로
 `skipped: <사유>`를 남겨요. 설치 테스트나 실행 인자 확인은 실제 모델 실행 기록을 대신하지 않아요.
 
+`cargo test r10_handoff_workflow`는 임시 홈의 양쪽 인계 스킬 설치·반복 설치와 역할 출력을
+확인해요. 인계 검증에는 CLI의 stdout·stderr·종료 코드를 남기고, 실제 Claude/Codex 모델
+검증은 환경별 실행 기록이나 `skipped: <사유>`를 별도로 남겨요. 전체 회귀 검사는
+`bash dstack-cli/test.sh`와 `dstack doctor --self`로 확인해요.
+
 과거 구현과의 비교가 필요할 때만 기준 자료를 준비한 뒤 직접 켜요.
 
 - Rust 비교 테스트: `bash dstack-cli/test.sh --features shell-parity`
@@ -203,6 +263,7 @@ deps.tsv                    외부 실행 파일 목록. dstack doctor가 전부
 ### 프롬프트 재사용과 캐시 사용량
 
 리뷰·리서치·감사는 `dstack mode exec`가 내부에서 `dstack prompt render`로 지시를 만들어요.
+인계 요약은 `dstack handoff`가 `--role handoff`로 같은 경계를 지켜요.
 구현 작업 지시는 `dstack prompt render`를 직접 사용해요. 역할 지침 원문을
 앞에 고정하고, 회차·경로·작업 내용은 뒤에 붙여요. 요청서의 한국어 원문도 그대로 보존해요.
 Codex 호출은 JSON 로그를 남기고, `dstack exec`가 `usage.json`에 캐시 읽기·쓰기 토큰과

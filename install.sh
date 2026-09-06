@@ -72,6 +72,7 @@ claude/lint/ko-scope.tsv|.claude/lint/ko-scope.tsv|link
 claude/lint/ko-rules.tsv|.claude/lint/ko-rules.tsv|link
 codex/AGENTS.md|.codex/AGENTS.md|link
 "
+# Shared skills, including dstack-handoff, use the same source and idempotent link checks in both homes.
 for host in claude codex; do
   for f in "$REPO_DIR"/claude/agents/*.md; do [ -e "$f" ] && MAP="$MAP
 claude/agents/$(basename "$f")|.$host/agents/$(basename "$f")|link"; done

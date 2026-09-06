@@ -2,9 +2,19 @@
 
 This is the canonical runtime for both main providers. The installer links this same file,
 the workflow skills and native worker definitions into both agent homes. A supplied role
-prompt (reviewer, researcher, audit, implementation worker, recon, e2e-runner/verification or
-ko-polish) follows that bounded role only;
+prompt (reviewer, researcher, audit, implementation worker, recon, e2e-runner/verification,
+ko-polish or handoff summarizer) follows that bounded role only;
 it must not start this main workflow or delegate another main session.
+
+## Explicit cross-main handoff entry
+
+Before the ordinary host check below, route an explicit user request to prepare or resume a
+handoff through the shared dstack-handoff skill. The saved main may differ from the current
+host; this exception permits only handoff preparation/resume. Read the CLI-produced RESUME.md
+in a new destination main and complete `dstack handoff resume` before other main work.
+Never adopt, refresh mode or start workers to bypass the mismatch. Resume requires explicit
+acknowledgement that the source session and all native workers are stopped. Failed or stale
+packets need fresh preparation. A command cannot change the current conversation's engine.
 
 ## Enter from the actual host
 
@@ -113,3 +123,11 @@ the per-R verdict, finding axes, claim table and audit contracts regardless of s
 For long runs, Claude uses one background Bash call and resumes from its completion event;
 Codex uses its terminal's yielded session and completion/wait tool. Do not detach the process,
 poll in a tight loop, or represent unfinished work as a final result.
+
+Cross-main handoff uses `dstack handoff --to claude|codex`, not `dstack mode exec`: its fresh,
+read-only summarizer always runs in the destination provider at high effort, independent of
+source main and saved sub. The CLI renders `claude/templates/prompts/handoff.md` with
+`dstack prompt render --role handoff` and accepts only the validated JSON contract. The role
+cannot delegate, execute tools, write state or resume the run. After separate resume succeeds,
+repeat the actual-host check and status inspection, then all normal development/verification
+gates. Record model execution or its skipped reason separately from instruction tests.

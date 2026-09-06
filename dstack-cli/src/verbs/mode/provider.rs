@@ -26,7 +26,7 @@ pub fn model(provider: Provider) -> &'static str {
 }
 
 pub fn command(provider: Provider, role: &str, cwd: &Path, result: &Path) -> Vec<String> {
-    let web = role != "review";
+    let web = matches!(role, "research" | "audit");
     let mut args: Vec<String> = match provider {
         Provider::Codex => [
             "codex",

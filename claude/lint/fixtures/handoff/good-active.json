@@ -1,0 +1,1 @@
+{"completed": [], "active": [{"id": "T1", "changes": "Changes remain in progress.", "attempts": "No verified tests yet.", "blockers": "No known blocker.", "next_steps": ["Inspect the pending work."], "refs": ["task:T1"]}], "pending": [], "uncertainties": [], "next_actions": ["Continue T1."]}

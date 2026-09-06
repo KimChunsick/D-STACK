@@ -4,7 +4,7 @@ use crate::core::error::Result;
 use crate::core::verb::Verb;
 
 pub mod execute;
-mod provider;
+pub(crate) mod provider;
 pub mod settings;
 
 struct ModeVerb(&'static str);

@@ -9,6 +9,7 @@ pub mod decision;
 pub mod doctor;
 pub mod exec;
 pub mod gate;
+pub mod handoff;
 pub mod hook;
 pub mod init;
 pub mod issue;
@@ -37,6 +38,7 @@ pub fn all_verbs() -> Vec<Box<dyn Verb>> {
     verbs.extend(exec::verbs());
     verbs.extend(prompt::verbs());
     verbs.extend(mode::verbs());
+    verbs.extend(handoff::verbs());
     verbs.extend(request::verbs());
     verbs.extend(ask::verbs());
     verbs.extend(decision::verbs());
@@ -62,6 +64,7 @@ pub fn all_selftests() -> Vec<Box<dyn Selftest>> {
     selftests.extend(run_view::selftests());
     selftests.extend(status::selftests());
     selftests.extend(exec::selftests());
+    selftests.push(Box::new(crate::handoff::summary::Checker));
     selftests.extend(request::selftests());
     selftests.extend(ask::selftests());
     selftests.extend(decision::selftests());

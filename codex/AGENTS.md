@@ -3,10 +3,15 @@
 ## Choose the session role first
 
 A supplied role prompt for reviewer, researcher, audit, implementation worker, recon,
-e2e-runner/verification or ko-polish takes only that role: read the supplied canonical
+e2e-runner/verification, ko-polish or handoff summarizer takes only that role: read the supplied canonical
 instructions and bounded context, then return that deliverable.
 Do not start a main workflow from a role prompt or launch another main session. When
 `dstack prompt render` supplies the role verbatim inline, do not reload the same source.
+
+For an explicit user handoff request, read `~/.codex/skills/dstack-handoff/SKILL.md` before the
+ordinary host check. A saved main/actual-host mismatch permits only handoff preparation/resume;
+in a new destination main, read RESUME.md and complete `dstack handoff resume` before any other
+main work. Do not adopt, refresh mode or start workers to bypass that boundary.
 
 Otherwise this is the main session. Read `~/.codex/runtime.md`, run
 `dstack mode show --host codex` (with `--run <id>` or `--quick <slug>` for an explicit target),
@@ -21,14 +26,17 @@ frontmatter does not override the Codex engine. The main session owns user quest
 state writes. Mandatory checks and `dstack gate` apply even without Claude hooks.
 The installed `~/.codex/bin/dstack` links to the same binary as `~/.claude/bin/dstack`.
 Review/research/audit use `dstack mode exec` and the target's saved `sub`, not native workers.
+`dstack handoff` uses a bounded read-only summarizer in the destination provider, independent
+of source main and saved sub. Only a separate successful resume changes this run's main/owner.
 
-## Supplied review and research roles
+## Supplied bounded roles
 
 | Role | Skill | Input | Output |
 |---|---|---|---|
 | reviewer | `~/.codex/skills/dstack-reviewer/SKILL.md` | a review bundle (`=== REQUEST (frozen) ===` …) | per-R verdict table, findings by axis, `VERDICT:` last line |
 | researcher | `~/.codex/skills/dstack-researcher/SKILL.md` | a research question with its scope | classified claims with sources |
 | audit | `~/.codex/skills/dstack-researcher/SKILL.md` in audit mode | the original claim table and cited sources | one re-judgment per original row |
+| handoff summarizer | `claude/templates/prompts/handoff.md`, supplied inline by the CLI | immutable handoff evidence packet | strict JSON only; no commands, agents, state writes or main workflow |
 
 ## Rules for evidence, language and state
 

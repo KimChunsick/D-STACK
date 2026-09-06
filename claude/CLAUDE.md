@@ -3,9 +3,16 @@
 ## Choose the session role first
 
 A supplied role prompt for reviewer, researcher, audit, implementation worker, recon,
-e2e-runner/verification or ko-polish takes only that role. Read its supplied canonical
+e2e-runner/verification, ko-polish or handoff summarizer takes only that role. Read its supplied canonical
 instructions and bounded task context; do not start a main
-workflow or recurse into orchestration. Otherwise this is the main session: read
+workflow or recurse into orchestration.
+
+For an explicit user handoff request, read the shared dstack-handoff skill before the ordinary
+host check. A saved main/actual-host mismatch permits only handoff preparation/resume; in a new
+destination main, read RESUME.md and complete `dstack handoff resume` before any other main work.
+Do not adopt, refresh mode or start workers to bypass that boundary.
+
+Otherwise this is the main session: read
 `~/.claude/runtime.md`, run `dstack mode show --host claude` (with `--run` or `--quick` for an
 explicit target), then use the shared `dstack-workflow` skill. A host mismatch requires the
 selected environment; changing a setting does not replace this conversation's engine.
@@ -78,6 +85,7 @@ worker runs.
 ## Prompt reuse
 
 Use `dstack mode exec` for review, research and audit; it calls `dstack prompt render` internally.
+`dstack handoff` renders its bounded destination summarizer with `--role handoff` internally.
 Use `dstack prompt render` directly for implementation briefs. Its role
 instructions are copied from their canonical source before variable task context; do not
 prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable
