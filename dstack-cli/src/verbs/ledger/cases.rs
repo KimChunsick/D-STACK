@@ -5,7 +5,7 @@ use crate::core::args::is_option;
 use crate::core::context::Context;
 use crate::core::error::Result;
 use crate::core::fsx::utc_now;
-use crate::core::meta::touch_owner;
+use crate::core::meta::refresh_owner;
 use crate::core::target::{resolve_target, Target, TargetKind};
 use crate::store::cases::{self, CaseRow};
 use crate::store::request::RequestDoc;
@@ -53,7 +53,7 @@ fn sync_verb(ctx: &mut Context, args: &[String]) -> Result<()> {
         if !target.dir.is_dir() {
             fail!("run not found: {arg}")
         }
-        touch_owner(&target.dir, ctx.parent_pid, &ctx.session_id)?;
+        refresh_owner(&target.dir, ctx.parent_pid, &ctx.session_id)?;
     }
     sync(ctx, &target)
 }

@@ -5,3 +5,4 @@ pub mod types;
 pub mod summary;
 pub mod packet;
 pub mod resume;
+pub mod recover;

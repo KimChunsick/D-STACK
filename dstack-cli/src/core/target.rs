@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::core::args::opt;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::meta::touch_owner;
+use crate::core::meta::refresh_owner;
 use crate::core::paths::is_plain_name;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,7 +22,7 @@ pub struct Target {
     pub dir: PathBuf,
 }
 
-/// The target a verb works on. A run target takes the owner heartbeat with it, as the shell does.
+/// Resolve the target, renewing a heartbeat only when this session already owns the run.
 pub fn resolve_target(ctx: &mut Context, args: &[String]) -> Result<(Target, Vec<String>)> {
     let mut kind: Option<TargetKind> = None;
     let mut id = String::new();
@@ -74,7 +74,7 @@ pub fn resolve_target(ctx: &mut Context, args: &[String]) -> Result<(Target, Vec
         });
     }
     if kind == TargetKind::Run {
-        touch_owner(&dir, ctx.parent_pid, &ctx.session_id)?;
+        refresh_owner(&dir, ctx.parent_pid, &ctx.session_id)?;
     }
     Ok((Target { kind, id, dir }, rest))
 }
@@ -131,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn r13__a_plain_id_still_resolves_and_takes_the_heartbeat() {
+    fn r13__a_plain_id_resolves_without_claiming_an_unowned_run() {
         let mut s = scratch("plain");
         let (target, rest) = resolve_target(
             &mut s.ctx,
@@ -140,7 +140,7 @@ mod tests {
         .expect("resolves");
         assert_eq!(target.id, "20260101T000000Z_real");
         assert_eq!(rest, vec!["show".to_string()]);
-        assert!(target.dir.join("meta.tsv").is_file());
+        assert!(!target.dir.join("meta.tsv").exists());
     }
 
     #[test]

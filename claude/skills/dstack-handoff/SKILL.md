@@ -49,6 +49,43 @@ packet.json, summary.json, RESUME.md and its ready hash. Do not edit or patch th
 Successful summary validation seals the packet; it does not yet change the main or owner.
 Return the printed packet id, exact worktree and RESUME.md path to the user.
 
+## Recover a legacy query overwrite before preparation
+
+Ordinary target queries and positional cases sync renew only the current matching owner's
+heartbeat. They never claim a foreign or unowned run. Older versions could overwrite the
+source owner during a query while leaving its transcript_path and saved main intact.
+For that specific observed failure, use the actual current host/session and the exact saved
+source transcript identity. Never override a session environment variable to impersonate it.
+
+Obtain explicit acknowledgement that the source and all native workers are stopped, honoring
+acknowledgement already given. From the exact run Git worktree, execute:
+
+```bash
+dstack handoff recover-owner --run <run-id> --host codex --session <source-session-id> --history <exact-source.jsonl> --source-stopped
+```
+
+Use --host claude for a Codex source. This narrow repair is part of handoff preparation and is
+allowed before the ordinary host mismatch check; it does not authorize any other main work.
+The actual caller must equal the overwritten current owner, differ from the source and run
+on the declared host, which must differ from the saved main. Saved transcript_path is required;
+its filename must exactly encode the source (Claude SOURCE.jsonl, Codex rollout-*-SOURCE.jsonl).
+If that stored path exists, the supplied canonical path must match. If it is missing or moved,
+the supplied file must have the same filename and pass full original provider/session/Git
+worktree history validation. Do not guess the newest history or alter normal --session guards.
+Incomplete trailing history, invalid evidence, active commands, any existing handoff attempt
+and any previous recovery directory block this repair. Inspect failures; there is no force path.
+
+The CLI exclusively creates owner-recovery/intent.json under the run, with original metadata
+and its hash, proposed metadata and its hash, source path/hash/session, actual caller, timestamp
+and stopped acknowledgement. It rechecks history and the full snapshot before one atomic
+metadata replacement, then records completed. Only owner_session and canonical transcript_path
+are restored; misleading legacy owner_pid and owner_ts are removed because the stopped source
+has no verified current heartbeat. Mode, status, CURRENT, requests, plans and evidence remain.
+A missing completed marker means uncertain recovery: inspect receipt and actual metadata;
+never remove the guard or blindly retry. Even completed receipts remain immutable and prevent
+repeating this exceptional repair. After success use ordinary prepare and then distinct-session
+resume; recovery alone does not transfer the run to the destination host.
+
 ## Resume in the new destination main
 
 Open a new destination main session in the exact same worktree and read the CLI-produced

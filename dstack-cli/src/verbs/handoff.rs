@@ -7,7 +7,7 @@ use crate::core::mode::{self, Provider};
 use crate::core::paths::is_plain_name;
 use crate::core::target::{Target, TargetKind};
 use crate::core::verb::Verb;
-use crate::handoff::{history, packet, resume, snapshot, summary};
+use crate::handoff::{history, packet, recover, resume, snapshot, summary};
 use std::path::{Path, PathBuf};
 
 struct Handoff(&'static str);
@@ -16,7 +16,9 @@ impl Verb for Handoff {
         self.0
     }
     fn run(&self, ctx: &mut Context, args: &[String]) -> Result<()> {
-        if self.0 == "handoff resume" {
+        if self.0 == "handoff recover-owner" {
+            recover_command(ctx, args)
+        } else if self.0 == "handoff resume" {
             resume_command(ctx, args)
         } else {
             prepare(ctx, args)
@@ -27,6 +29,7 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
     vec![
         Box::new(Handoff("handoff")),
         Box::new(Handoff("handoff resume")),
+        Box::new(Handoff("handoff recover-owner")),
     ]
 }
 
@@ -151,6 +154,35 @@ fn resume_command(ctx: &mut Context, args: &[String]) -> Result<()> {
     let dir = target.dir.join("handoffs").join(id);
     resume::apply(ctx, &roots, &target, &dir, host, options.stopped)
 }
+fn recover_command(ctx: &mut Context, args: &[String]) -> Result<()> {
+    // Recovery shares the strict option parser, with source identity required explicitly.
+    let mut rewritten = args.to_vec();
+    let stopped = rewritten
+        .iter()
+        .position(|v| v == "--source-stopped")
+        .map(|i| {
+            rewritten.remove(i);
+            true
+        })
+        .unwrap_or(false);
+    let host_at = rewritten
+        .iter()
+        .position(|v| v == "--host")
+        .ok_or_else(usage)?;
+    rewritten[host_at] = "--to".into();
+    let options = Options::parse(&rewritten, false)?;
+    if options.dry_run {
+        return Err(usage());
+    }
+    let host = Provider::parse(options.to.ok_or_else(usage)?)?;
+    let source = options.session.ok_or_else(usage)?;
+    let path = Path::new(options.history.ok_or_else(usage)?);
+    let id = options.run.ok_or_else(usage)?;
+    let roots = ctx.roots()?;
+    roots.require_store()?;
+    let target = target(ctx, Some(id))?;
+    recover::apply(ctx, &roots, &target, host, source, path, stopped)
+}
 fn target(ctx: &mut Context, id: Option<&str>) -> Result<Target> {
     let roots = ctx.roots()?;
     let selected = mode::selected(&roots, id.map(|id| ("run", id)))?;
@@ -215,5 +247,5 @@ impl<'a> Options<'a> {
     }
 }
 fn usage() -> Error {
-    Error::failed("usage: dstack handoff --to claude|codex [--run ID] [--session ID] [--history FILE] [--dry-run] | dstack handoff resume ID --host claude|codex --source-stopped [--run ID]")
+    Error::failed("usage: dstack handoff --to claude|codex [--run ID] [--session ID] [--history FILE] [--dry-run] | dstack handoff resume ID --host claude|codex --source-stopped [--run ID] | dstack handoff recover-owner --run ID --host claude|codex --session SOURCE --history FILE --source-stopped")
 }

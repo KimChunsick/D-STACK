@@ -66,6 +66,17 @@ pub fn touch_owner(dir: &Path, parent_pid: u32, session_id: &str) -> Result<()> 
     meta_set(dir, "owner_ts", &utc_now())
 }
 
+/// Ordinary target resolution may renew only its existing, nonempty session owner.
+/// Claiming an unowned or foreign run remains explicit in run new/adopt and handoff resume.
+pub fn refresh_owner(dir: &Path, parent_pid: u32, session_id: &str) -> Result<()> {
+    if !session_id.trim().is_empty()
+        && meta_get(dir, "owner_session")?.as_deref() == Some(session_id)
+    {
+        touch_owner(dir, parent_pid, session_id)?;
+    }
+    Ok(())
+}
+
 /// True when the owner heartbeat is older than 600 s, unparseable or absent (R31).
 pub fn owner_is_stale(dir: &Path) -> Result<bool> {
     let stamp = match meta_get(dir, "owner_ts")? {
