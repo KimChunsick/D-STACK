@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use crate::core::args::opt;
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::meta::refresh_owner;
 use crate::core::paths::is_plain_name;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,7 +21,7 @@ pub struct Target {
     pub dir: PathBuf,
 }
 
-/// Resolve the target, renewing a heartbeat only when this session already owns the run.
+/// Resolve the target without mutating metadata or ownership.
 pub fn resolve_target(ctx: &mut Context, args: &[String]) -> Result<(Target, Vec<String>)> {
     let mut kind: Option<TargetKind> = None;
     let mut id = String::new();
@@ -72,9 +71,6 @@ pub fn resolve_target(ctx: &mut Context, args: &[String]) -> Result<(Target, Vec
             TargetKind::Run => Error::failed(format!("run not found: {id}")),
             TargetKind::Quick => Error::failed(format!("quick task not found: {id}")),
         });
-    }
-    if kind == TargetKind::Run {
-        refresh_owner(&dir, ctx.parent_pid, &ctx.session_id)?;
     }
     Ok((Target { kind, id, dir }, rest))
 }

@@ -51,8 +51,9 @@ Return the printed packet id, exact worktree and RESUME.md path to the user.
 
 ## Recover a legacy query overwrite before preparation
 
-Ordinary target queries and positional cases sync renew only the current matching owner's
-heartbeat. They never claim a foreign or unowned run. Older versions could overwrite the
+Ordinary target resolution and positional cases resolution are read-only: they never renew
+heartbeats or change ownership, even for the current owner. Explicit run new/adopt and handoff
+resume retain their ownership writes. Older versions could overwrite the
 source owner during a query while leaving its transcript_path and saved main intact.
 For that specific observed failure, use the actual current host/session and the exact saved
 source transcript identity. Never override a session environment variable to impersonate it.

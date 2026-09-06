@@ -77,17 +77,20 @@ fn R12__queries_and_positional_cases_preserve_foreign_and_unowned_metadata() {
     }
 }
 #[test]
-fn R12__matching_owner_renews_heartbeat() {
+fn R12__matching_owner_queries_leave_metadata_unchanged() {
     let s = fixture();
-    success(
-        s.command()
-            .args(["request", "show", "--run", "sample"])
-            .output()
-            .unwrap(),
-    );
-    let after = s.read(META);
-    assert!(after.contains("owner_session\tdestination\n"));
-    assert!(!after.contains("owner_pid\t4242\n"));
+    let old = s.read(META);
+    for args in [
+        vec!["request", "show", "--run", "sample"],
+        vec!["cases", "sync", "sample"],
+        vec!["gate"],
+    ] {
+        let output = s.command().args(&args).output().unwrap();
+        if args[0] != "gate" {
+            success(output);
+        }
+        assert_eq!(s.read(META), old);
+    }
 }
 #[test]
 fn R12__recovery_has_audited_receipt_and_preserves_workflow_and_normal_guards() {
@@ -241,20 +244,16 @@ fn R12__recovery_refuses_other_owner_wrong_source_corrupt_history_and_no_ack() {
 fn R12__existing_path_must_match_but_moved_exact_file_can_recover() {
     let s = fixture();
     s.write("trace/moved/source.jsonl", &s.read("history.jsonl"));
+    let old = s.read(META);
+    let mut command = recovery_command(&s, "codex", "trace/moved/source.jsonl", true);
     rejected(
         &s,
-        recovery_command(&s, "codex", "trace/moved/source.jsonl", true)
-            .output()
-            .unwrap(),
+        command.output().unwrap(),
         "stored transcript path",
-        &s.read(META),
+        &old,
     );
     fs::remove_file(s.0.join("trace/source.jsonl")).unwrap();
-    success(
-        recovery_command(&s, "codex", "trace/moved/source.jsonl", true)
-            .output()
-            .unwrap(),
-    );
+    success(command.output().unwrap());
     assert!(s.read(META).contains(&format!(
         "transcript_path\t{}\n",
         s.0.join("trace/moved/source.jsonl").display()
@@ -270,6 +269,7 @@ fn R12__recovery_refuses_handoff_and_uncertain_recovery_guards() {
             format!(".dstack/runs/sample/handoffs/old/{guard}")
         };
         s.write(&path, "partial");
+        let old = s.read(META);
         rejected(
             &s,
             recover(&s, true),
@@ -278,7 +278,7 @@ fn R12__recovery_refuses_handoff_and_uncertain_recovery_guards() {
             } else {
                 "existing handoff"
             },
-            &s.read(META),
+            &old,
         );
     }
 }
@@ -316,6 +316,7 @@ fn R12__recovery_requires_real_distinct_caller_and_idle_snapshot() {
         if scenario == "same-source" {
             c.env("DSTACK_SESSION_ID", "source");
         }
+        let old = s.read(META);
         let out = c.output().unwrap();
         rejected(
             &s,
@@ -326,7 +327,7 @@ fn R12__recovery_requires_real_distinct_caller_and_idle_snapshot() {
                 "active" => "unresolved exec",
                 _ => "duplicate",
             },
-            &s.read(META),
+            &old,
         );
     }
 }
