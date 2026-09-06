@@ -5,8 +5,12 @@ description: The entry point of the pipeline. Use it when a new piece of work ar
 
 # dstack-workflow — route, request, recon, interview, design
 
-You are the **main loop**. AskUserQuestion exists only here (R47), so every human round trip in
-the pipeline happens in this skill. Subagents get briefs and return text; you write the files.
+Read the shared `runtime.md` installed in the current provider's agent home before this skill.
+Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
+The same source is installed for Claude and Codex; provider selection never changes these gates.
+
+You are the **main loop**. The host question tool is main-only (R47), so every human round trip
+happens here. Subagents get bounded briefs and return text; the main session records state.
 
 Nothing in this skill ticks a checkbox. `dstack` computes pass/fail and prints what it counted;
 you read that output and relay it (§3-1, §3-2).
@@ -22,8 +26,8 @@ you read that output and relay it (§3-1, §3-2).
 | Evidence, ledger, report | **dstack-verify** |
 | Question, lookup, conversation, a one-line typo fix | No pipeline at all |
 
-The inject hook (R24) puts `dstack status --oneline` at the top of every prompt. Read it before
-you do anything: it names the current run, `type/route/research/review/effort/e2e/tests/visual/
+Claude’s inject hook (R24) supplies `dstack status --oneline`; in either host run it explicitly
+when no injection is present. Read it before routing: it names the current run, `type/route/research/review/effort/e2e/tests/visual/
 polish`, `R rows N, pending N, approved yes|no`, `Q open N`, `cases met N/N`, plan sets, and
 `quick open N`. `pending > 0` on a run you did not open means another session appended rows to
 your Goal (R48) — approve them before you plan anything else.
@@ -102,7 +106,7 @@ just to translate it. Copy its frozen R rows into downstream briefs verbatim in 
 
 ## 5. Recon, before the interview (R50)
 
-Delegate to the **recon** subagent (sonnet, read-only). The brief carries: the R rows so far,
+Delegate to the **recon** native worker (read-only; model mapping in `runtime.md`). The brief carries: the R rows so far,
 `work_type`, `risk_axes` and the style line from §3 verbatim. It returns the text of `recon.md` and writes nothing.
 
 **You write the file with Write, not with a CLI verb** — `recon.md` has no writer verb
@@ -135,8 +139,8 @@ else is not asked. Everything runs through the ledger, so the budget is countabl
 | First Milestone | 2 | 5 |
 | Every later Milestone | 1 | 3 |
 
-Batch up to **4 questions per AskUserQuestion call**; a fifth question is a second call in the
-same round. When the budget is spent, every leftover question becomes `ask assume` — an
+Batch questions within the host question tool limit; additional questions use another call in
+the same round. When the budget is spent, every leftover question becomes `ask assume` — an
 assumption with an R row is auditable, an unasked question is not.
 
 `dstack check request` refuses while any Q is `open`, or when an `assumed` Q has no R row. That
@@ -178,7 +182,7 @@ Approval is last, after the interview and design: `check request` fails while a 
 assumption rows (§6) must be on the page the user approves.
 
 1. **Polish once, before approve** (R94). With `korean_polish: on`, delegate the request body to
-   the **ko-polish** subagent (sonnet). It never touches R rows, the frontmatter, tables, paths
+   the **ko-polish** native worker (`runtime.md`). It never touches R rows, the frontmatter, tables, paths
    or code spans; over 15,000 characters it returns `skipped: too-long`. Record the diff and the
    call count in the run folder. After `request approve` the file is frozen by its hash — never
    polish an approved request.
@@ -210,9 +214,9 @@ final report belong to **dstack-verify**.
 
 ## 10. Long external runs (R98)
 
-Anything that may take minutes goes in ONE background Bash call whose blocking step is
-`dstack exec <label> -- <cmd>`, and then **the turn ends**. The completion notification is the
-resume signal. Never poll, never detach with `nohup`/`disown`/`setsid`.
+Use the host completion mechanism in `runtime.md`. Review/research/audit run through
+`dstack mode exec`; other long commands use `dstack exec <label> -- <cmd>`. Keep the process
+attached to its managed session, await completion and report actual failures.
 
 ## 11. `work_type` defaults (R41, R71)
 
@@ -232,20 +236,16 @@ them on the approval screen. There is no computed tier and no prompt token.
 | `korean_polish` | on | on | on | on | on |
 | `route` | proposed by §2; `new-goal` when nothing matches |
 
-## 12. Delegation (R25) — always pass `model` explicitly
+## 12. Delegation (R25)
 
-| Work | Who | Model |
-|---|---|---|
-| Code recon, risk table | `recon` | sonnet |
-| Korean prose polish | `ko-polish` | sonnet |
-| E2E execution, capture | `e2e-runner` | sonnet |
-| Frontend implementation (components, hooks, styles, frontend tests, frontend build config) | `frontend-dev` | opus |
-| Every other implementation | `general-dev` | opus |
-| External research | **codex-research** skill | Codex `gpt-6-astra`, effort fixed at `high` |
-| Code review | **codex-review** skill | Codex `gpt-6-astra`, effort fixed at `high` |
+Use the native role mapping in `runtime.md`: `recon` for code reconnaissance, `ko-polish` for
+Korean prose, `e2e-runner` for verification, `frontend-dev` for frontend code, `general-dev` for
+other implementation. Claude passes its explicit native model; Codex uses fresh native workers
+with inherited model/effort. Reviews and external research use the configured `sub` through
+the legacy **codex-review** and **codex-research** skills.
 
-A subagent starts with an empty context: the brief carries the project summary, the milestone
-context, the relevant recon rows, the R rows verbatim and the D rows they point to (R68).
+A worker starts with an empty context: the brief carries the project summary, the milestone
+context, relevant recon rows, R rows verbatim and the D rows they point to (R68).
 
 ## 13. Phase on/off by field (R71, §3-3)
 

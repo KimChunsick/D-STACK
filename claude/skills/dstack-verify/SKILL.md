@@ -12,6 +12,10 @@ description: >-
 
 # dstack-verify
 
+Read the shared `runtime.md` installed in the current provider's agent home before this skill.
+Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
+The same source is installed for Claude and Codex; provider selection never changes these gates.
+
 The ledger decides, not the agent. This skill never ticks a box and never writes `cases.tsv`: the
 CLI computes every pass/fail and `dstack evidence add` is the only writer of an evidence row (R104).
 Borrowed stance, GSD `agents/gsd-verifier.md:15`: *"Verify that the phase goal is actually achieved
@@ -43,7 +47,7 @@ with `dstack request show` and obey the table:
 | `e2e` | `none` | no execution; each R gets a `review` row (claim → source) |
 | `unit_tests` | `on` | the `unit-test` skill produces the `test` rows |
 | `visual` | any | no comparison tool is bundled: one `skipped` row per rendering R, note `no-visual-surface` |
-| `korean_polish` | `on` | the Korean prose under the report goes through `ko-polish` (sonnet) |
+| `korean_polish` | `on` | the Korean prose under the report goes through `ko-polish` (native mapping in `runtime.md`) |
 
 A phase that does not run is written down, never silently dropped (§3-3): put
 `e2e-runner: skipped — e2e=none` (or the real reason) in the message that reports the milestone,
@@ -99,7 +103,7 @@ Two rules that apply to every profile:
 for the whole verification pass. A task space owned by the user is the R78 case: `switchTaskSpace`
 throws on a user-owned space — that is "user is controlling", stop there (§5.3).
 
-## 4. Running the cases — delegate to e2e-runner (sonnet)
+## 4. Running the cases — delegate to the native e2e-runner
 
 The main session prepares the artifact directory and passes it as the only writable location:
 
@@ -112,14 +116,10 @@ milestone id for a milestone pass (`M2`) or the quick slug. The runner writes on
 session records the artifacts afterwards. The worker's own test artifacts live elsewhere
 (`.dstack/runs/<id>/artifacts/P<n>/`, develop §6) and are recorded when the worker returns.
 
-Delegation defaults (R25) — always pass `model` explicitly:
-
-| Work | Agent | Model |
-|---|---|---|
-| Running cases, capturing artifacts | `e2e-runner` | sonnet |
-| Korean prose polish under the report | `ko-polish` | sonnet |
-| Fixing what a failed case exposed | `general-dev` / `frontend-dev` for FE code | opus |
-| Reviewing the fix | Codex, through the `codex-review` skill | fixed `high` effort |
+Delegation follows `runtime.md` (R25): `e2e-runner` executes cases, `ko-polish` handles Korean
+prose, and `general-dev` / `frontend-dev` fix failed cases. Each is a native worker of the main
+host with a fresh bounded brief. The legacy `codex-review` skill reviews fixes through the
+configured `sub`; it does not select the worker engine.
 
 Brief block to send (an empty-context worker gets everything it needs, R68):
 
@@ -137,8 +137,7 @@ into the text file and move on.
 Return only the table | R | case | artifact | outcome (met|blocked|skipped) | note |.
 ```
 
-A run longer than the foreground cap goes through ONE background Bash call and the turn ends; the
-completion notification resumes the work (R98):
+A run longer than the foreground cap uses the host completion mechanism in `runtime.md` (R98):
 
 ```bash
 dstack exec <label> -- <the long command>     # label: e2e-M2, e2e-<quick slug>, …
@@ -224,13 +223,13 @@ dstack report        # the R table: id, text, covering tasks, evidence path, sta
 dstack verify --accept-abstain R04 --why "결제 샌드박스가 닫혀 있어 이번 Goal에서는 확인 불가"
 ```
 
-  The decision is the user's. Ask in the main loop with AskUserQuestion (it does not exist inside a
+  The decision is the user's. Ask in the main loop with the host question tool (never inside a
   subagent, R47), one question carrying up to four R ids: "R04·R07은 증거로 판정이 안 나요. 사유를
   붙여 받아들일까요, 아니면 케이스를 다시 돌릴까요?"
 
 - **The report shape.** The completion message starts with the `dstack report` table pasted as-is;
   Korean prose goes underneath it and never restates a status the table already prints. With
-  `korean_polish: on` that prose (not the table, not the R rows) goes through `ko-polish` (sonnet).
+  `korean_polish: on` that prose (not the table, not the R rows) goes through `ko-polish` (native mapping in `runtime.md`).
 
 ## 7. Milestone and Goal close checklist
 

@@ -7,6 +7,8 @@ pub mod error;
 pub mod fsx;
 pub mod help;
 pub mod meta;
+pub mod mode;
+pub mod mode_run;
 pub mod out;
 pub mod paths;
 pub mod registry;

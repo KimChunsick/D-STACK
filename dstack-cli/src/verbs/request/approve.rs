@@ -4,8 +4,9 @@
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::fsx::{sha256_file, utc_now};
-use crate::core::target::resolve_target;
-use crate::core::tools::tool_check;
+use crate::core::mode::Mode;
+use crate::core::target::{resolve_target, TargetKind};
+use crate::core::tools::tool_check_for_mode;
 use crate::store::cases;
 use crate::store::request::write_approval;
 
@@ -36,7 +37,11 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
         .iter()
         .map(|field| format!("{field}={}", doc.field(field).unwrap_or_default()))
         .collect();
-    if tool_check(ctx, &fields)? != 0 {
+    let mode = Mode::for_run(&ctx.roots()?, &target.dir)?;
+    let need_sub = target.kind == TargetKind::Run
+        || doc.field("review").as_deref() == Some("on")
+        || doc.field("external_research").as_deref() == Some("one-pass");
+    if tool_check_for_mode(ctx, &fields, &mode, need_sub)? != 0 {
         fail!("a goal-closing tool required by these fields is missing (install it, or change the field and approve again)");
     }
 

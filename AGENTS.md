@@ -1,14 +1,15 @@
 # D-STACK — repository rules (AGENTS.md; twin of the repo-root CLAUDE.md)
 
 These rules apply inside this repository and win over the global defaults where they differ.
-Precedence: an explicit user instruction in the session > this file > `~/.claude/CLAUDE.md`.
+Precedence: an explicit user instruction in the session > this file > the current provider's installed global instructions.
 `CLAUDE.md` and `AGENTS.md` are byte-identical apart from the title line; edit both.
 
 ## What this repository is
 
 The maintainer's agent configuration — the `dstack` CLI, hooks, skills, agent definitions,
 Codex role skills, Korean rule tables — wired into `~/.claude` and `~/.codex` by `install.sh`,
-which builds the CLI's release binary with cargo and links `~/.claude/bin/dstack` to it.
+which builds the CLI's release binary with cargo and links both `~/.claude/bin/dstack` and
+`~/.codex/bin/dstack` to it. Shared main workflows live in `claude/skills/` and `claude/runtime.md`.
 It is configuration, not an application: nothing renders, nothing serves.
 
 ## Verification here
@@ -26,7 +27,8 @@ It is configuration, not an application: nothing renders, nothing serves.
 ## Conventions
 
 - The CLI is the Rust crate `dstack-cli/`: its dependencies are exactly serde, serde_json,
-  regex, sha2 and time, and git is the only executable it runs. One responsibility per file,
+  regex, sha2 and time. Ordinary verbs invoke only git; `mode exec` explicitly launches the
+  selected claude/codex provider, and `exec` runs its user-supplied command. One responsibility per file,
   350 lines at most, which `dstack doctor` checks.
 - The default gate is `bash dstack-cli/test.sh` (cargo test, then `cargo clean --profile dev`,
   so the debug tree never stays in the checkout). Historical shell comparisons are opt-in:
@@ -50,7 +52,8 @@ It is configuration, not an application: nothing renders, nothing serves.
 
 ## Prompt reuse
 
-Use `dstack prompt render` for review, research, audit and implementation briefs. Its role
+Use `dstack mode exec` for review, research and audit; it renders the canonical role internally.
+Use `dstack prompt render` directly for implementation briefs. Its role
 instructions are copied from their canonical source before variable task context; do not
 prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable
 within each role. Append fresh state in task context and preserve necessary safety checks and

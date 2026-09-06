@@ -1,5 +1,15 @@
 # Global agent rules (installed as ~/.claude/CLAUDE.md by D-STACK v2)
 
+## Choose the session role first
+
+A supplied role prompt for reviewer, researcher, audit, implementation worker, recon,
+e2e-runner/verification or ko-polish takes only that role. Read its supplied canonical
+instructions and bounded task context; do not start a main
+workflow or recurse into orchestration. Otherwise this is the main session: read
+`~/.claude/runtime.md`, run `dstack mode show --host claude` (with `--run` or `--quick` for an
+explicit target), then use the shared `dstack-workflow` skill. A host mismatch requires the
+selected environment; changing a setting does not replace this conversation's engine.
+
 ## 0. Every change runs through dstack
 
 Any request that touches files — implementation, bugfix, refactor, configuration, build,
@@ -31,17 +41,11 @@ implementation worker files the friction it hit there, never by hand.
 
 ## 0.2 Delegation and model policy (R25)
 
-| Work | Runs as | Model | Notes |
-|---|---|---|---|
-| Code reconnaissance, verification runs, Korean polish | subagent | `sonnet` (agents `recon`, `e2e-runner`, `ko-polish`) | read-only or artifact-only |
-| Implementation of a Plan | subagent | `opus` (`frontend-dev`, `general-dev`) | one Plan per worker, worktree made by dstack |
-| Code review, external research | Codex | `gpt-6-astra`, `model_reasoning_effort=high` for every call | `codex-review`, `codex-research` skills |
-| Anything else delegated | subagent | `opus` | |
-
-Always pass `model` explicitly to the Agent tool and to Workflow `agent()` calls: `sonnet` or
-`opus`, never a full model id, `fable`, `haiku` or `inherit`. A PreToolUse hook rewrites a
-missing or other value to `opus` and logs it; Workflow-spawned agents rely on the script's
-`model` option and `CLAUDE_CODE_SUBAGENT_MODEL=opus`.
+Follow the native delegation table in `~/.claude/runtime.md`: Claude main uses `Agent` with
+explicit `sonnet` for recon/verification/polish and `opus` for implementation. Code review,
+external research and audit use the target's saved `sub` via `dstack mode exec`. The historical
+names `codex-review` and `codex-research` select that provider, including when it is Claude.
+Keep each sub pass in a fresh read-only context even when main and sub are the same provider.
 
 ## 0.3 Frontend code is delegated
 
@@ -73,7 +77,8 @@ worker runs.
 
 ## Prompt reuse
 
-Use `dstack prompt render` for review, research, audit and implementation briefs. Its role
+Use `dstack mode exec` for review, research and audit; it calls `dstack prompt render` internally.
+Use `dstack prompt render` directly for implementation briefs. Its role
 instructions are copied from their canonical source before variable task context; do not
 prepend paths, run ids, timestamps, status or paraphrases. Keep model, effort and tools stable
 within each role. Append fresh state in task context and preserve necessary safety checks and

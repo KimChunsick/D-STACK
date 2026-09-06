@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
+use crate::core::mode::Mode;
 use crate::core::roots::{git_out, Home};
 
 pub const NO_TEAM_STYLE_LINE: &str =
@@ -136,6 +137,18 @@ pub fn tool_check(ctx: &mut Context, fields: &[String]) -> Result<i32> {
         "  checked {checked} goal-closing tools, missing {missing}"
     ));
     Ok(if missing == 0 { 0 } else { 1 })
+}
+
+/// Provider requirements follow the selected main and the roles this target actually runs.
+pub fn tool_check_for_mode(
+    ctx: &mut Context, fields: &[String], mode: &Mode, need_sub: bool,
+) -> Result<i32> {
+    let mut selected = fields.to_vec();
+    selected.push(format!("provider={}", mode.main));
+    if need_sub && mode.sub != mode.main {
+        selected.push(format!("provider={}", mode.sub));
+    }
+    tool_check(ctx, &selected)
 }
 
 /// required_by is a field expression: always | e2e=capture | visual=design,regression.

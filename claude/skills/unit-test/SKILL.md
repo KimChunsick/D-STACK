@@ -11,6 +11,10 @@ description: >-
 
 # unit-test
 
+Read the shared `runtime.md` installed in the current provider's agent home before this skill.
+Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
+The same source is installed for Claude and Codex; provider selection never changes these gates.
+
 ## 1. When this runs
 
 | Condition | What happens |
@@ -18,10 +22,10 @@ description: >-
 | `unit_tests: on` and work_type is code | Red → Green → Refactor inside one Task, one commit (R62) |
 | `unit_tests: off` | write `unit tests: skipped — unit_tests=off` in the task report; no test row |
 | work_type `docs-writing` | no Red/Green; each acceptance criterion is checked one by one instead |
-| This repository (D-STACK) | always `unit_tests: off` — the check commands' own output is the evidence |
+| This repository (D-STACK) | `unit_tests: on`; use R-named cargo tests and capture failing/passing output |
 
-The test code is written by the implementation worker inside its Task: `frontend-dev` (opus) for
-frontend tests, `general-dev` (opus) for everything else. This skill is the contract they follow.
+The test code is written by the native implementation worker inside its Task: `frontend-dev` for
+frontend tests, `general-dev` for everything else. `runtime.md` selects the host tool and model.
 
 ## 2. Use the repository's own runner
 
@@ -67,8 +71,7 @@ dstack evidence add --r R03 --case c-test --kind test \
   the test until the run is red for the stated reason, then capture again.
 - The two artifacts are different files, so no `--shared` is needed. `c-test` is the case id
   `dstack cases sync` already opened for the R; `c-test-red` is added alongside it.
-- A long suite goes through ONE background call and the turn ends; the completion notification
-  resumes it: `dstack exec <label> -- <runner>` (label: `suite-P3`).
+- A long suite uses the host completion mechanism in `runtime.md`: `dstack exec <label> -- <runner>` (label: `suite-P3`).
 - GSD `agents/gsd-verifier.md:467`: *"Run the full workspace test command at most once per
   verification. Never filter a full run per must-have."* Prove a test exists by enumeration
   (`--list` / `--collect-only`); prove one passes with a single named test.

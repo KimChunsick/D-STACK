@@ -1,9 +1,13 @@
 ---
 name: dstack-develop
-description: The development phase of the D-STACK pipeline — turn an approved request into Milestones, Plans and Tasks, run the Plans as waves of fresh-context workers in dstack-made worktrees, and close each Plan with a Codex review. Use it after `dstack request approve` has passed and recon/interview/design are recorded, and whenever a run is resumed mid-flight. Korean triggers the user may type: "개발 시작해줘", "이 마일스톤 계획 세워줘", "다음 파도 돌려줘", "플랜 P3 워커 붙여줘", "이어서 작업해줘", "마일스톤 마무리하자".
+description: The development phase of the D-STACK pipeline — turn an approved request into Milestones, Plans and Tasks, run the Plans as waves of fresh-context workers in dstack-made worktrees, and close each Plan with an independent review by the configured sub. Use it after `dstack request approve` has passed and recon/interview/design are recorded, and whenever a run is resumed mid-flight. Korean triggers the user may type: "개발 시작해줘", "이 마일스톤 계획 세워줘", "다음 파도 돌려줘", "플랜 P3 워커 붙여줘", "이어서 작업해줘", "마일스톤 마무리하자".
 ---
 
 # dstack-develop — Milestone loop, waves, workers, review calls
+
+Read the shared `runtime.md` installed in the current provider's agent home before this skill.
+Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
+The same source is installed for Claude and Codex; provider selection never changes these gates.
 
 This skill runs in the **main session**. The main session is the only writer of `.dstack/`
 (R36, R66): workers implement and commit, the main session records. Every checkbox and every
@@ -81,7 +85,7 @@ off is recorded, never silently dropped:
 | `review: on\|off` | rounds and axes of `codex-review`; the per-R covered/partial/absent verdict never turns off (R69) | `skipped: review=off (verdict still required)` |
 | `e2e: capture\|cli\|none` | which evidence kind the milestone's e2e cases take — run once per milestone, never per Plan (verify §1) | `skipped: e2e=none` |
 | `korean_polish: on` | `ko-polish` on human-facing prose only | `skipped: korean_polish=off` |
-| `codex_effort` | review and research use fixed `model_reasoning_effort=high`; legacy values remain readable | — |
+| `codex_effort` | compatibility field; the selected provider uses fixed high effort for review and research | — |
 
 ### 4.1 Red/Green/Refactor (R62)
 
@@ -113,8 +117,8 @@ GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`
 2. for each schedulable plan:
      dstack plan start P3 --worktree ../wt-<run>-P3
      → the CLI runs `git worktree add` itself and records the path in plan.json
-3. spawn one worker per plan — ALL Agent calls in ONE message so they run as a wave.
-     model explicit (R25); brief = §6 template; nothing else in the worker's context.
+3. spawn one native worker per plan using runtime.md; brief = §6 template.
+     Claude: explicit Agent model. Codex: spawn_agent with fresh bounded context and inheritance.
 4. wait for the wave; each worker's first line is its `dstack run verify` output.
 5. per returned worker: run the checklist of §7, in order.
 6. dstack next --max 3   → next wave. Repeat until the Milestone has no pending plan.
@@ -131,19 +135,14 @@ Tasks inside one Plan run sequentially in that one worktree. Workers commit with
 locking"); the lint that a pre-commit hook would do is already done by the pre-write hook and
 `dstack lint-ko --changed` at Stop (R93).
 
-### Delegation defaults (R25) — model is always explicit
+### Delegation defaults (R25)
 
-| Work | Agent | Model |
-|---|---|---|
-| Frontend code: components, hooks, styles, markup, frontend utilities, frontend tests, stories, frontend build config | `frontend-dev` | opus |
-| Everything else: backend, CLI, scripts, config, docs and their tests | `general-dev` | opus |
-| Recon before the interview | `recon` | sonnet |
-| Running a verification profile | `e2e-runner` | sonnet |
-| Korean polish of human-facing prose | `ko-polish` | sonnet |
-| Code review, external research | Codex `gpt-6-astra` | `model_reasoning_effort=high` for every call |
-
-A Plan that touches frontend code goes to `frontend-dev` even inside a full-stack Plan; split
-the Plan when both sides move together and give each brief the other side's contract.
+Use `runtime.md` for native model/tool selection in the actual main host. `frontend-dev` owns
+frontend components, hooks, styles, tests and build config; `general-dev` owns other code,
+scripts, configuration and docs. `recon`, `e2e-runner` and `ko-polish` retain their bounded
+roles. Review/research/audit go through `dstack mode exec` to the target snapshot's `sub`.
+A Plan spanning frontend and backend is split when both sides move together; give each brief
+the other side's contract.
 
 ## 6. Worker brief template (R68)
 
@@ -207,7 +206,7 @@ Run in this order. Every step is a CLI verb; nothing here is a judgment call.
 | 4 | `dstack task done T7 --commit <sha>` (one per task in the report) | records the commit that is the Task |
 | 5 | `dstack plan done P3` | refreshes readiness; regenerates ROADMAP.md and STATE.md under the lock |
 | 6 | `dstack review --scope plan --plan P3` then the `codex-review` skill on the bundle | review is per Plan and unconditional (R69) |
-| 7 | `dstack review seal --from <codex-output> --scope plan --id P3` | one sealed `codex-review-<NNN>.md` per round; sealed rounds are never edited |
+| 7 | `dstack review seal --from <provider-output> --scope plan --id P3` | one sealed `codex-review-<NNN>.md` per round; sealed rounds are never edited |
 
 If step 2 reports `unreported: M` with M > 0, those R ids sit in the ledger as `unreported`
 and `dstack check coverage` keeps failing until each one gets evidence or a follow-up Plan.
@@ -216,7 +215,7 @@ Nothing in this checklist waits on the issues a worker filed; `dstack issue list
 back whenever you want to look.
 
 Korean progress line to the user, e.g. "P3 워커가 R07·R09를 보고했고 미보고는 없어요.
-리뷰 번들을 만들어서 Codex 리뷰로 넘겼어요."
+리뷰 번들을 만들어서 선택한 서브 환경으로 넘겼어요."
 
 ## 8. Review calls (R69, R70) and long runs (R98)
 
@@ -227,17 +226,16 @@ Korean progress line to the user, e.g. "P3 워커가 R07·R09를 보고했고 �
 - **At Milestone / Goal close** — `dstack review --scope milestone --milestone M2` makes the
   ledger-pass bundle: only the open items of `findings.md` and integration behaviour, with the
   prompt contracting the reviewer not to open new-scope findings. Oversize → split per Plan.
-- The Codex call itself belongs to `codex-review`. It is a long external run, so it goes in
-  ONE background Bash call and the turn ends; the completion notification resumes the session.
-  First render the review context with `dstack prompt render --role review` as `codex-review`
-  specifies; never pass the bare bundle as the prompt:
+- The sub call itself belongs to `codex-review`; follow the host completion mechanism in
+  `runtime.md`. The CLI internally renders the review role before launching a fresh read-only
+  provider session. Pass the context file, not a pre-rendered prompt:
 
-```
-dstack exec <label> -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high --sandbox read-only --json -o <out-file> - < <rendered-review-prompt>
+```bash
+dstack mode exec <label> --role review --context <review-context> --output <out-file> --worktree <plan-worktree>
 ```
 
-Keep `high` for every call, including quick tasks and the final sealing review. Legacy
-request values do not override the fixed effort.
+Use `--run <id>` when targeting a non-CURRENT run. Keep fixed high effort for every call,
+including quick tasks and the final sealing review; legacy request values do not override it.
 
 ## 9. Resume, insert, remove (R61(5), R67)
 

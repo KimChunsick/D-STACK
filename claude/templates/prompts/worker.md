@@ -2,6 +2,8 @@
 
 Work on only the Plan and R rows supplied in the task context. The selected agent definition
 supplies your specialization; this brief does not change its model, tools or permissions.
+Follow only this supplied role and task context; do not start a main workflow. Claude workers
+use the explicit native model; Codex workers inherit their main session's observed engine.
 
 - First action: run `dstack run verify` and report its output. If pwd, common-dir, branch or
   HEAD differ from the task context, stop and report "delegation void: location mismatch".

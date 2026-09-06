@@ -7,8 +7,9 @@ use crate::core::args::{is_option, opt, unknown_option};
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::fsx::read_text;
+use crate::core::mode::Mode;
 use crate::core::paths::valid_slug;
-use crate::core::tools::tool_check;
+use crate::core::tools::tool_check_for_mode;
 use crate::store::request::{field_default, req_enum};
 
 use super::state;
@@ -79,7 +80,8 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
         "visual=none".to_string(),
         "unit_tests=off".to_string(),
     ];
-    if tool_check(ctx, &fields)? != 0 {
+    let mode = Mode::project(&roots)?;
+    if tool_check_for_mode(ctx, &fields, &mode, review || research)? != 0 {
         ctx.out
             .say("refused: a goal-closing tool is missing for this quick task (see lines above)");
         return Err(Error::Exit(1));
@@ -101,6 +103,7 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
 
     std::fs::create_dir_all(&dir)
         .map_err(|e| Error::cannot_decide(format!("cannot create {}: {e}", dir.display())))?;
+    mode.snapshot(&dir)?;
     let request = dir.join("request.md");
     std::fs::write(&request, text)
         .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", request.display())))?;

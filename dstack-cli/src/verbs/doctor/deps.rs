@@ -5,7 +5,8 @@ use std::path::Path;
 
 use crate::core::context::Context;
 use crate::core::error::Result;
-use crate::core::tools::{deps_file, tool_present};
+use crate::core::mode::Mode;
+use crate::core::tools::{deps_file, reqby_matches, tool_present};
 use crate::selftest::{Selftest, Verdict};
 
 pub fn section(ctx: &mut Context) -> Result<bool> {
@@ -25,6 +26,11 @@ fn table(ctx: &mut Context, path: &Path) -> Result<bool> {
     };
     say!(ctx, "deps ({}):", path.display());
     say!(ctx, "  name | present | needed_when | install");
+    let mode = match ctx.roots() {
+        Ok(roots) => Mode::effective(&roots)?,
+        Err(_) => Mode::default(),
+    };
+    let providers = [format!("provider={}", mode.main), format!("provider={}", mode.sub)];
     let (mut rows, mut ok, mut missing, mut gmiss) = (0, 0, 0, 0);
     for line in text.lines() {
         let column: Vec<&str> = line.split('\t').collect();
@@ -39,12 +45,16 @@ fn table(ctx: &mut Context, path: &Path) -> Result<bool> {
             ok += 1;
         } else {
             missing += 1;
-            if field(5) == "goal-closing" {
+            if field(5) == "goal-closing"
+                && (!field(6).starts_with("provider=") || reqby_matches(field(6), &providers)) {
                 gmiss += 1;
             }
         }
         let word = if present { "yes" } else { "no" };
-        say!(ctx, "  {name} | {word} | {} | {}", field(5), field(2));
+        let needed = if field(6).starts_with("provider=") && !reqby_matches(field(6), &providers) {
+            "not-selected"
+        } else { field(5) };
+        say!(ctx, "  {name} | {word} | {needed} | {}", field(2));
     }
     say!(
         ctx,

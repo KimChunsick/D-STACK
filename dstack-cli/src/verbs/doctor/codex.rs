@@ -40,6 +40,7 @@ fn files(ctx: &Context) -> Vec<PathBuf> {
     let mut files = super::glob_sub(&home.join("skills"), "SKILL.md");
     files.extend(super::glob_sub(&repo.join("codex/skills"), "SKILL.md"));
     files.push(repo.join("codex/AGENTS.md"));
+    files.push(home.join("runtime.md"));
     files.extend(super::glob(&home.join("agents"), ".md"));
     files.retain(|file| file.is_file());
     files

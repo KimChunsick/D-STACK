@@ -8,6 +8,7 @@ use crate::core::context::Context;
 use crate::core::error::Result;
 use crate::core::fsx::read_text;
 use crate::core::meta::meta_get;
+use crate::core::mode::Mode;
 use crate::core::roots::Roots;
 use crate::core::verb::Verb;
 use crate::selftest::Selftest;
@@ -51,6 +52,10 @@ fn status(ctx: &mut Context, args: &[String]) -> Result<()> {
     ctx.out.say(&format!("store:    {}", roots.store.display()));
     ctx.out
         .say(&format!("worktree: {}", roots.wt_root.display()));
+    let mode = Mode::effective(&roots)?;
+    let project = Mode::project(&roots)?;
+    ctx.out.say(&format!("mode:     main={} sub={} (project main={} sub={})",
+        mode.main, mode.sub, project.main, project.sub));
     ctx.out.say(&format!("current:  {current}"));
     ctx.out
         .say(&format!("quick open: {}", quick_open(&roots)?));
@@ -69,8 +74,8 @@ fn status(ctx: &mut Context, args: &[String]) -> Result<()> {
 /// the ceiling gets one back so the hook still reads a whole line.
 fn oneline(ctx: &mut Context, roots: &Roots, id: &str) -> Result<()> {
     let mut line = if id.is_empty() {
-        "dstack: no current run in this worktree (dstack run new <slug> | dstack run adopt <id>)"
-            .to_string()
+        let mode = Mode::project(roots)?;
+        format!("dstack: no current run in this worktree (dstack run new <slug> | dstack run adopt <id>); main={} sub={}", mode.main, mode.sub)
     } else if !roots.runs.join(id).is_dir() {
         format!("dstack: CURRENT points at a missing run '{id}' (dstack run adopt <id> or dstack run pause)")
     } else {
@@ -90,6 +95,8 @@ fn oneline(ctx: &mut Context, roots: &Roots, id: &str) -> Result<()> {
 fn status_line(roots: &Roots, id: &str) -> Result<String> {
     let dir = roots.runs.join(id);
     let mut out = format!("run {id} [{}]", meta_get(&dir, "status")?.unwrap_or_default());
+    let mode = Mode::for_run(roots, &dir)?;
+    out.push_str(&format!(" main={} sub={}", mode.main, mode.sub));
     let request = dir.join("request.md");
     // The shell only asks whether the file is there, so an absent one prints the hint below; a
     // request.md that is there and cannot be read is a cannot-decide (D-12), never empty fields.

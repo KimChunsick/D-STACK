@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use dstack_cli::core::registry::ROSTER;
+
 /// The binary install.sh links to, as install.sh names it (D-DESIGN-01).
 const BIN_REL: &str = "dstack-cli/target/release/dstack";
 
@@ -142,7 +144,8 @@ fn r08__the_install_links_the_binary_and_the_link_runs() {
         .expect("run the installed dstack");
     let help = String::from_utf8(out.stdout).expect("utf-8");
     assert!(
-        help.lines().any(|line| line == "verbs: 64"),
+        help.lines()
+            .any(|line| line == format!("verbs: {}", ROSTER.len())),
         "the installed link is the port:\n{help}"
     );
 }
@@ -242,7 +245,8 @@ fn r01__the_release_binary_runs_help() {
     assert!(out.status.success(), "dstack help exits 0");
     let help = String::from_utf8(out.stdout).expect("utf-8");
     assert!(
-        help.lines().any(|line| line == "verbs: 64"),
+        help.lines()
+            .any(|line| line == format!("verbs: {}", ROSTER.len())),
         "the roster of the built binary:\n{help}"
     );
 }

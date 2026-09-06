@@ -1,12 +1,14 @@
 ---
 name: codex-review
-description: Adversarial code review of one finished Plan (and the ledger pass that closes a Milestone or Goal) run by Codex gpt-6-astra against the frozen request. Use it after the last Task of a Plan is committed and before `dstack plan done`, and again when a Milestone or the Goal closes. Korean triggers a user may type — "리뷰 돌려줘", "코드리뷰 해줘", "Plan 리뷰", "리뷰 한 라운드 더", "마일스톤 대장 점검", "리뷰 봉인해줘".
+description: Adversarial code review of one finished Plan (and the ledger pass that closes a Milestone or Goal) run by the configured sub provider against the frozen request. Use it after the last Task of a Plan is committed and before `dstack plan done`, and again when a Milestone or the Goal closes. Korean triggers a user may type — "리뷰 돌려줘", "코드리뷰 해줘", "Plan 리뷰", "리뷰 한 라운드 더", "마일스톤 대장 점검", "리뷰 봉인해줘".
 ---
 
 # codex-review — one Plan, one bundle, sealed rounds
 
-The reviewer is Codex, never this session. This session only builds the bundle, launches Codex,
-seals what comes back, answers it and decides whether another round is owed. `<T>` below is the
+The legacy `codex-review` name selects the target snapshot's `sub`, not a fixed provider.
+Read the shared `runtime.md` in the current host's agent home. The main session builds the bundle,
+launches a fresh read-only sub session, seals its result and answers it. Main and sub may be the
+same provider; their contexts remain separate. `<T>` below is the
 target directory `dstack status` prints (`.dstack/runs/<run>/`).
 
 You never tick a checkbox and you never write a verdict yourself: `dstack review seal` counts the
@@ -19,7 +21,7 @@ verdict rows and `dstack report` computes each R's status (§3-1).
 | Every Task of a Plan is committed, before `dstack plan done` | `plan` | Always. `review: off` cuts rounds and axes, never the per-R verdict (R69) |
 | Milestone closes | `milestone` | Always — ledger pass (R70) |
 | Goal closes, before `dstack run close` | `milestone` per Milestone with open findings | Always — ledger pass |
-| Quick task (`.dstack/quick/<slug>/`) | — | Never: no `plan.json`, so `dstack review` refuses a bundle. Record `skipped: quick target has no plan.json` (see *Skipped*) |
+| Quick task (`.dstack/quick/<slug>/`) | `quick` | Only with `review: on`; use the bounded quick bundle below and `--quick <slug>` |
 | A Plan whose diff is empty | `plan` | Never. Record `skipped: no diff in the declared files` |
 
 **Skipped**: write one line into `<T>/review/skipped-<scope>-<id>.md` — `skipped: <reason>` — and say
@@ -31,7 +33,7 @@ it in the progress message. A phase that quietly does not run is a phase nobody 
 |---|---|---|
 | `review: on` (default) | — | up to 3 rounds per Plan, all five axes |
 | `review: off` | — | 1 round, axes reduced to goal achievement + security. The per-R verdict table is still required and `absent` still blocks a positive seal |
-| `codex_effort` | high for new requests; legacy values remain readable | Every round uses `model_reasoning_effort=high`, including the sealing round (R23) |
+| `codex_effort` | high for new requests; legacy values remain readable | Every selected provider round uses fixed high effort, including the sealing round (R23) |
 | `risk_axes` | ux\|perf\|security | the named axis is called out first in the prompt; it never removes an axis |
 
 ## One round, four steps
@@ -49,9 +51,9 @@ anything the bundle does not contain — silent mis-scoping is worse than failin
 If the command fails with `bundle exceeds 512KB: split the plan`, split the Plan
 (`dstack plan insert --after P1 …`) instead of trimming the diff.
 
-### 2. Launch Codex — one background call, then end the turn (R98)
+### 2. Launch the configured sub (R98)
 
-Write the prompt to a file first (it carries quotes and newlines):
+Write task context first; keep the canonical reviewer contract out of it:
 
 ```bash
 cat > "$T/review/context-P1-001.txt" <<'EOF'
@@ -61,25 +63,32 @@ Previous sealed round: <abs path to codex-review-NNN.md, or "none">
 Our answer to it: <abs path to response-NNN.md, or "none">
 First risk axis to weigh: <risk_axes value, or "none declared">
 EOF
-dstack prompt render --role review --context "$T/review/context-P1-001.txt" > "$T/review/prompt-P1-001.txt" || exit
+dstack mode exec review-P1-001 --role review --context "$T/review/context-P1-001.txt" --output "$T/review/raw-P1-001.md" --worktree "$WT"
 ```
 
-Then ONE Bash call with `run_in_background: true`, and end the turn. The completion notification
-is the resume signal; never poll, never emit a "still running" turn.
+The CLI calls `dstack prompt render` internally, supplies finite input, selects the saved sub,
+fixes model/effort and tools, captures logs and usage, and publishes output only after successful
+structured completion. Use `--dry-run` to inspect argv without a model call. Use the host's
+completion mechanism in `runtime.md`; do not detach or start a duplicate while one is running.
 
-```bash
-dstack exec review-P1-001 -- codex exec --ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high -C "$WT" --sandbox read-only --json -o "$T/review/raw-P1-001.md" - < "$T/review/prompt-P1-001.txt"
-```
+- `$WT` is the bundle's `worktree:` path. Review sessions are read-only.
+- Add `--run <id>` for an explicit run. For quick work every target-aware command carries
+  `--quick <slug>`; never accidentally select CURRENT.
+- The label is `review-<plan>-<round-in-this-plan>`. Sealed names stay
+  `codex-review-<NNN>.md` for both providers; the target-wide sequence may differ from the label.
+- Missing provider, nonzero exit or malformed completion is a failed round. Read its capture
+  under `.dstack/local/exec/<label>/` (completed retries use numbered suffixes); never seal a
+  stale previous raw output or silently fall back to the other provider.
 
-- A finite stdin is mandatory (D-07). `- < "$T/review/prompt-P1-001.txt"` supplies the complete
-  prompt and reaches EOF. Never inherit an open background stdin; never replace this file
-  redirection with `/dev/null`, which would discard the rendered prompt.
-- Every round uses `high`, including quick tasks and the final sealing round. Legacy request
-  values do not override it. The three flags `--ignore-user-config -m gpt-6-astra -c model_reasoning_effort=high`
-  and `--json` are what `dstack doctor` checks (R23).
-- `$WT` is the `worktree:` line the bundle prints. `--sandbox read-only`: review modifies nothing.
-- The label is `review-<plan>-<round-in-this-plan>`. The sealed file's number is a target-wide
-  sequence and may differ; `<T>/review/index.tsv` ties label, round and scope together.
+**Quick bundle:** `dstack review --scope plan` cannot build one without `plan.json`. The main
+session prepares a bounded artifact with `=== REQUEST (frozen) ===` (the approved quick request
+verbatim), `=== PLAN ===` (quick slug, declared changed files and covers), and
+`=== DIFF (allowed files only) ===` (that task's exact diff). Compare all frozen R ids and
+declared files to the task before launch. The Plan bundle checker requires `plan.json`, so
+record `skipped: Plan bundle checker is unavailable for quick targets`; the existing quick
+seal still validates the R verdicts. Do not guess a HEAD offset.
+Use `dstack mode exec review-<slug>-001 --role review --context <context> --output <raw> --quick <slug>`;
+seal with `dstack review seal --from <raw> --scope quick --id <slug> --quick <slug>`.
 
 ### 3. Seal it
 
@@ -105,11 +114,11 @@ and never contradicts the sealed file; it records what you did about it.
 |---|---|---|---|
 | [security] command injection in lib/run.sh:88 | HIGH | fixed | <commit sha> |
 | [perf] list re-renders per keystroke | MEDIUM | rejected: list is capped at 12 rows | — |
-effort: raised high → xhigh for the sealing round because two HIGH findings survived round 002
+effort: high (fixed for every round)
 ```
 
-Fixes are delegated, not typed here: frontend code → `frontend-dev` (opus), everything else →
-`general-dev` (opus), one Plan's worth of context in the brief (R25, §0.2). A rejected finding
+Fixes go to the native `frontend-dev` or `general-dev` worker with model/tool selection from
+`runtime.md` and one Plan's bounded context (R25, §0.2). A rejected finding
 needs a reason a reviewer can attack, not a preference.
 
 When the ledger already holds an open `review` case for an R the latest round marks `covered`:
@@ -131,7 +140,7 @@ as UNMET, so a `partial` you accept is a decision you write in the response file
 | Guard | Rule |
 |---|---|
 | Cap | 3 rounds per Plan (1 when `review: off`) |
-| Fresh context | every round is a new Codex run; never resume a session to "continue" a review |
+| Fresh context | every round is a fresh selected sub session; never resume a session to "continue" a review |
 | Counting | count HIGH and MEDIUM in the round you just sealed only — the review directory accumulates history, and grepping across rounds re-counts findings you already fixed |
 | Stall | if HIGH+MEDIUM does not fall between two consecutive rounds, stop before the cap: the loop is stuck and a fourth round will not help |
 | Effort | fixed at `high` for every round, including the last (sealing) round (R23) |
@@ -177,7 +186,7 @@ same lie as approving to look agreeable.
 - launch: "P1 리뷰 1라운드를 배경으로 돌려요. 끝나면 알림을 받아서 이어갈게요."
 - sealed: "1라운드를 봉인했어요. covered 4, partial 1, absent 0이고 HIGH 지적이 하나 있어요. 고친 뒤 2라운드를 돌릴게요."
 - cap: "3라운드를 다 썼는데 HIGH 지적 2개가 남아서 P1을 열어 둔 채로 findings.md에 적었어요. 어떻게 할지 정해 주세요."
-- skipped: "이 작업은 Plan이 없어서 리뷰 번들을 만들 수 없어요. `skipped: quick target has no plan.json`으로 적어 뒀어요."
+- skipped: "리뷰할 변경이 없어서 `skipped: no diff in the declared files`로 적었어요."
 
 ## Borrowed from GSD (github.com/open-gsd/gsd-core, read 2026-09-02)
 
@@ -191,20 +200,20 @@ same lie as approving to look agreeable.
 | "DO NOT modify source files. Review is read-only." | `agents/gsd-code-reviewer.md` | `--sandbox read-only` |
 | "`status: clean` means \"reviewed and found no issues.\" `status: skipped` means \"no reviewable files — review was not performed.\"" | `agents/gsd-code-reviewer.md` | the `skipped: <reason>` file |
 | "Track the number of BLOCKER + WARNING issues … If the count does not decrease between consecutive iterations, the producing agent is stuck and further iterations will not help. Break early and escalate to the user." | `references/revision-loop.md` | the stall guard on HIGH+MEDIUM |
-| "Each iteration gets a fresh agent spawn -- don't try to continue in the same context" | `references/revision-loop.md` | one Codex run per round |
+| "Each iteration gets a fresh agent spawn -- don't try to continue in the same context" | `references/revision-loop.md` | one fresh sub session per round |
 | "Don't silently swallow issues -- always present the final state to the user after exiting the loop" | `references/revision-loop.md` | the cap behaviour |
 | "Stops when no unresolved HIGH concerns or actionable MEDIUM/LOW findings remain …, or when max cycles is reached." | `skills/gsd-plan-review-convergence/SKILL.md` | the loop rule and the cap of 3 |
 | "Do NOT grep REVIEWS.md for HIGH or actionable counts. REVIEWS.md accumulates history across cycles — resolved findings from prior cycles remain in the file … causing false stall detection." | `workflows/plan-review-convergence.md` | count the current sealed round only |
 
 Changed on purpose: GSD reviews with a Claude subagent over a git diff, warns, and puts
-performance out of scope; here Codex reviews a bundle whose REQUEST section travels with the
+performance out of scope; here the configured sub reviews a bundle whose REQUEST section travels with the
 diff, performance is an axis, severities are HIGH/MEDIUM/LOW, and the verdict is a gate —
 `absent` blocks the seal and `partial` reports UNMET instead of warning.
 
 ## Ending a review on purpose (`dstack review close`)
 
 A review that cannot continue — the round cap is reached, the last HIGH finding was a harness
-defect rather than code and its fix was never re-verified, Codex is unavailable — is closed
+defect rather than code and its fix was never re-verified, the selected sub is unavailable — is closed
 with `dstack review close --scope plan|milestone|quick --id <id> --why "<reason>"`. Nothing
 sealed changes and no round is invented: `review/closed.tsv` records "after round N: why", and
 every R the scope covers reads `ABSTAIN` in verify/report until a newer round seals a verdict
@@ -213,9 +222,8 @@ a `partial`/`absent` verdict already sealed stays a failure. Never write a skipp
 
 ## Prompt reuse and measurement
 
-Use `dstack prompt render` for every round, including quick and milestone reviews. It embeds
-the canonical role skill unchanged before task paths and round data; do not rewrite that prefix.
-Pass the rendered file through stdin exactly as shown. Keep the tool set and invocation flags
-stable for this role, and keep each review in a fresh session. `--json` lets `dstack exec` save
-`usage.json` beside its logs; `-o` still contains only the review. A prefix hash is diagnostic,
-not proof of a server cache hit. See `claude/prompt-caching.md` for measurement and API limits.
+`dstack mode exec` uses `dstack prompt render` for every review, including quick and milestone
+rounds. It embeds the canonical role unchanged before task context, keeps provider flags stable
+and starts a fresh session. `usage.json` sits beside captured stdout/stderr; unavailable telemetry
+is `skipped`, not zero. Output publication is separate from review validation: always run the
+existing seal checks. A prefix hash is not proof of a server cache hit.

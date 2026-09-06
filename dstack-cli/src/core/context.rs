@@ -30,7 +30,10 @@ impl Context {
     pub fn new(home: Home, self_exe: PathBuf, registry: Rc<Registry>) -> Context {
         Context {
             home,
-            session_id: std::env::var("CLAUDE_CODE_SESSION_ID").unwrap_or_default(),
+            session_id: ["DSTACK_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"]
+                .iter()
+                .find_map(|key| std::env::var(key).ok().filter(|value| !value.trim().is_empty()))
+                .unwrap_or_default(),
             parent_pid: std::os::unix::process::parent_id(),
             self_exe,
             out: Out::new(),

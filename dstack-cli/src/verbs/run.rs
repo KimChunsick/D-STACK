@@ -10,21 +10,19 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::core::fsx::{read_text, utc_now};
 use crate::core::meta::{meta_get, meta_set, owner_is_stale, touch_owner};
+use crate::core::{mode::Mode, mode_run};
 use crate::core::paths::{base_name, is_plain_name, valid_slug};
 use crate::core::roots::{git_out, Roots};
-use crate::core::tools::{team_style_lookup, tool_check, NO_TEAM_STYLE_LINE};
+use crate::core::tools::{team_style_lookup, tool_check_for_mode, NO_TEAM_STYLE_LINE};
 use crate::core::verb::Verb;
 use crate::selftest::Selftest;
 use crate::store::request::{field_default, req_enum};
 use crate::store::plan;
 
-/// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }
 
-/// fail(): the checked condition that did not hold, on stderr, exit 1.
 macro_rules! fail { ($($m:tt)*) => { return Err(Error::failed(format!($($m)*))) }; }
 
-/// The six roster entries of the noun; the struct carries nothing but its name.
 macro_rules! run_verb {
     ($handler:ident, $entry:literal, $body:ident) => {
         struct $handler;
@@ -70,11 +68,10 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
     if !types.contains(&work_type.as_str()) { fail!("--type must be one of: {}", types.join(" ")) }
     refuse_second_run(ctx, &roots, &slug, &worktree)?;
 
-    // Tool availability is checked when the run opens (R105), from the work_type defaults; the
-    // request approval re-checks with the real fields.
+    let mode = Mode::project(&roots)?;
     let fields: Vec<String> = ["e2e", "review", "visual", "unit_tests"].iter()
         .map(|f| format!("{f}={}", field_default(&work_type, f))).collect();
-    if tool_check(ctx, &fields)? != 0 {
+    if tool_check_for_mode(ctx, &fields, &mode, true)? != 0 {
         say!(ctx, "refused: a goal-closing tool is missing for work_type={work_type} (see lines above)");
         return Err(Error::Exit(1));
     }
@@ -90,6 +87,7 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
         target_wt = add_worktree(&roots, &worktree, &branch)?;
     }
     let (id, dir) = mint(&roots, &slug)?;
+    mode.snapshot(&dir)?;
     let target = target_wt.to_string_lossy().into_owned();
     let started_at = utc_now();
     for (key, value) in [
@@ -186,10 +184,11 @@ fn overlap_files(roots: &Roots) -> Result<usize> {
 fn adopt(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
-    let (mut id, mut force) = (String::new(), false);
+    let (mut id, mut force, mut refresh) = (String::new(), false, false);
     for arg in args {
         match arg.as_str() {
             "--force" => force = true,
+            "--refresh-mode" => refresh = true,
             other if other.starts_with('-') => fail!("unknown option: {other}"),
             other => id = other.to_string(),
         }
@@ -202,10 +201,11 @@ fn adopt(ctx: &mut Context, args: &[String]) -> Result<()> {
     let status = field(&dir, "status")?;
     if status == "closed" || status == "abandoned" { fail!("run {id} is {status}; cannot adopt") }
     let before = owner_stamp(&dir)?;
-    let mine = field(&dir, "owner_session")? == ctx.session_id;
+    let mine = !ctx.session_id.is_empty() && field(&dir, "owner_session")? == ctx.session_id;
     if !owner_is_stale(&dir)? && !mine && !force {
         fail!("run {id} has a live owner ({before}, refreshed <10 min ago); pass --force to take it")
     }
+    mode_run::adopt(ctx, &dir, refresh)?;
     touch_owner(&dir, ctx.parent_pid, &ctx.session_id)?;
     meta_set(&dir, "status", "open")?;
     mkdir(&roots.local)?;

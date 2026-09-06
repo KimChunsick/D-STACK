@@ -5,12 +5,16 @@ description: The quick track - a small, self-contained piece of work done outsid
 
 # dstack-quick — the short path with the same guarantees
 
+Read the shared `runtime.md` installed in the current provider's agent home before this skill.
+Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
+The same source is installed for Claude and Codex; provider selection never changes these gates.
+
 Same system, shorter path. A quick task uses the same request format, the same case ledger and
 the same checkers as a Goal; what changes is that everything costing a model round trip is off
 until a flag turns it on. **`review: off` really skips review here — and only here** (R99): a
 quick task has no Plan, so there is no review bundle to build.
 
-You are the main loop; AskUserQuestion works only here (R47). No checkbox is ever ticked by you.
+You are the main loop; the host question tool is main-only (R47). No checkbox is ever ticked by you.
 
 ## 1. Quick, or not quick
 
@@ -80,7 +84,7 @@ is the signal that this was never quick: say so and offer the Goal route.
 
 ## 4. Discuss, only with `--discuss` (R51)
 
-One round, at most 3 questions, batched into a single AskUserQuestion call. A question is
+One round, at most 3 questions, batched with the host question tool. A question is
 allowed only when its answer changes an R row. Everything goes through the ledger with
 `--quick <slug>`: `dstack ask add`, then `dstack ask answer` or `dstack ask assume`. Leftovers
 become assumptions — `ask assume` mints its own R row, so the default is visible on the page the
@@ -96,7 +100,7 @@ Off by default; the skip line is `external research: skipped — external_resear
 ## 6. Approve, then work
 
 1. With `korean_polish: on`, polish the request prose **once, before approval**, through the
-   **ko-polish** subagent (sonnet). It never touches R rows, frontmatter, tables or code spans.
+   **ko-polish** native worker (`runtime.md`). It never touches R rows, frontmatter, tables or code spans.
    After approval the hash freezes the file (R46) — never polish it again.
 2. `dstack request open --quick <slug>` — opens `code -g <abs>:1`, or prints the path.
 3. Ask in Korean with three options plus the tool's built-in **Other**:
@@ -114,8 +118,8 @@ Off by default; the skip line is `external research: skipped — external_resear
 6. Do the work. A quick target has **no `plan.json`**: `dstack task add` refuses with
    `quick tasks have no plans`. The unit of work is the R row itself, and coverage counts
    evidence only. One commit, Korean 해요체 message, no AI trailer. Frontend code goes to
-   **frontend-dev** (opus), everything else to **general-dev** (opus) — always pass `model`
-   explicitly (R25). A change small enough to be one obvious edit stays in the main loop.
+   **frontend-dev**, everything else to **general-dev**, with native model/tool selection from
+   `runtime.md` (R25). A change small enough to be one obvious edit stays in the main loop.
 
 ## 7. Review, only with `--review` (R69, R96)
 
@@ -154,7 +158,8 @@ after the user accepts it by name with `dstack verify --accept-abstain R<NN> --w
 | `dstack quick resume <slug>` | What this task still needs, item by item, with the command for each |
 | `dstack gate` | The Stop-hook verdict: it checks the run at `CURRENT` **and** every open quick task in this worktree, on the same conditions — R rows, evidence, `check coverage` |
 
-After `/clear`, quick tasks need no adoption: they are not owned by a session. Run
+After a new session or `/clear`, check `dstack mode show --host <actual-provider> --quick <slug>`.
+Quick tasks need no adoption: they are not owned by a session. Run
 `dstack quick list`, then `dstack quick resume <slug>` and continue.
 
 **Tidy at milestone close (R99)**: when a Milestone of the Goal run closes, run
@@ -163,9 +168,9 @@ the ones still open so they do not silently accumulate.
 
 ## 10. Long external runs (R98)
 
-A research or review call that may take minutes goes in ONE background Bash call whose blocking
-step is `dstack exec <label> -- <cmd>`, and then **the turn ends**. The completion notification
-resumes you. Never poll, never detach.
+Use `dstack mode exec` with `--quick <slug>` for each research, audit or review pass and the
+host completion mechanism in `runtime.md`. The CLI renders the role internally and starts a
+fresh read-only selected sub session; never run a pass inside the main conversation.
 
 ## 11. Sentences borrowed from GSD
 

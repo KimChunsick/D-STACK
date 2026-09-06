@@ -29,7 +29,7 @@ mod tests {
             "dstack — machine state of the pipeline. Usage: dstack <noun> <verb> [args]"
         );
         assert_eq!(lines[1], "  init                   bootstrap the .dstack store in this repository (never expands cases)");
-        assert_eq!(lines[lines.len() - 1], "verbs: 64");
+        assert_eq!(lines[lines.len() - 1], "verbs: 67");
         assert_eq!(lines.len(), ROSTER.len() + 2);
     }
 }

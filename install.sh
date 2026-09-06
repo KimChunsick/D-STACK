@@ -16,7 +16,7 @@
 # settings key diff and changes nothing.
 #
 # Not managed, on purpose: ~/.claude.json (MCP servers — R15, later), ~/.codex/config.toml
-# (R16, later; the Codex model pin is the `codex exec` flags, never this file), ~/.zshrc.
+# (provider model flags belong to dstack mode exec, never this file), ~/.zshrc.
 set -eu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
@@ -61,19 +61,25 @@ deps_install() {   # the install column deps.tsv gives for the tool $1
 MAP="
 claude/CLAUDE.md|.claude/CLAUDE.md|link
 $BIN_REL|.claude/bin/dstack|link
+$BIN_REL|.codex/bin/dstack|link
+claude/runtime.md|.claude/runtime.md|link
+claude/runtime.md|.codex/runtime.md|link
 claude/hooks/dstack-hook.sh|.claude/hooks/dstack-hook.sh|link
 claude/statusline-command.sh|.claude/statusline-command.sh|link
 claude/output-styles/dstack-korean.md|.claude/output-styles/dstack-korean.md|link
+claude/output-styles/dstack-korean.md|.codex/output-styles/dstack-korean.md|link
 claude/lint/ko-scope.tsv|.claude/lint/ko-scope.tsv|link
 claude/lint/ko-rules.tsv|.claude/lint/ko-rules.tsv|link
 codex/AGENTS.md|.codex/AGENTS.md|link
 "
-for f in "$REPO_DIR"/claude/agents/*.md; do [ -e "$f" ] && MAP="$MAP
-claude/agents/$(basename "$f")|.claude/agents/$(basename "$f")|link"; done
-for d in "$REPO_DIR"/claude/skills/*/; do [ -d "$d" ] && MAP="$MAP
-claude/skills/$(basename "$d")|.claude/skills/$(basename "$d")|link"; done
-for d in "$REPO_DIR"/codex/skills/*/; do [ -d "$d" ] && MAP="$MAP
-codex/skills/$(basename "$d")|.codex/skills/$(basename "$d")|link"; done
+for host in claude codex; do
+  for f in "$REPO_DIR"/claude/agents/*.md; do [ -e "$f" ] && MAP="$MAP
+claude/agents/$(basename "$f")|.$host/agents/$(basename "$f")|link"; done
+  for d in "$REPO_DIR"/claude/skills/*/; do [ -d "$d" ] && MAP="$MAP
+claude/skills/$(basename "$d")|.$host/skills/$(basename "$d")|link"; done
+  for d in "$REPO_DIR"/codex/skills/*/; do [ -d "$d" ] && MAP="$MAP
+codex/skills/$(basename "$d")|.$host/skills/$(basename "$d")|link"; done
+done
 
 say "D-STACK installer  (repo: $REPO_DIR)"
 [ "$DRY_RUN" = 1 ] && say "** DRY RUN — nothing is changed **"
@@ -158,8 +164,8 @@ say "  env.CLAUDE_CODE_SUBAGENT_MODEL: $(printf '%s' "$merged" | jq -r '.env.CLA
 say ""
 say "summary: linked=$linked up-to-date=$uptodate exists-kept=$kept skipped=$skipped backed-up=$backed"
 [ "$backup_used" = 1 ] && say "backups: $backup_root"
-say "not managed: ~/.claude.json (R15 later), ~/.codex/config.toml (R16 later; Codex is pinned by codex exec flags), ~/.zshrc"
-case ":$PATH:" in *":$HOME/.claude/bin:"*) ;; *) say "note: add \$HOME/.claude/bin to PATH so \`dstack\` resolves; hooks use the absolute path already" ;; esac
+say "not managed: ~/.claude.json (R15 later), ~/.codex/config.toml (provider flags belong to dstack mode exec), ~/.zshrc"
+case ":$PATH:" in *":$HOME/.claude/bin:"*|*":$HOME/.codex/bin:"*) ;; *) say "note: add \$HOME/.claude/bin or \$HOME/.codex/bin to PATH so dstack resolves; both links use the same binary" ;; esac
 if [ "$DRY_RUN" = 0 ] && [ -x "$HOME/.claude/bin/dstack" ]; then
   say ""; say "dstack doctor:"
   "$HOME/.claude/bin/dstack" doctor || say "doctor reported problems (see above); the install itself is complete"

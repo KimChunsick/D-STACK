@@ -3,6 +3,7 @@
 
 use crate::core::context::Context;
 use crate::core::error::Result;
+use crate::core::mode::Mode;
 use crate::core::roots::git_out;
 use crate::core::verb::Verb;
 use crate::selftest::Selftest;
@@ -47,7 +48,7 @@ fn list(ctx: &mut Context, _args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
     let mut runs = 0;
-    ctx.out.say("id | status | worktree | branch | opened | closed | R | met");
+    ctx.out.say("id | status | worktree | branch | opened | closed | R | met | main | sub");
     for dir in run_dirs(&roots) {
         if !dir.join("meta.tsv").is_file() { continue }
         runs += 1;
@@ -61,7 +62,8 @@ fn list(ctx: &mut Context, _args: &[String]) -> Result<()> {
         let met = cases::rows(&dir)?.iter().filter(|c| c.status == "met").count();
         let cells: Vec<String> = ["status", "worktree", "branch", "started_at", "closed_at"]
             .iter().map(|key| field(&dir, key)).collect::<Result<Vec<String>>>()?;
-        ctx.out.say(&format!("{} | {} | {rows} | {met}", base_name(&dir), cells.join(" | ")));
+        let mode = Mode::for_run(&roots, &dir)?;
+        ctx.out.say(&format!("{} | {} | {rows} | {met} | {} | {}", base_name(&dir), cells.join(" | "), mode.main, mode.sub));
     }
     ctx.out.say(&format!("runs: {runs}"));
     Ok(())

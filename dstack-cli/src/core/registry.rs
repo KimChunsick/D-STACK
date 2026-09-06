@@ -10,10 +10,10 @@ use crate::core::verb::Verb;
 /// dstack help renders it and the doctor sweep reads it, so a roster entry no handler answers
 /// is a stated "not ported yet", never a silent gap.
 #[rustfmt::skip]
-pub const ROSTER: [(&str, &str); 64] = [
+pub const ROSTER: [(&str, &str); 67] = [
     ("init", "bootstrap the .dstack store in this repository (never expands cases)"),
     ("run new", "mint a run: .dstack/runs/<UTC>_<slug>, write CURRENT, check tools (--type, --worktree)"),
-    ("run adopt", "take over a run after /clear or resume (stale owner auto-adopts, --force otherwise)"),
+    ("run adopt", "take over a run (--force for a live owner; --refresh-mode to apply project mode)"),
     ("run list", "list every run in the store with status, worktree, branch and counts"),
     ("run verify", "print pwd, git common-dir, store, worktree, branch, HEAD and CURRENT"),
     ("run close", "verify then stamp closed_at and clear CURRENT (--abandon <why> skips verify)"),
@@ -21,6 +21,9 @@ pub const ROSTER: [(&str, &str); 64] = [
     ("exec", "run a long command in the background capture dir: dstack exec <label> -- <cmd>"),
     ("prompt render", "render verbatim role instructions before variable task context (--role, --context)"),
     ("prompt usage", "normalize Codex/Claude JSONL completion usage (--provider codex|claude <file>...)"),
+    ("mode show", "show project and effective main/sub providers (--json, --host, --run or --quick)"),
+    ("mode set", "set project defaults independently (--main claude|codex, --sub claude|codex)"),
+    ("mode exec", "run a fresh sub role (--role review|research|audit --context --output, --dry-run)"),
     ("request new", "create request.md from the work_type template (--type, --title)"),
     ("request open", "snapshot the agent draft and open the file in VSCode (code -g, never -w)"),
     ("request approve", "validate, clear pending rows, record the sha256, diff vs draft, sync cases"),
@@ -165,8 +168,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn r13__roster_has_sixty_four_entries() {
-        assert_eq!(ROSTER.len(), 64);
+    fn r13__roster_has_sixty_seven_entries() {
+        assert_eq!(ROSTER.len(), 67);
     }
 
     #[test]
@@ -183,7 +186,7 @@ mod tests {
     fn r13__verb_list_is_the_roster_order() {
         let registry = Registry::new(Vec::new());
         let list = registry.verb_list();
-        assert_eq!(list.len(), 64);
+        assert_eq!(list.len(), 67);
         assert_eq!(list[0], "init");
         assert_eq!(list[list.len() - 1], "help");
     }

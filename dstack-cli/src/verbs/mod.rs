@@ -14,6 +14,7 @@ pub mod init;
 pub mod issue;
 pub mod ledger;
 pub mod lint;
+pub mod mode;
 pub mod plan;
 pub mod prompt;
 pub mod quick;
@@ -35,6 +36,7 @@ pub fn all_verbs() -> Vec<Box<dyn Verb>> {
     verbs.extend(status::verbs());
     verbs.extend(exec::verbs());
     verbs.extend(prompt::verbs());
+    verbs.extend(mode::verbs());
     verbs.extend(request::verbs());
     verbs.extend(ask::verbs());
     verbs.extend(decision::verbs());
