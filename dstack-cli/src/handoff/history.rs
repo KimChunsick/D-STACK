@@ -9,6 +9,8 @@ use std::path::{Path, PathBuf};
 
 #[path = "history_format.rs"]
 mod format;
+#[path = "history_identity.rs"]
+mod identity;
 
 const MAX_FILE: u64 = 64 * 1024 * 1024;
 const MAX_LINE: u64 = 2 * 1024 * 1024;

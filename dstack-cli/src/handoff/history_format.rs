@@ -1,4 +1,5 @@
 // Provider shapes and visible evidence only. Hidden reasoning is never decoded or rendered.
+use super::identity::Identity;
 use crate::core::error::{Error, Result};
 use crate::core::mode::Provider;
 use crate::handoff::types::HistoryRecord;
@@ -13,7 +14,7 @@ const MAX_RECORDS: usize = 200;
 pub(super) struct Decoder<'a> {
     provider: Provider,
     session: &'a str,
-    worktree: &'a Path,
+    cwd: Identity<'a>,
     identity: bool,
     excluded: bool,
     records: VecDeque<(HistoryRecord, usize)>,
@@ -27,7 +28,7 @@ impl<'a> Decoder<'a> {
         Self {
             provider,
             session,
-            worktree,
+            cwd: Identity::new(worktree),
             identity: false,
             excluded: false,
             records: VecDeque::new(),
@@ -53,10 +54,7 @@ impl<'a> Decoder<'a> {
         }
         if required || value.get("cwd").is_some() {
             let cwd = string(value, "cwd", line)?;
-            let cwd = Path::new(cwd);
-            if !cwd.is_absolute() || cwd.canonicalize().ok().as_deref() != Some(self.worktree) {
-                return Err(bad(line, "history worktree mismatch or unavailable cwd"));
-            }
+            self.cwd.check(cwd, line)?;
         }
         if value.get(key).is_some() && value.get("cwd").is_some() {
             self.identity = true;
@@ -78,6 +76,9 @@ impl<'a> Decoder<'a> {
                 self.message(&message["content"], kind, line)
             }
             "file-history-snapshot"
+            | "file-history-delta"
+            | "relocated"
+            | "worktree-state"
             | "mode"
             | "permission-mode"
             | "bridge-session"
@@ -244,7 +245,7 @@ impl<'a> Decoder<'a> {
         if self.records.is_empty() {
             return Err(Error::failed("history contains no useful visible records"));
         }
-        let mut warnings = Vec::new();
+        let mut warnings: Vec<_> = self.cwd.finish()?.into_iter().collect();
         if self.omitted > 0 {
             warnings.push(format!(
                 "omitted {} older visible records; retained newest bounded history",
