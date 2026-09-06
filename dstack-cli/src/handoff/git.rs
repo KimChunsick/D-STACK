@@ -74,8 +74,10 @@ pub(super) fn capture(tree: &Path, index: usize) -> Result<Document> {
             "permissions":meta.permissions().mode(),"text":std::str::from_utf8(&bytes).ok(),
             "binary":std::str::from_utf8(&bytes).is_err()}));
     }
+    // HEAD and diffs carry the actionable state; hash the bounded stage listing for freshness.
     let text = json!({"worktree":tree,"head":head,"branch":branch,
-        "status_porcelain_z":decode(status,tree)?,"index_entries_z":decode(staged,tree)?,
+        "status_porcelain_z":decode(status,tree)?,"index_entries_sha256":sha256_bytes(&staged),
+        "index_entries_bytes":staged.len(),"index_entries_count":staged.iter().filter(|b| **b == 0).count(),
         "index_sha256":index_hash,"worktree_diff":diff(false)?,"index_diff":diff(true)?,"files":files}).to_string();
     Ok(Document { reference: format!("git:worktree:{index}"), path: tree.to_string_lossy().into_owned(), text })
 }
