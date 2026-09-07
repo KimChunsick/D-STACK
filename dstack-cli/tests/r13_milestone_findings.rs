@@ -48,8 +48,7 @@ fn record(args: &[&str], output: &Output) -> String {
     format!("{stdout}{stderr}")
 }
 
-fn bundle(s: &Scratch, mid: &str) -> Output {
-    let before = sha256_bytes(s.read(&format!("{RUN}/findings.md")).as_bytes());
+fn generate(s: &Scratch, mid: &str) -> Output {
     let args = [
         "review",
         "--run",
@@ -63,6 +62,12 @@ fn bundle(s: &Scratch, mid: &str) -> Output {
     ];
     let output = s.run(&args);
     record(&args, &output);
+    output
+}
+
+fn bundle(s: &Scratch, mid: &str) -> Output {
+    let before = sha256_bytes(s.read(&format!("{RUN}/findings.md")).as_bytes());
+    let output = generate(s, mid);
     assert_eq!(
         before,
         sha256_bytes(s.read(&format!("{RUN}/findings.md")).as_bytes()),
@@ -84,12 +89,11 @@ fn checked(s: &Scratch, mid: &str, ids: &[&str]) -> String {
     assert!(check.status.success(), "{report}");
     let text = s.read("bundle.txt");
     let frozen = text
-        .split("=== REQUEST (frozen) ===\n")
-        .nth(1)
+        .strip_prefix("=== REQUEST (frozen) ===\n")
         .unwrap()
-        .split("\n=== FINDINGS (open) ===")
-        .next()
-        .unwrap();
+        .split_once("\n=== FINDINGS (open) ===")
+        .unwrap()
+        .0;
     let expected: String = REQUEST
         .lines()
         .filter(|line| {
@@ -98,10 +102,7 @@ fn checked(s: &Scratch, mid: &str, ids: &[&str]) -> String {
         })
         .map(|line| format!("{line}\n"))
         .collect();
-    assert_eq!(
-        frozen, expected,
-        "frozen rows must be exact and in request order"
-    );
+    assert_eq!(frozen, expected, "exact frozen rows in request order");
     let body = text.split("=== FINDINGS (open) ===").nth(1).unwrap();
     let re = regex::Regex::new(r"R[0-9]+").unwrap();
     let mut actual: Vec<_> = re.find_iter(body).map(|m| m.as_str()).collect();
@@ -225,19 +226,7 @@ fn R13__resolved_and_empty_ledgers_keep_existing_behavior() {
     }
     let s = fixture("");
     std::fs::remove_file(s.0.join(format!("{RUN}/findings.md"))).unwrap();
-    let args = [
-        "review",
-        "--run",
-        "sample",
-        "--scope",
-        "milestone",
-        "--milestone",
-        "M1",
-        "--out",
-        "bundle.txt",
-    ];
-    let output = s.run(&args);
-    record(&args, &output);
+    let output = generate(&s, "M1");
     assert!(output.status.success());
     assert!(s.read("bundle.txt").contains("no findings.md"));
 }
@@ -278,9 +267,7 @@ fn R13__T16_negative_false_and_unknown_resolution_forms_stay_open() {
         "is still open; resolved: commit unknown.",
         "still reports file.resolved: verified.",
     ] {
-        let line = format!("- [P1] R01 {tail}");
-        let s = fixture(&line);
-        assert!(checked(&s, "M1", &["R01", "R02"]).contains(&line));
+        resolution_case(&format!("- [P1] R01 {tail}"), false);
     }
 }
 
@@ -295,12 +282,10 @@ fn R13__T16_quoted_diagnostic_resolution_tokens_stay_open() {
         "diagnostic says ‘error; resolved: verified.’",
         "is still open; resolved: \"false\"",
         "is still open; resolved: `verified`",
-        "diagnostic says ``error; resolved: commit ce585151``",
-        "diagnostic says \\\"error; resolved: commit ce585151\\\"",
+        "diagnostic says ``error; resolved: commit ce585151 (same follow-up commit)``",
+        "diagnostic says \\\"error; resolved: commit ce585151 (same follow-up commit)\\\"",
     ] {
-        let line = format!("- [P1] R01 {tail}");
-        let s = fixture(&line);
-        assert!(checked(&s, "M1", &["R01", "R02"]).contains(&line));
+        resolution_case(&format!("- [P1] R01 {tail}"), false);
     }
 }
 
@@ -311,11 +296,54 @@ fn R13__T16_affirmative_ledger_annotations_still_close_items() {
         "was fixed; resolved: verified.",
         "was fixed; resolved: fixed in P1.",
         "was fixed; resolved: P1",
-        "was fixed. resolved: commit b28842af on plan/P1; checked the recovery path.",
-        "diagnostic's \"resolved: false\" output was fixed. resolved: commit ce585151.",
+        "was fixed. resolved: commit b28842af on plan/P1 (merged into the Goal branch); checked the recovery path.",
+        "diagnostic's \"resolved: false\" output was fixed. resolved: commit ce585151 (same follow-up commit).",
+        "was fixed. resolved: commit ce585151 (same follow-up commit). Outside this Goal, rerun if needed.",
     ] {
-        let line = format!("- [P1] R01 {tail}");
-        let s = fixture(&line);
-        assert!(!checked(&s, "M1", &["R01", "R02"]).contains(&line));
+        resolution_case(&format!("- [P1] R01 {tail}"), true);
     }
+}
+
+#[test]
+fn R13__T17_conditional_incomplete_and_unknown_commit_tails_stay_open() {
+    for tail in [
+        "if the next run passes.",
+        "was proposed but not applied.",
+        "will be applied tomorrow.",
+        "has not been merged.",
+        "is pending verification.",
+        "unless the regression returns.",
+        "would fix the failure.",
+        "maybe fixed it.",
+        "on plan/P1 (merged into the Goal branch if the next run passes).",
+        "(same follow-up commit if applied).",
+        "(not merged into the Goal branch).",
+        ".",
+    ] {
+        resolution_case(
+            &format!("- [P1] R01 remains open; resolved: commit deadbee {tail}"),
+            false,
+        );
+    }
+}
+
+#[test]
+fn R13__T17_possessives_do_not_open_quotes_or_close_real_quotes() {
+    let annotation = "error; resolved: commit deadbee (same follow-up commit)";
+    for possessive in ["users'", "users’", "James'", "James’", "user's", "user’s"] {
+        let start = format!("- [P1] R01 {possessive}");
+        resolution_case(
+            &format!("{start} input was fixed; resolved: verified."),
+            true,
+        );
+        for (open, close) in [("'", "'"), ("‘", "’")] {
+            resolution_case(&format!("{start} {open}{annotation}{close}"), false);
+        }
+    }
+}
+
+fn resolution_case(line: &str, closed: bool) {
+    let s = fixture(line);
+    let text = checked(&s, "M1", &["R01", "R02"]);
+    assert_eq!(!text.contains(line), closed, "{line}");
 }

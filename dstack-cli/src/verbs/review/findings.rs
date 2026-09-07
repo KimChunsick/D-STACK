@@ -9,10 +9,13 @@ use crate::core::error::{Error, Result};
 use crate::store::plan::PlanDoc;
 use crate::store::plan_graph::{milestone_covers, plan_covers};
 
-// Recognize the ledger's affirmative forms only. Unknown explanations remain open rather
-// than interpreting arbitrary prose, booleans, or conditional promises as completed work.
+// A commit ID is evidence, not completion. Only these closed legacy status frames affirm
+// completion; text after a complete frame is commentary, not a guessed status. Unknown or
+// conditional text before/inside a frame remains open. Compact forms consume the whole suffix.
 const RESOLUTION: &str = concat!(
-    r"^(?:resolved:\s*(?:commit [0-9a-fA-F]{7,40}\b.*|",
+    r"^(?:resolved:\s*(?:commit [0-9a-fA-F]{7,40} ",
+    r"(?:(?:on plan/[A-Za-z0-9._/-]+ )?\(merged into the Goal branch\)|",
+    r"\(same follow-up commit\))(?:[.;\s].*)?|",
     r"(?:fixed|verified)(?: in P[0-9]+(?:\.[0-9]+)*)?\.?|",
     r"P[0-9]+(?:\.[0-9]+)*\.?)|resolved in P[0-9]+(?:\.[0-9]+)*\.?)$"
 );
@@ -92,8 +95,9 @@ pub(super) fn selected<'a>(
 }
 
 /// An annotation starts after a sentence/clause separator outside quoted diagnostic text.
-/// Requiring the entire remaining annotation to match keeps negation, false values and
-/// conditional/unknown explanations open. Apostrophes within words are not quote boundaries.
+/// Completion must use the status grammar above. Outside quotes, an apostrophe following a
+/// word is possessive, including plural forms; inside quotes only word-internal apostrophes
+/// are exempt from ending the quote. Code spans keep their matching delimiter width.
 fn is_open(line: &str, resolved: &Regex) -> bool {
     let item = line.trim_start_matches([' ', '\t']);
     if !(item.starts_with("- ") || item.starts_with("* ")) {
@@ -135,7 +139,7 @@ fn is_open(line: &str, resolved: &Regex) -> bool {
                 .chars()
                 .next_back()
                 .is_some_and(char::is_alphanumeric)
-            && after.chars().next().is_some_and(char::is_alphanumeric)
+            && (quote.is_none() || after.chars().next().is_some_and(char::is_alphanumeric))
         {
             continue;
         }
