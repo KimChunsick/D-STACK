@@ -4,6 +4,23 @@ mod support;
 use dstack_cli::selftest::Verdict;
 
 #[test]
+fn R15__verification_dispatch_requires_receipt_and_rejects_table_only_with_good_contract_retained()
+{
+    // accept: Claude·Codex 공통 규칙과 관련 스킬·프롬프트에서 역할 경계와 짧은 반환 계약이 일치하고, 메인의 직접 구현·무거운 검사 및 오래된 문맥 재사용을 허용하는 잘못된 고정물을 회귀 검사가 거절해요.
+    support::fixture("good-verify.md", Verdict::Pass, "");
+    support::fixture(
+        "bad-verify-table-only.json",
+        Verdict::Reject,
+        "table-only return omits compact receipt",
+    );
+    support::fixture(
+        "bad-verify-missing-receipt.json",
+        Verdict::Reject,
+        "missing compact receipt",
+    );
+}
+
+#[test]
 fn R15__checker_rejects_main_takeover_stale_context_and_missing_receipts() {
     for good in [
         "good-runtime.md",

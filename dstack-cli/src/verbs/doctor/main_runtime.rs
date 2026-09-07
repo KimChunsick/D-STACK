@@ -61,6 +61,9 @@ pub fn check_document(path: &str, text: &str) -> Vec<Diagnostic> {
             message: format!("unknown contract document {path}"),
         }];
     }
+    if path == "claude/skills/dstack-verify/SKILL.md" {
+        required.push(("compact receipt", rules::RECEIPT));
+    }
     if path == "claude/skills/dstack-develop/SKILL.md" {
         required.extend_from_slice(&[
             ("GSD provenance qualification", "Retained secondary attribution"),

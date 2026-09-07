@@ -1,0 +1,5 @@
+{
+  "base": "good-verify.md",
+  "remove": null,
+  "append": "Return only the table | R | case | artifact | outcome (met|blocked|skipped) | note |."
+}

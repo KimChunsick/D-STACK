@@ -44,6 +44,10 @@ pub const RUNTIME: &[(&str, &str)] = &[
 // "Never let main implement" do not match; arbitrary rewording is outside this lint's reach.
 pub const FORBIDDEN: &[(&str, &str)] = &[
     (
+        "table-only return omits compact receipt",
+        r"(?i)(?:^|[.!?] )return only the table",
+    ),
+    (
         "raw-log return",
         r"(?i)(?:^|[.!?] )(?:return|send|paste) (?:the |full )?raw logs to main",
     ),

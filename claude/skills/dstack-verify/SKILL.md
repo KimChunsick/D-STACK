@@ -139,7 +139,8 @@ Cases (every open case of every Plan in the milestone, in one table):
 Naming: <artifact-dir>/R<NN>-<case>.<ext>, plus R<NN>-<case>.txt naming the R id.
 A "user is controlling" error is a hard stop for that case: write `blocked: user-controlling`
 into the text file and move on.
-Return only the table | R | case | artifact | outcome (met|blocked|skipped) | note |.
+Return the table | R | case | artifact | outcome (met|blocked|skipped) | note | with the compact receipt below.
+Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
 ```
 
 A run longer than the foreground cap uses the host completion mechanism in `runtime.md` (R98):
