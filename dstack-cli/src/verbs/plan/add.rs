@@ -85,7 +85,7 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
         }
         let busy = subtree_busy(&doc, &after);
         if !busy.is_empty() {
-            fail!("refused: the affected subtree of {after} is in progress ({busy}) — finish or reset those plans before inserting (R67)")
+            fail!("refused: the affected subtree of {after} is in progress ({busy}) — stop the affected workers; keep the Plans pending/blocked until a supported CLI transition is available; never mark unfinished work done or reset state by hand (R67)")
         }
         if ms.is_empty() {
             ms = doc.field(&after, "milestone");
