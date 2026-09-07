@@ -112,8 +112,7 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
         fail!("bundle deleted (it would have hidden a requirement): {}", out.display());
     }
     say!(ctx, "  bundle: {}", out.display());
-    say!(ctx, "  bytes {total} of {MAX_BUNDLE}; diff files {}, oversize skipped {}",
-         counts.files, counts.skipped);
+    say!(ctx, "  bytes {total} of {MAX_BUNDLE}; diff files {}", counts.files);
     Ok(())
 }
 

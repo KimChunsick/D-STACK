@@ -15,9 +15,6 @@ use crate::selftest::Selftest;
 /// R70's ceiling: past this, the answer is "split the plan", not "truncate".
 pub const MAX_BUNDLE: usize = 512000;
 
-/// One file may not drown the other files' diffs.
-pub const MAX_FILE_DIFF: usize = 65536;
-
 /// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }
 

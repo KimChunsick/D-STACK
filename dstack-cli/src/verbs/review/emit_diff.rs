@@ -3,19 +3,16 @@
 //
 // A file outside the plan cannot reach the reviewer even when it changed, because reviewing
 // files the plan never claimed is how scope creep gets rubber-stamped (R69). A declared path is
-// often a DIRECTORY, so it is first expanded into the files that changed under it: one 64KB cap
-// over a whole directory would skip the directory's entire diff.
+// often a DIRECTORY, so it is first expanded into the files that changed under it. Every diff
+// stays complete; the caller rejects the whole bundle if it exceeds the total size ceiling.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use super::MAX_FILE_DIFF;
-
-/// What _emit_diff writes into its diffcount file: the files it framed and the ones it skipped.
+/// The number of declared files framed in the bundle.
 #[derive(Default)]
 pub struct Counts {
     pub files: usize,
-    pub skipped: usize,
 }
 
 pub fn emit(out: &mut Vec<u8>, wt: &Path, base: &str, files: &[String]) -> Counts {
@@ -40,17 +37,15 @@ pub fn emit(out: &mut Vec<u8>, wt: &Path, base: &str, files: &[String]) -> Count
         for one in &changed {
             counts.files += 1;
             push(out, &format!("--- file: {one}\n"));
-            if !file_diff(out, wt, base, one) {
-                counts.skipped += 1;
-            }
+            file_diff(out, wt, base, one);
         }
     }
     counts
 }
 
-/// One file's diff against the base, capped. False when the file was skipped for size, so the
-/// caller can count it.
-fn file_diff(out: &mut Vec<u8>, wt: &Path, base: &str, path: &str) -> bool {
+/// One file's complete diff against the base. Size rejection belongs to the whole bundle,
+/// before the caller writes any output, so a successful bundle cannot omit a large file.
+fn file_diff(out: &mut Vec<u8>, wt: &Path, base: &str, path: &str) {
     let untracked = wt.join(path).exists()
         && !git_ok(wt, &["ls-files", "--error-unmatch", "--", path]);
     let (bytes, _) = if untracked {
@@ -62,16 +57,11 @@ fn file_diff(out: &mut Vec<u8>, wt: &Path, base: &str, path: &str) -> bool {
             None => git(wt, &["diff", "--", path]),
         }
     };
-    if bytes.len() > MAX_FILE_DIFF {
-        push(out, "(SKIPPED: diff >64KB — split the plan)\n");
-        return false;
-    }
     if bytes.is_empty() {
         push(out, "(no changes against the base)\n");
     } else {
         out.extend_from_slice(&bytes);
     }
-    true
 }
 
 /// The files that changed under one declared path: what git diff names against the base, plus
