@@ -258,3 +258,64 @@ fn R13__missing_frozen_requirement_is_still_rejected() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("three counts disagree"));
     assert!(!s.0.join("bundle.txt").exists());
 }
+
+#[test]
+fn R13__T16_negative_false_and_unknown_resolution_forms_stay_open() {
+    for tail in [
+        "is not resolved: the failure still reproduces.",
+        "is still open; resolved: false.",
+        "is still open; resolved: FALSE",
+        "is still open; resolved: no",
+        "is still open; resolved: 0",
+        "is still open; resolved: null",
+        "is still open; resolved: pending",
+        "is still open; resolved: unknown",
+        "is still open; resolved: not verified.",
+        "is still open; resolved:",
+        "is still open; resolved: maybe later.",
+        "is still open; resolved: fixed if the next run passes.",
+        "is still open; resolved in progress.",
+        "is still open; resolved: commit unknown.",
+        "still reports file.resolved: verified.",
+    ] {
+        let line = format!("- [P1] R01 {tail}");
+        let s = fixture(&line);
+        assert!(checked(&s, "M1", &["R01", "R02"]).contains(&line));
+    }
+}
+
+#[test]
+fn R13__T16_quoted_diagnostic_resolution_tokens_stay_open() {
+    for tail in [
+        "diagnostic says \"resolved: false\".",
+        "diagnostic says \"error; resolved: verified.\"",
+        "diagnostic says 'error; resolved: verified.'",
+        "diagnostic says `error; resolved: verified.`",
+        "diagnostic says “error; resolved: verified.”",
+        "diagnostic says ‘error; resolved: verified.’",
+        "is still open; resolved: \"false\"",
+        "is still open; resolved: `verified`",
+        "diagnostic says ``error; resolved: commit ce585151``",
+        "diagnostic says \\\"error; resolved: commit ce585151\\\"",
+    ] {
+        let line = format!("- [P1] R01 {tail}");
+        let s = fixture(&line);
+        assert!(checked(&s, "M1", &["R01", "R02"]).contains(&line));
+    }
+}
+
+#[test]
+fn R13__T16_affirmative_ledger_annotations_still_close_items() {
+    for tail in [
+        "was fixed — resolved in P1.",
+        "was fixed; resolved: verified.",
+        "was fixed; resolved: fixed in P1.",
+        "was fixed; resolved: P1",
+        "was fixed. resolved: commit b28842af on plan/P1; checked the recovery path.",
+        "diagnostic's \"resolved: false\" output was fixed. resolved: commit ce585151.",
+    ] {
+        let line = format!("- [P1] R01 {tail}");
+        let s = fixture(&line);
+        assert!(!checked(&s, "M1", &["R01", "R02"]).contains(&line));
+    }
+}

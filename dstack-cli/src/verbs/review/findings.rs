@@ -9,6 +9,14 @@ use crate::core::error::{Error, Result};
 use crate::store::plan::PlanDoc;
 use crate::store::plan_graph::{milestone_covers, plan_covers};
 
+// Recognize the ledger's affirmative forms only. Unknown explanations remain open rather
+// than interpreting arbitrary prose, booleans, or conditional promises as completed work.
+const RESOLUTION: &str = concat!(
+    r"^(?:resolved:\s*(?:commit [0-9a-fA-F]{7,40}\b.*|",
+    r"(?:fixed|verified)(?: in P[0-9]+(?:\.[0-9]+)*)?\.?|",
+    r"P[0-9]+(?:\.[0-9]+)*\.?)|resolved in P[0-9]+(?:\.[0-9]+)*\.?)$"
+);
+
 /// Findings use `[P1, ...]`, `[P1 / round ..., ...]` and prose R/Plan/Milestone references.
 /// Any known selected owner retains the whole item. Explicit requirements narrow inherited
 /// coverage; without them, a prior Plan's coverage can carry its finding to a follow-up.
@@ -21,8 +29,7 @@ pub(super) fn selected<'a>(
     covers: &[String],
 ) -> Result<Vec<&'a str>> {
     let markers = Regex::new(r"\b[PMR][0-9]+(?:\.[0-9]+)*\b").expect("scope markers");
-    let resolved =
-        Regex::new(r"\bresolved\s*:|(?:^|[;.—]\s*)resolved\s+in\b").expect("resolution annotation");
+    let resolved = Regex::new(RESOLUTION).expect("resolution annotation");
     let known: Vec<&String> = doc
         .plans
         .iter()
@@ -84,11 +91,74 @@ pub(super) fn selected<'a>(
     Ok(selected)
 }
 
-/// Only affirmative resolution annotations close an item. "unresolved" and "to be resolved
-/// by P3" describe pending work and must remain visible to the ledger pass.
+/// An annotation starts after a sentence/clause separator outside quoted diagnostic text.
+/// Requiring the entire remaining annotation to match keeps negation, false values and
+/// conditional/unknown explanations open. Apostrophes within words are not quote boundaries.
 fn is_open(line: &str, resolved: &Regex) -> bool {
     let item = line.trim_start_matches([' ', '\t']);
-    (item.starts_with("- ") || item.starts_with("* ")) && !resolved.is_match(line)
+    if !(item.starts_with("- ") || item.starts_with("* ")) {
+        return false;
+    }
+    let mut quote = None;
+    let mut escaped = false;
+    let mut code_width = 0;
+    let mut skip_until = 0;
+    for (at, ch) in line.char_indices() {
+        if at < skip_until {
+            continue;
+        }
+        if ch == '`' && (quote.is_none() || quote == Some('`')) {
+            let width = line[at..].bytes().take_while(|b| *b == b'`').count();
+            skip_until = at + width;
+            if quote.is_none() {
+                quote = Some('`');
+                code_width = width;
+            } else if code_width == width {
+                quote = None;
+            }
+            continue;
+        }
+        if quote == Some('`') {
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = quote.is_some();
+            continue;
+        }
+        let after = &line[at + ch.len_utf8()..];
+        if matches!(ch, '\'' | '’')
+            && line[..at]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_alphanumeric)
+            && after.chars().next().is_some_and(char::is_alphanumeric)
+        {
+            continue;
+        }
+        if let Some(end) = quote {
+            if ch == end {
+                quote = None;
+            }
+            continue;
+        }
+        quote = match ch {
+            '"' | '\'' => Some(ch),
+            '“' => Some('”'),
+            '‘' => Some('’'),
+            _ => None,
+        };
+        if matches!(ch, ';' | '.' | '—')
+            && after.starts_with(char::is_whitespace)
+            && resolved.is_match(after.trim())
+        {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]
@@ -97,7 +167,7 @@ mod tests {
 
     #[test]
     fn r13_resolution_annotations_do_not_hide_pending_work() {
-        let resolved = Regex::new(r"\bresolved\s*:|(?:^|[;.—]\s*)resolved\s+in\b").unwrap();
+        let resolved = Regex::new(RESOLUTION).unwrap();
         for line in [
             "- [P1] remains unresolved",
             "  * [P1] to be resolved by P3",
