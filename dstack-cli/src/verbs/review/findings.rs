@@ -10,14 +10,20 @@ use crate::store::plan::PlanDoc;
 use crate::store::plan_graph::{milestone_covers, plan_covers};
 
 // A commit ID is evidence, not completion. Only these closed legacy status frames affirm
-// completion; text after a complete frame is commentary, not a guessed status. Unknown or
-// conditional text before/inside a frame remains open. Compact forms consume the whole suffix.
+// completion. Later explicit reopening/negative completion overrides the frame; otherwise
+// legacy explanatory comments remain valid. Compact forms consume the whole suffix.
 const RESOLUTION: &str = concat!(
     r"^(?:resolved:\s*(?:commit [0-9a-fA-F]{7,40} ",
     r"(?:(?:on plan/[A-Za-z0-9._/-]+ )?\(merged into the Goal branch\)|",
     r"\(same follow-up commit\))(?:[.;\s].*)?|",
     r"(?:fixed|verified)(?: in P[0-9]+(?:\.[0-9]+)*)?\.?|",
     r"P[0-9]+(?:\.[0-9]+)*\.?)|resolved in P[0-9]+(?:\.[0-9]+)*\.?)$"
+);
+const REOPENED: &str = concat!(
+    r"(?i)\b(?:reopen(?:ed|ing)?|",
+    r"(?:not|never|no longer)\s+(?:resolved|fixed|verified|closed|merged|complete[d]?)|",
+    r"(?:still|remains?)\s+(?:open|unresolved|unfixed|unverified)|",
+    r"resolved:\s*(?:false|no|0|null|pending|unknown))\b"
 );
 
 /// Findings use `[P1, ...]`, `[P1 / round ..., ...]` and prose R/Plan/Milestone references.
@@ -33,6 +39,7 @@ pub(super) fn selected<'a>(
 ) -> Result<Vec<&'a str>> {
     let markers = Regex::new(r"\b[PMR][0-9]+(?:\.[0-9]+)*\b").expect("scope markers");
     let resolved = Regex::new(RESOLUTION).expect("resolution annotation");
+    let reopened = Regex::new(REOPENED).expect("explicit reopening");
     let known: Vec<&String> = doc
         .plans
         .iter()
@@ -41,7 +48,7 @@ pub(super) fn selected<'a>(
         .collect();
     let mut selected = Vec::new();
     for (index, line) in text.lines().enumerate() {
-        if !is_open(line, &resolved) {
+        if !is_open(line, &resolved, &reopened) {
             continue;
         }
         let ids: Vec<&str> = markers.find_iter(line).map(|m| m.as_str()).collect();
@@ -96,9 +103,10 @@ pub(super) fn selected<'a>(
 
 /// An annotation starts after a sentence/clause separator outside quoted diagnostic text.
 /// Completion must use the status grammar above. Outside quotes, an apostrophe following a
-/// word is possessive, including plural forms; inside quotes only word-internal apostrophes
-/// are exempt from ending the quote. Code spans keep their matching delimiter width.
-fn is_open(line: &str, resolved: &Regex) -> bool {
+/// word is possessive, including plural forms. Inside single quotes, a word-final apostrophe
+/// before whitespace and a later matching quote may be possessive: keep the diagnostic quoted
+/// rather than accepting an ambiguous resolution. Code spans keep their matching width.
+fn is_open(line: &str, resolved: &Regex, reopened: &Regex) -> bool {
     let item = line.trim_start_matches([' ', '\t']);
     if !(item.starts_with("- ") || item.starts_with("* ")) {
         return false;
@@ -139,7 +147,11 @@ fn is_open(line: &str, resolved: &Regex) -> bool {
                 .chars()
                 .next_back()
                 .is_some_and(char::is_alphanumeric)
-            && (quote.is_none() || after.chars().next().is_some_and(char::is_alphanumeric))
+            && (quote.is_none()
+                || after.chars().next().is_some_and(char::is_alphanumeric)
+                || (quote == Some(ch)
+                    && after.starts_with(char::is_whitespace)
+                    && after.contains(ch)))
         {
             continue;
         }
@@ -158,6 +170,7 @@ fn is_open(line: &str, resolved: &Regex) -> bool {
         if matches!(ch, ';' | '.' | '—')
             && after.starts_with(char::is_whitespace)
             && resolved.is_match(after.trim())
+            && !reopened.is_match(after)
         {
             return false;
         }
@@ -172,13 +185,14 @@ mod tests {
     #[test]
     fn r13_resolution_annotations_do_not_hide_pending_work() {
         let resolved = Regex::new(RESOLUTION).unwrap();
+        let reopened = Regex::new(REOPENED).unwrap();
         for line in [
             "- [P1] remains unresolved",
             "  * [P1] to be resolved by P3",
             "- [P1] is not resolved",
             "- [P1] resolved input parsing but not the issue",
         ] {
-            assert!(is_open(line, &resolved), "{line}");
+            assert!(is_open(line, &resolved, &reopened), "{line}");
         }
         for line in [
             "- [P1] was fixed — resolved in P1",
@@ -186,7 +200,7 @@ mod tests {
             "a paragraph",
             "-no space after the dash",
         ] {
-            assert!(!is_open(line, &resolved), "{line}");
+            assert!(!is_open(line, &resolved, &reopened), "{line}");
         }
     }
 }
