@@ -11,6 +11,8 @@ description: >-
 
 # unit-test
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
@@ -51,18 +53,23 @@ runner does not print it — the printed test name is what the ledger reads.
 
 ## 4. Red evidence, then Green (R62)
 
-Both runs are captured into the artifact directory the brief names
-(`<main-root>/.dstack/local/artifacts/<plan-or-scope>/`), and both become ledger rows:
+Workers execute tests and capture both runs into the brief's artifact directory
+(`<main-root>/.dstack/local/artifacts/<plan-or-scope>/`). They return a compact receipt with
+commands/exits and artifact paths; only main runs the evidence commands below after return.
+A failing test is diagnosed/fixed by the worker, never main. A necessary retry uses a new worker.
+Missing worker capacity/tools or an incomplete receipt stays pending/blocked.
 
 ```bash
-# Red — the test must fail before the implementation exists.
+# Worker: Red must fail before the implementation exists.
 <runner> 2>&1 | tee .dstack/local/artifacts/P3/R03-red.txt   # exits non-zero
+# Main, after the worker returns:
 dstack evidence add --r R03 --case c-test-red --kind test \
   --artifact .dstack/local/artifacts/P3/R03-red.txt --produced-by "<runner>" \
   --note "red: fails without the implementation"
 
-# Green — after the implementation, in the same Task, before the single commit.
+# Worker: Green after implementation, in the same Task, before the single commit.
 <runner> 2>&1 | tee .dstack/local/artifacts/P3/R03-green.txt
+# Main, after the worker returns:
 dstack evidence add --r R03 --case c-test --kind test \
   --artifact .dstack/local/artifacts/P3/R03-green.txt --produced-by "<runner>"
 ```
@@ -71,7 +78,9 @@ dstack evidence add --r R03 --case c-test --kind test \
   the test until the run is red for the stated reason, then capture again.
 - The two artifacts are different files, so no `--shared` is needed. `c-test` is the case id
   `dstack cases sync` already opened for the R; `c-test-red` is added alongside it.
-- A long suite uses the host completion mechanism in `runtime.md`: `dstack exec <label> -- <runner>` (label: `suite-P3`).
+- A long suite runs inside the worker using its terminal completion mechanism and declared
+  artifact directory. Main uses runtime.md's interruptible worker wait; it never runs the suite
+  or reads raw logs to fill waiting time. Main owns any `dstack exec` workflow state writes.
 - GSD `agents/gsd-verifier.md:467`: *"Run the full workspace test command at most once per
   verification. Never filter a full run per must-have."* Prove a test exists by enumeration
   (`--list` / `--collect-only`); prove one passes with a single named test.

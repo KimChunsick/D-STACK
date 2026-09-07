@@ -19,6 +19,8 @@ pub mod hooks;
 pub mod korules;
 pub mod layout;
 pub mod locks;
+pub mod main_runtime;
+mod main_runtime_rules;
 pub mod modes;
 pub mod selfrun;
 pub mod sweep;
@@ -47,12 +49,13 @@ pub fn selftests() -> Vec<Box<dyn Selftest>> {
         Box::new(sweep::Checker),
         Box::new(layout::Checker),
         Box::new(modes::Checker),
+        Box::new(main_runtime::Checker),
     ]
 }
 
 /// Each section prints a table and a count line and answers whether it holds; a section fails
 /// loudly, never silently. The sweep reads the repository only, so nothing here writes.
-const SECTIONS: [fn(&mut Context) -> Result<bool>; 9] = [
+const SECTIONS: [fn(&mut Context) -> Result<bool>; 10] = [
     deps::section,
     agents::section,
     codex::section,
@@ -62,6 +65,7 @@ const SECTIONS: [fn(&mut Context) -> Result<bool>; 9] = [
     korules::section,
     layout::section,
     modes::section,
+    main_runtime::section,
 ];
 
 fn doctor(ctx: &mut Context, args: &[String]) -> Result<()> {

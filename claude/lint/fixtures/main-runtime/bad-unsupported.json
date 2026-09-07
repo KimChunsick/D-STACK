@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": "Unsupported: if interruptible wait/input is unavailable, disclose that limit and use supported completion events; do not promise concurrent input.",
+  "append": "Unsupported: concurrent input is guaranteed on every host."
+}

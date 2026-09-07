@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": "Conflict: safe-stop affected workers, preserve busy-plan guards and confirm they stopped before replacement; if no supported CLI transition exists, leave pending/blocked.",
+  "append": "Conflict: reset plan.json by hand while workers run."
+}

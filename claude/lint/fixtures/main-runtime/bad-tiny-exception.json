@@ -1,0 +1,5 @@
+{
+  "base": "good-workflow.md",
+  "remove": null,
+  "append": "A change small enough to be one obvious edit stays in the main loop."
+}

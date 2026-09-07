@@ -5,6 +5,8 @@ description: The development phase of the D-STACK pipeline — turn an approved 
 
 # dstack-develop — Milestone loop, waves, workers, review calls
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
@@ -119,7 +121,9 @@ GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`
      → the CLI runs `git worktree add` itself and records the path in plan.json
 3. spawn one native worker per plan using runtime.md; brief = §6 template.
      Claude: explicit Agent model. Codex: spawn_agent with fresh bounded context and inheritance.
-4. wait for the wave; each worker's first line is its `dstack run verify` output.
+4. use runtime.md's interruptible native wait and input branches, retaining active IDs;
+     answer questions, record additions, stop only conflicting/affected work, disclose unsupported input.
+     Never duplicate a launch or mark unfinished work done to free input.
 5. per returned worker: run the checklist of §7, in order.
 6. dstack next --max 3   → next wave. Repeat until the Milestone has no pending plan.
 ```
@@ -196,17 +200,19 @@ model/effort stable within a role; never remove needed tools or location checks 
 
 ## 7. After each worker returns — the main session checklist
 
-Run in this order. Every step is a CLI verb; nothing here is a judgment call.
+Main reads only compact receipts and location/HEAD, commit and artifact metadata. Raw logs and
+failure diagnosis stay with fresh workers. Missing results require a new bounded handoff;
+capacity/tool failure remains pending/blocked. Run this checklist in order.
 
 | # | Command | Why |
 |---|---|---|
-| 1 | read the `run verify` lines of the report | a location mismatch voids the delegation (R36); re-run the Plan, do not accept its commits |
+| 1 | read the `run verify` lines of the report | a location mismatch voids the delegation (R36); dispatch a new bounded worker after stopping the old one; do not accept its commits |
 | 2 | `dstack worker report --plan P3 --from <report-file>` | prints `reported: N / unreported: M (R…)`; writes the M rows to the ledger as `unreported` (R68) |
 | 3 | `dstack evidence add --r R07 --case c-test --kind test --artifact <path> --produced-by "<cmd>"` (one per test artifact the worker produced) | the ledger's only writer is the main session (R104); the Red output exists only now. E2E cases are not run here — they wait for the milestone close (verify §1) |
 | 4 | `dstack task done T7 --commit <sha>` (one per task in the report) | records the commit that is the Task |
-| 5 | `dstack plan done P3` | refreshes readiness; regenerates ROADMAP.md and STATE.md under the lock |
-| 6 | `dstack review --scope plan --plan P3` then the `codex-review` skill on the bundle | review is per Plan and unconditional (R69) |
-| 7 | `dstack review seal --from <provider-output> --scope plan --id P3` | one sealed `codex-review-<NNN>.md` per round; sealed rounds are never edited |
+| 5 | `dstack review --scope plan --plan P3` then the `codex-review` skill on the bundle | independent review is per Plan and unconditional (R69); keep the Plan open |
+| 6 | `dstack review seal --from <provider-output> --scope plan --id P3` | seal the independent review; unresolved findings keep the Plan open |
+| 7 | `dstack plan done P3` | only after the independent review permits closure; refresh readiness under the lock |
 
 If step 2 reports `unreported: M` with M > 0, those R ids sit in the ledger as `unreported`
 and `dstack check coverage` keeps failing until each one gets evidence or a follow-up Plan.
@@ -266,9 +272,11 @@ ABSTAIN은 R05 하나예요 — 사유를 확인해 주시면 받고 Goal을 닫
 
 ## 11. Sentences taken from GSD (R61)
 
-Source root: the current `github.com/open-gsd/gsd-core` checkout, paths below relative to it.
+Source root: `github.com/open-gsd/gsd-core`. Retained secondary attribution from the earlier
+inspection; the original checkout/revision is unavailable. No fresh primary-source inspection
+is claimed. The two context/coordination quotes below support runtime.md's worker/main boundary.
 
-| Source (current gsd-core checkout) | Sentence used here |
+| Source (retained gsd-core attribution) | Sentence used here |
 |---|---|
 | `docs/explanation/the-phase-loop.md` | "Each `PLAN.md` describes a bounded unit of work: the files to touch, the specific changes to make, the acceptance criteria that define done." → §1 Plan definition |
 | `docs/explanation/the-phase-loop.md` | "Each commit corresponds to a completed task in a plan." → §1 Task = one commit |
@@ -281,7 +289,7 @@ Source root: the current `github.com/open-gsd/gsd-core` checkout, paths below re
 | `skills/gsd-phase/SKILL.md` | `--insert` "Insert urgent work as a decimal phase (e.g., 72.1) between existing phases" → §9 `plan insert --after` |
 | `skills/gsd-resume-work/SKILL.md` | "STATE.md loading … Incomplete work detection … Context-aware next action routing" → §9 resume row |
 
-**Where v2 departs from the current checkout:** today's `gsd-core` tells executors "Do NOT pass
+**Retained comparison from the earlier inspection:** `gsd-core` reportedly tells executors "Do NOT pass
 `--no-verify`" in `gsd-core/workflows/execute-phase.md` and gates it behind
 `workflow.worktree_skip_hooks`. v2 keeps `--no-verify` (R66) because its lint runs in the
 pre-write and Stop hooks, which git hooks cannot reach for Codex-made commits (R93).

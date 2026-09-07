@@ -5,6 +5,8 @@ description: Adversarial code review of one finished Plan (and the ledger pass t
 
 # codex-review — one Plan, one bundle, sealed rounds
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 The legacy `codex-review` name selects the target snapshot's `sub`, not a fixed provider.
 Read the shared `runtime.md` in the current host's agent home. The main session builds the bundle,
 launches a fresh read-only sub session, seals its result and answers it. Main and sub may be the
@@ -76,9 +78,10 @@ completion mechanism in `runtime.md`; do not detach or start a duplicate while o
   `--quick <slug>`; never accidentally select CURRENT.
 - The label is `review-<plan>-<round-in-this-plan>`. Sealed names stay
   `codex-review-<NNN>.md` for both providers; the target-wide sequence may differ from the label.
-- Missing provider, nonzero exit or malformed completion is a failed round. Read its capture
-  under `.dstack/local/exec/<label>/` (completed retries use numbered suffixes); never seal a
-  stale previous raw output or silently fall back to the other provider.
+- Missing provider, nonzero exit or malformed completion is a failed round. Main reads the
+  short exit/error receipt under `.dstack/local/exec/<label>/`; delegate raw captures and failure
+  diagnosis to a fresh bounded worker. Completed retries use numbered suffixes. Never seal stale
+  output or silently fall back to another provider; a retry starts an independently fresh sub.
 
 **Quick bundle:** `dstack review --scope plan` cannot build one without `plan.json`. The main
 session prepares a bounded artifact with `=== REQUEST (frozen) ===` (the approved quick request
@@ -100,8 +103,9 @@ Seal refuses a file with no verdict rows or no `VERDICT:` line, so a laundered r
 enter the record. It prints `covered / partial / absent`. A sealed round is never edited, never
 re-run into the same file, never deleted.
 
-If the raw file is missing or truncated, read `.dstack/local/exec/review-P1-001/err.txt` and
-`exit`; a non-zero exit is a failed round, not a passed one — rerun the same round number.
+If raw output is missing/truncated, check the short completion/exit receipt and delegate detailed
+capture inspection. A failed round needs a fresh selected sub call with the same round number;
+never reuse its session or have main diagnose the raw log.
 
 ### 4. Answer it, then decide
 
@@ -117,8 +121,8 @@ and never contradicts the sealed file; it records what you did about it.
 effort: high (fixed for every round)
 ```
 
-Fixes go to the native `frontend-dev` or `general-dev` worker with model/tool selection from
-`runtime.md` and one Plan's bounded context (R25, §0.2). A rejected finding
+Fixes go to a new native `frontend-dev` or `general-dev` worker with model/tool selection from
+`runtime.md` and a bounded handoff (R25, §0.2); never resume the old worker context. A rejected finding
 needs a reason a reviewer can attack, not a preference.
 
 When the ledger already holds an open `review` case for an R the latest round marks `covered`:
@@ -188,7 +192,10 @@ same lie as approving to look agreeable.
 - cap: "3라운드를 다 썼는데 HIGH 지적 2개가 남아서 P1을 열어 둔 채로 findings.md에 적었어요. 어떻게 할지 정해 주세요."
 - skipped: "리뷰할 변경이 없어서 `skipped: no diff in the declared files`로 적었어요."
 
-## Borrowed from GSD (github.com/open-gsd/gsd-core, read 2026-09-02)
+## Borrowed from GSD (github.com/open-gsd/gsd-core, earlier read 2026-09-02)
+
+Retained secondary attribution; original checkout/revision unavailable in this change.
+No fresh primary-source inspection is claimed.
 
 | Sentence taken | From | Used as |
 |---|---|---|

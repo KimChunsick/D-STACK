@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": "Addition: main records req/decision changes through dstack, approves authorized scope and adjusts only affected work.",
+  "append": "Addition: restart every Plan without recording the request."
+}

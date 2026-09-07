@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": null,
+  "append": "Unsupported: concurrent input is guaranteed on every host."
+}

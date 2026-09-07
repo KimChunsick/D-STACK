@@ -12,6 +12,8 @@ description: >-
 
 # dstack-verify
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
@@ -69,7 +71,9 @@ dstack check coverage             # every live R needs a covering task AND an ev
 - Statuses are `open | met | abstain | blocked | skipped | unreported`. Only `evidence add` writes a
   non-open row. Editing the file by hand is caught later by the sha256 recheck in `dstack verify`.
 - `unreported` comes from a worker that did not report an R it was delegated (R68) — treat it as an
-  open case and run it yourself before closing anything.
+  open case and delegate it to a fresh bounded verification worker before closing anything.
+  Main records the compact receipt; a failed/missing result never triggers main execution or
+  reuse of the old context. Missing capacity/tools leaves the case pending/blocked.
 - Quick tasks use the same ledger: add `--quick <slug>` to any command in this file.
 
 ## 3. Verification profiles (R72)
@@ -125,6 +129,7 @@ Brief block to send (an empty-context worker gets everything it needs, R68):
 
 ```
 Run the <work_type> verification profile for run <run-id>, milestone <M> (every Plan in it).
+Location: <absolute cwd>, common-dir: <git common dir>, branch: <branch>, base HEAD: <sha>
 Artifact directory (the ONLY place you may write): <abs path>/.dstack/local/artifacts/<scope>/
 How to start the system under test: <command, or "already running at <url>">
 Capture engine: ego-browser — instructions: <paste the §3.1 rows>

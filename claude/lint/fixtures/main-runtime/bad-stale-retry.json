@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": null,
+  "append": "Resume the same worker context to retry after failure."
+}

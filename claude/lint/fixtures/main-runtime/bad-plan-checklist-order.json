@@ -1,0 +1,5 @@
+{
+  "base": "good-develop.md",
+  "remove": "| 5 | `dstack review --scope plan --plan P3` | independent review |",
+  "append": "| 5 | `dstack review --scope plan --plan P3` | independent review |"
+}

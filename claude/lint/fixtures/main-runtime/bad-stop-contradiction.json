@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": null,
+  "append": "Stop: mark the Plan done to stop execution."
+}

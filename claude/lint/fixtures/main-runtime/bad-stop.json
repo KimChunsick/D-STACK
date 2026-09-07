@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": "Stop: stop affected workers and report their actual state; stopped is not done.",
+  "append": "Stop: mark the Plan done to stop execution."
+}

@@ -32,6 +32,49 @@ Configuration changes apply to new runs and quick tasks. An existing run keeps i
 until `dstack run adopt --refresh-mode` explicitly refreshes it. Ordinary adoption preserves it.
 After refresh, repeat the host check in the selected new session before continuing work.
 
+## Coordinator boundary and compact receipt (R15–R17)
+
+Main boundary: main owns user conversation, dispatch, compact receipts and CLI state only.
+Worker boundary: fresh bounded workers own investigation, implementation, tests, failure diagnosis, fixes and heavy evidence inspection.
+Retry boundary: a failure, missing receipt or capacity/tool refusal remains pending or blocked; use a new worker with a bounded handoff, never main takeover or stale context reuse.
+Receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
+Wait protocol: keep active run/Plan/worker IDs; use the host's interruptible native completion wait and handle input before resuming the same wait.
+Question: answer then resume the same wait with the same active IDs.
+Addition: main records req/decision changes through dstack, approves authorized scope and adjusts only affected work.
+Conflict: safe-stop affected workers, preserve busy-plan guards and confirm they stopped before replacement; if no supported CLI transition exists, leave pending/blocked.
+Stop: stop affected workers and report their actual state; stopped is not done.
+Unsupported: if interruptible wait/input is unavailable, disclose that limit and use supported completion events; do not promise concurrent input.
+No duplicate launch, blanket restart, manual JSON reset or false completion to free input.
+Host tools: Claude Agent completion events; Codex wait_agent (when available), with interruptible bounded waits using the actual tool schema.
+Main checks receipt metadata only; workers execute repository tests and lint, diagnose failures and inspect large artifacts.
+Independent review/research/audit use fresh saved-sub sessions via dstack mode exec; seal the independent Plan review before dstack plan done.
+Validation limits: deterministic document/fixture checks are not live host UI or concurrent-input evidence and cannot prove arbitrary prose semantics.
+GSD provenance: retained secondary attribution; original checkout/revision unavailable, no fresh primary-source inspection claimed.
+GSD sources: docs/explanation/the-phase-loop.md and skills/gsd-execute-phase/SKILL.md; quotations are retained in dstack-develop §11.
+
+These clauses are the shared protocol. The doctor checks required clauses and known contradictory
+forms across entry rules, skills and worker contracts; it is a deterministic lint, not a scheduler.
+
+### Using the native wait
+
+Read the current tool schema. Claude uses background `Agent` calls and completion notifications
+when exposed; do not hold a foreground tool that prevents user input. Codex uses `wait_agent`
+with the existing worker IDs and bounded timeouts (at most 60 seconds per blocking call).
+If that tool documents an input interruption, process it using the branches above. If a host
+only offers terminal completion for a selected sub call, keep its yielded session ID and use
+that terminal's completion tool; disclose any inability to receive input during the wait.
+Do not infer live input support from an instruction, fixture, model name or installer test.
+
+Questions preserve the current objective. For additions use `dstack req add --run <id>` and
+`dstack decision add --affects <R ids>`, then the request approval workflow with existing user
+authorization. Track the affected Plan and worker IDs; unrelated work continues. For conflicts,
+use the actual host's worker interruption/cancellation tool, confirm termination and retain
+artifact/HEAD metadata. `dstack plan edit`, `plan insert` and `plan remove` busy guards still
+apply after a worker stops: stopping a process is not a Plan state transition. `dstack run pause`
+is available for pausing the run, not for unlocking a busy Plan. If no suitable CLI transition
+exists, report pending/blocked and the missing transition; do not bypass the guard.
+A stop request suspends the authorized work; it never implies a completion or replacement launch.
+
 ## Native implementation, reconnaissance and verification
 
 `main` selects the native worker mechanism below. `sub` is reserved for independent review,
@@ -68,7 +111,7 @@ The main session runs `dstack next --max 3` and `dstack plan start P<n> --worktr
 only the CLI creates worktrees and records them. Supply the actual cwd, common-dir, branch,
 HEAD, declared files, R rows and artifact path. Never enable native worktree isolation.
 Workers first run `dstack run verify`, compare those values and stop on a location mismatch.
-Spawn only the schedulable disjoint Plans, then wait using the host's native completion tool.
+Spawn only the schedulable disjoint Plans, then apply the interruptible wait protocol above.
 Claude may launch its Agent calls as one wave; Codex uses bounded `spawn_agent` calls and
 the host's native completion/wait tool (`wait_agent` where available). Both mechanisms must
 return the worker report before evidence is recorded. If the host has no native delegation,
@@ -87,8 +130,9 @@ An explicitly designated prose artifact follows its workflow's writer contract.
 ## Checks apply in both hosts
 
 Claude hooks are an additional enforcement layer. Codex has no dependency on those hooks:
-the main session runs `dstack check request` before planning; after worker results it runs
-the required repository tests and `dstack lint-ko --changed`, records evidence, then runs
+the main session runs `dstack check request` before planning; workers execute the required
+repository tests and `dstack lint-ko --changed` and return commands/exits/artifact metadata.
+Main checks that compact receipt, records evidence, then runs
 `dstack check coverage`, `dstack check decisions`, `dstack verify` and `dstack gate` before
 reporting completion. The same checks also apply when Claude hooks are absent. Run
 `dstack gate` before ending a work turn; a nonzero result reports the outstanding work rather
@@ -109,7 +153,7 @@ it writes the final output only after success. Missing provider or failed comple
 that pass with its actual error. There is no implicit fallback to another provider.
 Codex sub uses `gpt-6-astra` with `model_reasoning_effort=high`; Claude sub uses `opus` with
 `--effort high`. Captures live under `.dstack/local/exec/<label>/`; completed retries receive
-numbered suffixes. Check the recorded output, error, exit and usage for the specific attempt.
+numbered suffixes. Check the short completion/exit/usage receipt for the specific attempt; delegate raw-log diagnosis.
 
 ```bash
 dstack mode exec review-P1-001 --role review --context <context-file> --output <raw-file> --worktree <plan-worktree>

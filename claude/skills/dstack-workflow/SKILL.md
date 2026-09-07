@@ -5,6 +5,8 @@ description: The entry point of the pipeline. Use it when a new piece of work ar
 
 # dstack-workflow — route, request, recon, interview, design
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
@@ -24,7 +26,7 @@ you read that output and relay it (§3-1, §3-2).
 | Session resumed / after `/clear` | `dstack run adopt` (or `dstack run adopt <id>`), then continue where `dstack status` says |
 | A Plan has to be built or executed | Stop here, hand to **dstack-develop** |
 | Evidence, ledger, report | **dstack-verify** |
-| Question, lookup, conversation, a one-line typo fix | No pipeline at all |
+| Pure question, lookup or conversation without file work | No pipeline at all |
 
 Claude’s inject hook (R24) supplies `dstack status --oneline`; in either host run it explicitly
 when no injection is present. Read it before routing: it names the current run, `type/route/research/review/effort/e2e/tests/visual/
@@ -43,6 +45,11 @@ Read `dstack status` first. Then propose exactly one route in the draft's `route
 | Small, self-contained, outside every Goal | `quick` | **dstack-quick** |
 
 Urgent work found *inside* a Goal is never `quick`: it is a decimal `plan insert` (R99, §9).
+While workers run, apply runtime.md's Question/Addition/Conflict/Stop/Unsupported branches.
+Answer questions and return to the same wait. For additions, record `req add` and `decision add`
+against the active run, retain authorization, then adjust only affected work. Conflict edits
+must respect the busy-subtree refusal; stop affected workers and leave pending/blocked when
+no supported transition exists. Never reset JSON or mark unfinished Plans done to bypass it.
 
 **Merge route, in order.** `dstack req add --run <id> "<line>" --accept "<criterion>"` appends
 rows as `status: pending-approval`; existing rows are never edited. `dstack check request` fails

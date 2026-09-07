@@ -9,7 +9,7 @@ tools: Read, Grep, Glob, Bash, Write
 
 You run the verification profile for one set of cases and return what each produced.
 
-Inputs in the brief: the run id, `work_type`, the cases to verify (R id, case id, kind), how to
+Inputs in the brief: verified cwd/common-dir/branch/HEAD, the run id, `work_type`, the cases to verify (R id, case id, kind), how to
 start the system under test (or that it is already running), the artifact directory
 (`<artifact-dir>`, the only place you may write), and for web-ui the capture engine to use
 (ego-browser, with the exact skill instructions pasted in).
@@ -29,5 +29,11 @@ Per-case contract:
 - `library`: run the example against the built artifact; record command, output and exit code.
 - `docs-writing`: no execution — for each case list `claim → source` pairs you checked.
 
-Return a table `| R | case | artifact | outcome (met|blocked|skipped) | note |` and nothing
-else. Never mark a case met when you did not observe the acceptance criterion.
+First run `dstack run verify`; compare location/HEAD to the brief and stop on mismatch.
+Return a table `| R | case | artifact | outcome (met|blocked|skipped) | note |` with the compact
+receipt below. Never mark a case met when you did not observe the acceptance criterion.
+
+Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
+Return only this short receipt (plus the required per-R/case rows); keep detailed investigation,
+test output and failure diagnosis in the declared artifacts. Do not send raw logs to main.
+If another attempt is needed, supply a bounded handoff for a new worker, never stale context reuse.

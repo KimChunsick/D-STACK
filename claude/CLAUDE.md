@@ -1,5 +1,7 @@
 # Global agent rules (installed as ~/.claude/CLAUDE.md by D-STACK v2)
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 ## Choose the session role first
 
 A supplied role prompt for reviewer, researcher, audit, implementation worker, recon,
@@ -54,13 +56,14 @@ external research and audit use the target's saved `sub` via `dstack mode exec`.
 names `codex-review` and `codex-research` select that provider, including when it is Claude.
 Keep each sub pass in a fresh read-only context even when main and sub are the same provider.
 
-## 0.3 Frontend code is delegated
+## 0.3 Main stays a coordinator
 
-Components, hooks, styles, frontend utilities, frontend tests and frontend build config are
-written by the `frontend-dev` agent, whatever the repository looks like. The only exception is
-a one-line typo, copy or constant edit. The worker starts with an empty context: the brief
-carries the task, target files, constraints, the R rows it covers and the repository
-conventions already observed. Its report (including violations) is relayed, not redone.
+Main owns conversation, dispatch, compact receipts and CLI state. Fresh bounded workers own
+investigation, implementation, tests, failure diagnosis, fixes and heavy evidence inspection.
+Frontend work goes to `frontend-dev`; other implementation goes to `general-dev`, including
+one-line edits. A missing tool, capacity limit or failed worker leaves work pending/blocked.
+A necessary retry gets a new worker and a bounded handoff. Follow runtime.md during waits;
+keep raw logs in artifacts and never take over work or reuse a contaminated worker context.
 
 ## 1. Think, then cut
 

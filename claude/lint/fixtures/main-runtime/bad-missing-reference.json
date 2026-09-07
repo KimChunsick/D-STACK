@@ -1,0 +1,5 @@
+{
+  "base": "good-workflow.md",
+  "remove": "Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.",
+  "append": null
+}

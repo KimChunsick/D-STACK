@@ -26,7 +26,10 @@ fn install(home: &Path, dry: bool) -> String {
 }
 
 fn mappings() -> Vec<(String, String)> {
-    let mut links = Vec::new();
+    let mut links = vec![
+        ("claude/CLAUDE.md".into(), ".claude/CLAUDE.md".into()),
+        ("codex/AGENTS.md".into(), ".codex/AGENTS.md".into()),
+    ];
     for host in ["claude", "codex"] {
         links.push(("claude/runtime.md".into(), format!(".{host}/runtime.md")));
         links.push((

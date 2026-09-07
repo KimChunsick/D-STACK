@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": null,
+  "append": "If delegation fails, main takes over implementation."
+}

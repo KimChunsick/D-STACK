@@ -1,5 +1,7 @@
 # Codex global instructions (installed as ~/.codex/AGENTS.md by D-STACK v2)
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 ## Choose the session role first
 
 A supplied role prompt for reviewer, researcher, audit, implementation worker, recon,
@@ -23,7 +25,12 @@ selected environment; the command cannot switch this conversation's engine.
 Main delegation uses native `spawn_agent` with fresh bounded briefs and inherited model/effort
 as `runtime.md` specifies. Read shared specifications in `~/.codex/agents/`; their Claude
 frontmatter does not override the Codex engine. The main session owns user questions and CLI
-state writes. Mandatory checks and `dstack gate` apply even without Claude hooks.
+state writes, dispatch and compact receipts. Fresh workers own investigation, implementation,
+tests, failure diagnosis, fixes and heavy evidence inspection, including one-line edits.
+Missing capacity/tools or failure stays pending/blocked; retries require a new bounded worker.
+Mandatory checks and `dstack gate` apply even without Claude hooks; workers execute repository
+tests/lint and main records the receipt, evidence and gate result. Use runtime.md's input
+handling during native interruptible waits; raw logs stay in artifacts.
 The installed `~/.codex/bin/dstack` links to the same binary as `~/.claude/bin/dstack`.
 Review/research/audit use `dstack mode exec` and the target's saved `sub`, not native workers.
 `dstack handoff` uses a bounded read-only summarizer in the destination provider, independent

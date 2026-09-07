@@ -1,0 +1,5 @@
+{
+  "base": "good-runtime.md",
+  "remove": "Question: answer then resume the same wait with the same active IDs.",
+  "append": "Question: relaunch the worker after answering."
+}

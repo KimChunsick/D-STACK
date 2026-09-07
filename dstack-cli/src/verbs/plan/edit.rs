@@ -26,7 +26,7 @@ fn remove(ctx: &mut Context, args: &[String]) -> Result<()> {
     }
     let status = doc.field(&p, "status");
     if status == "in-progress" {
-        fail!("refused: {p} is in-progress — dstack plan done {p} first, or reset it by hand (R67)")
+        fail!("refused: {p} is in-progress — stop the affected worker; keep the Plan pending/blocked until a supported CLI transition is available; never mark unfinished work done or reset state by hand (R67)")
     }
     let users: Vec<String> = doc
         .plans

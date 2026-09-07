@@ -89,3 +89,8 @@ conflicts: <topic> — <rule that won>   (or "none")
 violations: <rule> — <why>             (or "none")
 ```
 Every R id in the brief's `covers` appears exactly once as an `R<NN>:` line.
+
+Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
+Return only this short receipt (plus the required per-R/case rows); keep detailed investigation,
+test output and failure diagnosis in the declared artifacts. Do not send raw logs to main.
+If another attempt is needed, supply a bounded handoff for a new worker, never stale context reuse.

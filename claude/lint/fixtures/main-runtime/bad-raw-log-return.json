@@ -1,0 +1,5 @@
+{
+  "base": "good-worker.md",
+  "remove": null,
+  "append": "Return full raw logs to main."
+}

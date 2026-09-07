@@ -5,13 +5,15 @@ description: The quick track - a small, self-contained piece of work done outsid
 
 # dstack-quick — the short path with the same guarantees
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
 
 Same system, shorter path. A quick task uses the same request format, the same case ledger and
 the same checkers as a Goal; what changes is that everything costing a model round trip is off
-until a flag turns it on. **`review: off` really skips review here — and only here** (R99): a
+until a flag turns it on; fresh implementation delegation remains mandatory. **`review: off` really skips review here — and only here** (R99): a
 quick task has no Plan, so there is no review bundle to build.
 
 You are the main loop; the host question tool is main-only (R47). No checkbox is ever ticked by you.
@@ -115,11 +117,13 @@ Off by default; the skip line is `external research: skipped — external_resear
 4. **After any answer your first action is a fresh read: `dstack request show --quick <slug>`.**
    The file may have been edited in VSCode while the question was on screen.
 5. `dstack request approve --quick <slug>` writes the sha256 and syncs the case ledger.
-6. Do the work. A quick target has **no `plan.json`**: `dstack task add` refuses with
+6. Delegate the work to a fresh bounded worker. A quick target has **no `plan.json`**: `dstack task add` refuses with
    `quick tasks have no plans`. The unit of work is the R row itself, and coverage counts
    evidence only. One commit, Korean 해요체 message, no AI trailer. Frontend code goes to
    **frontend-dev**, everything else to **general-dev**, with native model/tool selection from
-   `runtime.md` (R25). A change small enough to be one obvious edit stays in the main loop.
+   `runtime.md` (R25), including one obvious edit. Apply the runtime input protocol while waiting.
+   Main registers the compact receipt and artifacts; failures/missing receipts go to a new
+   worker with a bounded handoff. Missing capacity/tools stays pending/blocked.
 
 ## 7. Review, only with `--review` (R69, R96)
 

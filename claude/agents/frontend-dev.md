@@ -1,6 +1,6 @@
 ---
 name: frontend-dev
-description: Frontend implementation worker. Every change to components, hooks, styles, frontend utilities, frontend tests, stories or frontend build config goes through this agent (exception: a one-line typo/copy/constant edit). Runs one Plan in the worktree the CLI prepared.
+description: Frontend implementation worker. Every change to components, hooks, styles, frontend utilities, frontend tests, stories or frontend build config goes through this agent. Runs one Plan in the worktree the CLI prepared.
 model: opus
 effort: max
 maxTurns: 80
@@ -93,3 +93,8 @@ conflicts: <topic> — <rule that won>   (one per line, or "none")
 violations: <must rule> — <why>        (or "none")
 ```
 Every R id in your brief's `covers` must appear exactly once as an `R<NN>:` line.
+
+Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
+Return only this short receipt (plus the required per-R/case rows); keep detailed investigation,
+test output and failure diagnosis in the declared artifacts. Do not send raw logs to main.
+If another attempt is needed, supply a bounded handoff for a new worker, never stale context reuse.

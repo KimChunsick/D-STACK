@@ -1,5 +1,7 @@
 # D-STACK — repository rules (repo-root CLAUDE.md; twin of AGENTS.md)
 
+Follow runtime.md's coordinator boundary, compact receipt and interruptible wait protocol.
+
 These rules apply inside this repository and win over the global defaults where they differ.
 Precedence: an explicit user instruction in the session > this file > the current provider's installed global instructions.
 `CLAUDE.md` and `AGENTS.md` are byte-identical apart from the title line; edit both.
@@ -50,6 +52,15 @@ It is configuration, not an application: nothing renders, nothing serves.
 - `.dstack/` is local-only and ignored; never commit it and never edit it by hand.
 - A sealed review round (`codex-review-NNN.md`) is never edited; rebuttals go to the next round.
 - A skill file over 300 lines is a sign that logic belongs in the CLI (§3-8).
+
+## Main coordination
+
+Main owns user conversation, dispatch, compact receipts and CLI state. Fresh bounded workers
+own investigation, implementation, tests, failure diagnosis, fixes and heavy evidence inspection.
+This boundary also applies to D-STACK's own required test suite: a failure requires a new worker
+with a bounded handoff, never main takeover or stale context reuse. Main records evidence and
+runs CLI state/check gates; it does not inspect raw logs while waiting. Use the shared runtime's
+interruptible wait and input protocol; unavailable host features stay explicitly unverified.
 
 ## Prompt reuse
 

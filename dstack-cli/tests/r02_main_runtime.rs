@@ -14,6 +14,8 @@ fn document(path: &str) -> String {
 fn r02_main_runtime_both_hosts_dispatch_main_and_supplied_roles_separately() {
     for (path, provider) in [("claude/CLAUDE.md", "claude"), ("codex/AGENTS.md", "codex")] {
         let entry = document(path);
+        let issues = dstack_cli::verbs::doctor::main_runtime::check_document(path, &entry);
+        assert!(issues.is_empty(), "{path}: {issues:?}");
         for rule in ["supplied role", "dstack-workflow", "runtime.md"] {
             assert!(entry.contains(rule), "{path} cannot dispatch {rule}");
         }
