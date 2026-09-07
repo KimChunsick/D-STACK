@@ -13,7 +13,7 @@ use crate::store::review_index::{next_seq, sealed_counts};
 use crate::store::rows;
 
 use super::emit_diff::{self, Counts};
-use super::{check_bundle, lines, take, MAX_BUNDLE};
+use super::{check_bundle, findings, lines, take, MAX_BUNDLE};
 
 pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
@@ -199,7 +199,7 @@ fn milestone_bundle(
     if findings.is_file() {
         let text = read(&findings)?;
         let mut open = 0;
-        for line in lines(&text).iter().filter(|line| is_open(line)) {
+        for line in findings::selected(&text, &findings, doc, mid, covers)? {
             push(&mut out, &format!("{line}\n"));
             open += 1;
         }
@@ -222,13 +222,6 @@ fn milestone_bundle(
     push(&mut out, "Opening new scope-wide findings is forbidden — if you see one, say so in one line under `out of scope` and do not raise it as a finding.\n");
     push(&mut out, "Output the same per-R verdict table (`| R | verdict (covered|partial|absent) | evidence |`) for the R ids listed in the REQUEST section, then `VERDICT: approve|reject` as the last line.\n");
     Ok(out)
-}
-
-/// A markdown list item is open until the line itself says "resolved": the ledger records the
-/// resolution on the item, so nothing else has to be re-read to know what is still owed (R70).
-fn is_open(line: &str) -> bool {
-    let item = line.trim_start_matches([' ', '\t']);
-    (item.starts_with("- ") || item.starts_with("* ")) && !line.contains("resolved")
 }
 
 /// Verbatim R rows, in request order, for the ids the plan covers. Verbatim matters: the
@@ -279,18 +272,4 @@ fn read(path: &Path) -> Result<String> {
 
 fn push(out: &mut Vec<u8>, text: &str) {
     out.extend_from_slice(text.as_bytes());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn r13_an_item_is_open_until_the_line_says_resolved() {
-        assert!(is_open("- the cap is silent about the plan"));
-        assert!(is_open("  * an indented item"));
-        assert!(!is_open("- the cap was fixed — resolved in P1"));
-        assert!(!is_open("a paragraph that is not a list item"));
-        assert!(!is_open("-no space after the dash"));
-    }
 }

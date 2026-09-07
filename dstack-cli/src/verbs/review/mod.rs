@@ -49,6 +49,7 @@ macro_rules! review_verb {
 mod bundle;
 mod check_bundle;
 mod emit_diff;
+mod findings;
 mod rounds;
 mod selftests;
 
