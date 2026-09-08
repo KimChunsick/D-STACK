@@ -74,6 +74,8 @@ codex/AGENTS.md|.codex/AGENTS.md|link
 "
 # Shared skills, including dstack-handoff, use the same source and idempotent link checks in both homes.
 for host in claude codex; do
+  MAP="$MAP
+claude/templates/prompts/developer.md|.$host/templates/prompts/developer.md|link"
   for f in "$REPO_DIR"/claude/agents/*.md; do [ -e "$f" ] && MAP="$MAP
 claude/agents/$(basename "$f")|.$host/agents/$(basename "$f")|link"; done
   for d in "$REPO_DIR"/claude/skills/*/; do [ -d "$d" ] && MAP="$MAP

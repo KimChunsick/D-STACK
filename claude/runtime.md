@@ -90,9 +90,14 @@ Claude reads the corresponding installed agent definition and uses its native su
 Never pass a full model id, `fable`, `haiku` or `inherit` to Claude's Agent model field. Its
 hooks enforce `sonnet`/`opus`; Workflow `agent()` calls also pass that model explicitly.
 
-Codex reads `~/.codex/agents/<role>.md` as a role specification, not as executable frontmatter.
-Include its specialization and tool/write restrictions in the bounded task context, then use
-`dstack prompt render --role worker --context <context-file>` for implementation briefs.
+For both Claude native Agent and Codex spawn_agent developer calls, render with the selected
+`--role frontend-dev` or `--role general-dev`: `dstack prompt render --role general-dev --context <context-file>`.
+Send that complete rendered brief unchanged as the native tool's prompt/message. It contains the
+worker contract, shared developer contract and selected agent body before variable context.
+Claude still selects the matching native agent type and explicit model from the table above;
+its native definition also loads the installed shared contract for direct calls without it.
+Codex treats the selected body as a specification, not executable frontmatter. Do not manually
+append another specialization. Generic `--role worker` remains available for other bounded work.
 Native Codex workers use the available `spawn_agent` tool with a fresh bounded context and the
 complete rendered brief. When the host schema exposes `fork_turns` and `message`, use
 `fork_turns: "none"` and put the brief in `message`; otherwise use that host's documented

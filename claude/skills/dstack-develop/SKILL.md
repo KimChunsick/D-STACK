@@ -150,9 +150,9 @@ the other side's contract.
 
 ## 6. Worker brief template (R68)
 
-Fill this task-context block, then render it with the fixed worker contract. Send the rendered
-file verbatim to the selected agent; do not prepend a greeting, run id or regenerated rules.
-The agent definition already supplies its specialization. The worker starts empty-handed.
+Fill this task-context block, then render with the selected developer role on both hosts.
+Send the complete file verbatim to Claude Agent's prompt or Codex spawn_agent's message;
+do not prepend a greeting, run id or regenerated rules. The worker starts empty-handed.
 
 ```
 # Plan P3 — <slug>   (run <run-id>, milestone M2)
@@ -191,12 +191,13 @@ unit_tests: <on|off>
 ```
 
 ```bash
-dstack prompt render --role worker --context <brief-context-file> > <brief-file> || exit
+dstack prompt render --role general-dev --context <brief-context-file> > <brief-file> || exit
 ```
 
-The fixed contract lives in `claude/templates/prompts/worker.md`; change it only when policy
-changes. Put project context before Plan details and paths. Keep tool definitions and agent
-model/effort stable within a role; never remove needed tools or location checks to chase hits.
+Use `--role frontend-dev` for frontend work. The renderer supplies `worker.md`, the shared
+`claude/templates/prompts/developer.md` and the selected agent body; do not append it manually.
+Put project context before Plan details and paths. Keep tool definitions and agent model/effort
+stable within a role; never remove needed tools or location checks to chase hits.
 
 ## 7. After each worker returns — the main session checklist
 

@@ -81,7 +81,14 @@ impl Drop for Scratch {
 #[test]
 fn r06_role_prefix_is_identical_across_paths_rounds_and_korean_context() {
     let t = Scratch::new();
-    for role in ["review", "research", "audit", "worker"] {
+    for role in [
+        "review",
+        "research",
+        "audit",
+        "worker",
+        "frontend-dev",
+        "general-dev",
+    ] {
         let a = t.file(
             "a.md",
             "회차: 001\n- [ ] **R01** 캐시를 재사용해요 — accept: 원문을 보존해요\n",

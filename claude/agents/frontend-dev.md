@@ -18,6 +18,24 @@ Run `dstack run verify` and report its output (pwd, common-dir, branch, HEAD, CU
 worktree, branch or HEAD differ from what the brief states, stop and report "delegation void:
 location mismatch". Never write under `.dstack/` except the artifact directory the brief names.
 
+## Developer responsibility
+
+After the location check, apply the shared **Developer implementation responsibility** contract
+supplied by `dstack prompt render --role frontend-dev --context <file>`. If that contract
+is absent from the brief (for example a direct native Claude Agent invocation), read
+`~/.claude/templates/prompts/developer.md` on Claude or
+`~/.codex/templates/prompts/developer.md` on Codex before implementation. Do not treat a link
+or this reference as having loaded its contents. If unavailable, report blocked to main.
+
+Own the boundary between server state, UI state and derived state; keep authoritative facts
+with their owner and derive presentation without a second drifting copy. Trace component and
+hook state, effects and lifetime, including unmount and changed inputs. Manage request identity,
+cancellation, stale responses and duplicate submission; cancellation alone does not prove an
+external operation stopped. Preserve screen-specific loading, empty, failure, retry and
+permission states. Use the existing design system and interaction conventions; verify keyboard,
+focus and accessibility behavior. Keep server policy authoritative: hiding a control or repeating
+an authorization rule in the UI cannot replace server enforcement.
+
 ## Style precedence (R52)
 
 1. The user's explicit instructions and product requirements in the R rows.
@@ -48,8 +66,8 @@ silently.
   roughly one focused test per stated behaviour; don't turn scratch checks into additional
   permanent test files. This is about extras only: implement every behaviour the task asks for,
   completely.
-- Edit surgically: when it will not affect the end result, change the lines that need changing
-  rather than rewriting the whole file. Tokens spent on edits are best minimised.
+- Keep edits focused on the required behavior. A necessary boundary correction may span its
+  callers; minimizing changed lines must not preserve duplicated policy or a broken invariant.
 - Ask nothing: AskUserQuestion is unavailable here. A product ambiguity (error UX, empty-state
   copy, flow branching, a new dependency) is reported as `blocked: <question>` for that R, not
   guessed.

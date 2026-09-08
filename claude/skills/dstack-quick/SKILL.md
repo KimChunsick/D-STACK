@@ -122,6 +122,10 @@ Off by default; the skip line is `external research: skipped — external_resear
    evidence only. One commit, Korean 해요체 message, no AI trailer. Frontend code goes to
    **frontend-dev**, everything else to **general-dev**, with native model/tool selection from
    `runtime.md` (R25), including one obvious edit. Apply the runtime input protocol while waiting.
+   On both hosts, render `dstack prompt render --role general-dev --context <context-file>`
+   (use `--role frontend-dev` for frontend work), and send the complete output unchanged to the
+   matching native Agent prompt/spawn_agent message. This includes the shared developer contract
+   and selected body; generic worker rendering alone does not supply them.
    Main registers the compact receipt and artifacts; failures/missing receipts go to a new
    worker with a bounded handoff. Missing capacity/tools stays pending/blocked.
 

@@ -6,14 +6,19 @@ conditions for reuse; it does not prove a hit or guarantee reuse between fresh s
 
 ## Prompt construction
 
-`dstack prompt render --role review|research|audit|worker --context <file>` prints:
+`dstack prompt render --role review|research|audit|worker|frontend-dev|general-dev|handoff --context <file>` prints:
 
 1. A fixed wrapper and the canonical role source, verbatim.
 2. A fixed task boundary, then mode and the task-context file, verbatim.
 
 Review uses `codex/skills/dstack-reviewer/SKILL.md`; research and audit share
-`codex/skills/dstack-researcher/SKILL.md`; Claude implementation briefs use
-`claude/templates/prompts/worker.md` alongside the selected agent's existing definition.
+`codex/skills/dstack-researcher/SKILL.md`. Generic worker rendering stays unchanged.
+For both native Claude and Codex developer calls, explicit `frontend-dev`/`general-dev` rendering
+composes `claude/templates/prompts/worker.md`, `claude/templates/prompts/developer.md` and only
+the selected `claude/agents/<role>.md` body (without frontmatter), before variable task context.
+The native call receives the complete output. Direct native developer calls without this brief
+read the shared contract installed at `~/.claude/templates/prompts/developer.md` (Codex's
+corresponding home for Codex). No other role loads it. Model/effort/tool selection is unchanged.
 Only the second part contains run ids, round numbers, output paths, timestamps and fresh state.
 Keep repeated project/frozen context before changing questions, plans and diffs where possible.
 Do not translate Korean request rows or reorder evidence to manufacture matching bytes.
