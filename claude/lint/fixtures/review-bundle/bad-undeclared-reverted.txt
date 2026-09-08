@@ -1,0 +1,2 @@
+undeclared-reverted
+R21: deleting an intermediate undeclared file cannot hide its change.

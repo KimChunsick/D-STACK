@@ -1,0 +1,2 @@
+complete
+R21: all recorded task commits form one clean contiguous range.

@@ -1,0 +1,2 @@
+gap
+R21: an unrecorded intermediate commit cannot be omitted.

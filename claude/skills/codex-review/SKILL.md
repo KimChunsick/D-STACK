@@ -50,8 +50,36 @@ It prints the bundle path and runs `dstack check review-bundle` on itself; a bun
 hide a requirement is deleted rather than shipped. Do not hand-edit a bundle, and never review
 anything the bundle does not contain — silent mis-scoping is worse than failing loudly.
 
-If the command fails with `bundle exceeds 512KB: split the plan`, split the Plan
-(`dstack plan insert --after P1 …`) instead of trimming the diff.
+The default keeps the run's `base_head` and working-tree diff. When all Tasks of a Plan have
+completion records, explicitly select the complete committed Plan delta to avoid including
+earlier Plans' changes again:
+
+```bash
+dstack review --scope plan --plan P1 --committed
+```
+
+This derives the base from the oldest recorded Task commit's sole parent and the head from the
+newest. Every Task must have a completion record and an immutable commit ID (unambiguous
+abbreviations are accepted). All recorded commits must form one contiguous non-merge chain;
+creation order is irrelevant. The Plan worktree must be at that end commit with a clean index
+and worktree, including untracked files. Ignored untracked artifacts are outside this check.
+The bundle shows `mode: committed-plan`, `base:`, `head:` and each Task's recorded/resolved commit,
+then the complete net diff. Every intermediate commit's changed paths are checked against the
+Plan declaration, including paths later overwritten, deleted, renamed or reverted.
+
+Missing/duplicate records, gaps or unrecorded commits, unrelated HEAD, root/merge commits,
+shallow history, assume-unchanged/skip-worktree index entries, undeclared paths and uncommitted
+changes are refused. Mutable refs, non-UTF-8
+or control-character paths and repository-wide `.` declarations are unsupported. No base/head
+override or Task subset is accepted. There is no automatic fallback: the ordinary command still
+reviews the run-base scope if that is the intended complete scope. Milestone behavior is unchanged.
+
+Both modes retain the 512,000-byte ceiling, frozen rows, bundle checker and sealing rules.
+For an oversize Plan that has not started, split it with `dstack plan insert --after P1 …`.
+An in-progress Plan cannot be split by that command. If a valid committed range also exceeds
+the ceiling, stop and report the limitation; do not trim the diff, rewrite Task records, bypass
+busy guards or substitute a milestone ledger pass. This mode derives legacy ranges; it does
+not record or infer an unrecorded Plan-start boundary.
 
 ### 2. Launch the configured sub (R98)
 

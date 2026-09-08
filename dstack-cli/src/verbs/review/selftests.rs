@@ -9,7 +9,11 @@ use crate::selftest::sandbox::Sandbox;
 use crate::selftest::{Selftest, Verdict};
 
 pub fn all() -> Vec<Box<dyn Selftest>> {
-    vec![Box::new(CheckReviewBundle), Box::new(ReviewClose)]
+    vec![
+        Box::new(CheckReviewBundle),
+        Box::new(ReviewClose),
+        Box::new(super::committed_selftests::CommittedReview),
+    ]
 }
 
 /// The sandbox gets a hand-written plan.json with the exact shape of design §4.5, so the checker

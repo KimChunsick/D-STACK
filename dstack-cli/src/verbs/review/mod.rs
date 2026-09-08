@@ -45,13 +45,19 @@ macro_rules! review_verb {
 
 mod bundle;
 mod check_bundle;
+mod committed_range;
+mod committed_selftests;
 mod emit_diff;
 mod findings;
 mod rounds;
 mod selftests;
 
 review_verb!(Review, "review", bundle::review);
-review_verb!(CheckReviewBundle, "check review-bundle", check_bundle::check);
+review_verb!(
+    CheckReviewBundle,
+    "check review-bundle",
+    check_bundle::check
+);
 review_verb!(ReviewSeal, "review seal", rounds::seal);
 review_verb!(ReviewClose, "review close", rounds::close);
 

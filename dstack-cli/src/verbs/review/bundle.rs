@@ -12,6 +12,7 @@ use crate::store::plan_graph::{milestone_covers, plan_covers};
 use crate::store::review_index::{next_seq, sealed_counts};
 use crate::store::rows;
 
+use super::committed_range::CommittedRange;
 use super::emit_diff::{self, Counts};
 use super::{check_bundle, findings, lines, take, MAX_BUNDLE};
 
@@ -21,9 +22,13 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = resolve_target(ctx, args)?;
     let (mut scope, mut pid) = (String::new(), String::new());
     let (mut mid, mut out) = (String::new(), String::new());
+    let mut committed = false;
     let mut i = 0;
     while i < rest.len() {
-        if let Some((value, eaten)) = take(&rest, i, "scope")? {
+        if rest[i] == "--committed" && !committed {
+            committed = true;
+            i += 1;
+        } else if let Some((value, eaten)) = take(&rest, i, "scope")? {
             scope = value;
             i += eaten;
         } else if let Some((value, eaten)) = take(&rest, i, "plan")? {
@@ -36,7 +41,10 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
             out = value;
             i += eaten;
         } else {
-            fail!("unexpected argument: {} (dstack review --scope plan --plan P1)", rest[i]);
+            fail!(
+                "unexpected argument: {} (dstack review --scope plan --plan P1)",
+                rest[i]
+            );
         }
     }
     match scope.as_str() {
@@ -45,6 +53,9 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
         "plan" | "milestone" => {}
         _ => fail!("--scope must be plan or milestone (got '{scope}')"),
     }
+    if committed && scope != "plan" {
+        fail!("--committed is available only with --scope plan");
+    }
     if target.kind == TargetKind::Quick {
         fail!("quick tasks have no plans — nothing to review as a bundle (R99: review: off is the only place a skipped review is real)");
     }
@@ -52,7 +63,10 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
     let dir = target.dir.clone();
     let request = dir.join("request.md");
     if !request.is_file() {
-        fail!("no request.md in {} — a bundle without the request is what R69 forbids", dir.display());
+        fail!(
+            "no request.md in {} — a bundle without the request is what R69 forbids",
+            dir.display()
+        );
     }
     if !dir.join("request.approved").is_file() {
         fail!("request is not approved (dstack request approve) — the frozen section needs a frozen request");
@@ -69,7 +83,7 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
             }
             let covers = plan_covers(&doc, &pid);
             let wt = worktree(&doc, &dir, &pid, &roots.wt_root)?;
-            let (body, counts) = plan_bundle(&dir, &request, &doc, &pid, &covers, &wt)?;
+            let (body, counts) = plan_bundle(&dir, &request, &doc, &pid, &covers, &wt, committed)?;
             (pid.clone(), body, counts)
         }
         _ => {
@@ -109,16 +123,26 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
     // R69: only a bundle that survives its own checker leaves this command.
     if !check_bundle::check_file(ctx, &out, &dir)? {
         let _ = std::fs::remove_file(&out);
-        fail!("bundle deleted (it would have hidden a requirement): {}", out.display());
+        fail!(
+            "bundle deleted (it would have hidden a requirement): {}",
+            out.display()
+        );
     }
     say!(ctx, "  bundle: {}", out.display());
-    say!(ctx, "  bytes {total} of {MAX_BUNDLE}; diff files {}", counts.files);
+    say!(
+        ctx,
+        "  bytes {total} of {MAX_BUNDLE}; diff files {}",
+        counts.files
+    );
     Ok(())
 }
 
 /// Where the diff is read: the plan's own worktree, else the run's, else this checkout.
 fn worktree(doc: &PlanDoc, dir: &Path, pid: &str, wt_root: &Path) -> Result<String> {
-    let declared = doc.plan(pid).map(|p| p.worktree.clone()).unwrap_or_default();
+    let declared = doc
+        .plan(pid)
+        .map(|p| p.worktree.clone())
+        .unwrap_or_default();
     if !declared.is_empty() {
         return Ok(declared);
     }
@@ -135,8 +159,14 @@ fn plan_bundle(
     pid: &str,
     covers: &[String],
     wt: &str,
+    committed: bool,
 ) -> Result<(Vec<u8>, Counts)> {
     let plan = doc.plan(pid).expect("the plan was found above");
+    let range = if committed {
+        Some(CommittedRange::derive(Path::new(wt), plan)?)
+    } else {
+        None
+    };
     let base = meta_get(dir, "base_head")?.unwrap_or_default();
     let mut out = Vec::new();
     push(&mut out, "=== REQUEST (frozen) ===\n");
@@ -146,21 +176,36 @@ fn plan_bundle(
     push(&mut out, &format!("slug: {}\n", plan.slug));
     push(&mut out, &format!("status: {}\n", plan.status));
     push(&mut out, &format!("files: {}\n", plan.files.join(", ")));
-    push(&mut out, &format!("deps: {}\n", match plan.deps.is_empty() {
-        true => "(none)".to_string(),
-        false => plan.deps.join(", "),
-    }));
+    push(
+        &mut out,
+        &format!(
+            "deps: {}\n",
+            match plan.deps.is_empty() {
+                true => "(none)".to_string(),
+                false => plan.deps.join(", "),
+            }
+        ),
+    );
     for task in &plan.tasks {
-        push(&mut out, &format!(
-            "{} {} covers: {} files: {}\n",
-            task.id, task.slug, task.covers.join(", "), task.files.join(", ")
-        ));
+        push(
+            &mut out,
+            &format!(
+                "{} {} covers: {} files: {}\n",
+                task.id,
+                task.slug,
+                task.covers.join(", "),
+                task.files.join(", ")
+            ),
+        );
     }
     push(&mut out, "\n=== DIFF (allowed files only) ===\n");
-    push(&mut out, &format!("worktree: {wt}\nbase: {}\n", match base.is_empty() {
-        true => "none",
-        false => &base,
-    }));
+    push(&mut out, &format!("worktree: {wt}\n"));
+    if range.is_none() {
+        push(
+            &mut out,
+            &format!("base: {}\n", if base.is_empty() { "none" } else { &base }),
+        );
+    }
     // The shell expands `$files` unquoted, so a declared path carrying a space arrives as two.
     let files: Vec<String> = plan
         .files
@@ -168,12 +213,13 @@ fn plan_bundle(
         .split_whitespace()
         .map(String::from)
         .collect();
-    let counts = match files.is_empty() {
-        true => {
+    let counts = match range {
+        Some(range) => range.emit(&mut out, Path::new(wt))?,
+        None if files.is_empty() => {
             push(&mut out, "(the plan declares no files)\n");
             Counts::default()
         }
-        false => emit_diff::emit(&mut out, Path::new(wt), &base, &files),
+        None => emit_diff::emit(&mut out, Path::new(wt), &base, &files),
     };
     push(&mut out, "\n=== CONTRACT ===\n");
     push(&mut out, "Your first output is a per-R verdict table with one row per R id in the REQUEST section, in the form `| R | verdict (covered|partial|absent) | evidence in the diff |`; judge only against the frozen rows above, and cite the file and hunk that proves each verdict.\n");
