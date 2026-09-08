@@ -59,6 +59,7 @@ fn R21__oversize_refuses_both_default_and_explicit_publication_without_truncatin
         "--committed",
     ]);
     assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("(ceiling 512000)"));
     assert!(String::from_utf8_lossy(&out.stderr).contains("bundle exceeds 512KB"));
     assert!(!r.s.0.join(format!("{RUN}/review")).exists());
     r.s.write("bundle.txt", "existing output\n");

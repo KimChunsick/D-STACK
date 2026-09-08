@@ -3,6 +3,8 @@
 mod completeness;
 #[path = "r21_committed_review/refusals.rs"]
 mod refusals;
+#[path = "r21_committed_review/renames.rs"]
+mod renames;
 #[path = "support/committed_review.rs"]
 mod support;
 use support::{Repo, ROW};

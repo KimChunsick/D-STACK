@@ -194,6 +194,7 @@ impl CommittedRange {
         }
         // All changed paths were proved above, so no pathspec can silently narrow the diff.
         // Binary patches and disabled external/textconv drivers preserve complete source bytes.
+        // Pair renames only for presentation; path validation still counts both endpoints.
         out.extend_from_slice(&git(
             wt,
             &[
@@ -202,7 +203,7 @@ impl CommittedRange {
                 "--full-index",
                 "--no-ext-diff",
                 "--no-textconv",
-                "--no-renames",
+                "--find-renames=50%",
                 "--no-color",
                 "--no-relative",
                 "--unified=3",
