@@ -99,7 +99,7 @@ pub fn review(ctx: &mut Context, args: &[String]) -> Result<()> {
     let total = body.len();
     if total > MAX_BUNDLE {
         say!(ctx, "bundle would be {total} bytes (ceiling {MAX_BUNDLE})");
-        fail!("bundle exceeds 512KB: split the plan");
+        fail!("bundle exceeds 1024KB: split the plan");
     }
 
     let review_dir = dir.join("review");

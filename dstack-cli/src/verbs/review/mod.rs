@@ -13,7 +13,7 @@ use crate::core::verb::Verb;
 use crate::selftest::Selftest;
 
 /// R70's ceiling: past this, the answer is "split the plan", not "truncate".
-pub const MAX_BUNDLE: usize = 512000;
+pub const MAX_BUNDLE: usize = 1024000;
 
 /// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }

@@ -9,7 +9,7 @@ use std::process::{Command, Output};
 use support::Scratch;
 
 const RUN: &str = ".dstack/runs/sample";
-const CEILING: usize = 512000;
+const CEILING: usize = 1024000;
 // R14 acceptance is kept verbatim; the fixture covers the CLI behavior, not the live Goal.
 const ROW: &str = "- [ ] **R14** 리뷰 묶음이 큰 선언 파일의 변경 내용을 조용히 누락하지 않게 해요. 전체 크기 상한 안에서는 변경 전문을 포함하고 상한을 넘으면 불완전한 묶음을 내보내지 않고 거부해요. — accept: 64KB를 넘는 선언 파일의 처음과 마지막 변경이 모두 포함된 묶음이 검사 종료 코드 0으로 생성되고, 512KB 전체 상한과 선언 파일 경계는 유지돼요. 상한을 넘는 경우 종료 코드가 0이 아니고 불완전한 묶음이 생기지 않아요. 실제 연구 Goal P11.1 묶음에 factory_review.py 변경 전문이 포함돼요.";
 
@@ -238,7 +238,7 @@ fn R14__exact_total_ceiling_passes_and_one_extra_byte_publishes_nothing() {
     assert_eq!(
         bytes.len(),
         CEILING,
-        "R14 the unchanged ceiling is inclusive"
+        "R14 the ceiling superseded by R22 is inclusive"
     );
     complete(&bytes, &expected_diff(&s, "large.txt", false));
     s.write("large.txt", &large("BOUNDARY", size + 1));
@@ -247,8 +247,8 @@ fn R14__exact_total_ceiling_passes_and_one_extra_byte_publishes_nothing() {
     for out in [Some("bundle.txt"), None] {
         let result = generate(&s, out, &["large.txt", "outside.txt"]);
         assert_eq!(result.status.code(), Some(1));
-        assert!(String::from_utf8_lossy(&result.stdout).contains("512001 bytes (ceiling 512000)"));
-        assert!(String::from_utf8_lossy(&result.stderr).contains("bundle exceeds 512KB"));
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1024001 bytes (ceiling 1024000)"));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("bundle exceeds 1024KB"));
         assert!(!s.0.join("bundle.txt").exists());
         assert!(!s.0.join(format!("{RUN}/review")).exists());
     }
@@ -257,14 +257,14 @@ fn R14__exact_total_ceiling_passes_and_one_extra_byte_publishes_nothing() {
 #[test]
 fn R14__combined_small_diffs_still_obey_the_total_ceiling() {
     let s = fixture(&["allowed"], &[]);
-    for n in 0..9 {
+    for n in 0..18 {
         let path = format!("allowed/file{n}.txt");
         s.write(&path, &large("COMBINED", 60000));
         assert!(expected_diff(&s, &path, false).len() < 65536);
     }
     let result = generate(&s, Some("bundle.txt"), &["outside.txt"]);
     assert_eq!(result.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&result.stderr).contains("bundle exceeds 512KB"));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("bundle exceeds 1024KB"));
     assert!(!s.0.join("bundle.txt").exists());
     assert!(!s.0.join(format!("{RUN}/review")).exists());
 }

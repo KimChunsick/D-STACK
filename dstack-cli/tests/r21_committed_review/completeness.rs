@@ -39,15 +39,15 @@ fn R21__large_text_tail_and_binary_diff_are_complete_despite_git_driver_settings
     assert!(bundle.contains("+FIRST\n"));
     assert!(bundle.contains("+LAST\n"));
     assert!(bundle.contains("GIT binary patch"));
-    assert!(bundle.len() <= 512000);
+    assert!(bundle.len() <= 1024000);
 }
 
 #[test]
 fn R21__oversize_refuses_both_default_and_explicit_publication_without_truncating() {
     let r = Repo::new();
-    let head = r.task(&format!("FIRST\n{}\nLAST\n", "x".repeat(512000)));
+    let head = r.task(&format!("FIRST\n{}\nLAST\n", "x".repeat(1024000)));
     r.plan(&[&head]);
-    r.refused("bundle exceeds 512KB");
+    r.refused("bundle exceeds 1024KB");
     let out = r.run(&[
         "review",
         "--run",
@@ -59,8 +59,8 @@ fn R21__oversize_refuses_both_default_and_explicit_publication_without_truncatin
         "--committed",
     ]);
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stdout).contains("(ceiling 512000)"));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("bundle exceeds 512KB"));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("(ceiling 1024000)"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("bundle exceeds 1024KB"));
     assert!(!r.s.0.join(format!("{RUN}/review")).exists());
     r.s.write("bundle.txt", "existing output\n");
     assert_eq!(r.review(true).status.code(), Some(1));

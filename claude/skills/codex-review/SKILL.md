@@ -74,7 +74,7 @@ or control-character paths and repository-wide `.` declarations are unsupported.
 override or Task subset is accepted. There is no automatic fallback: the ordinary command still
 reviews the run-base scope if that is the intended complete scope. Milestone behavior is unchanged.
 
-Both modes retain the 512,000-byte ceiling, frozen rows, bundle checker and sealing rules.
+Both modes retain the 1,024,000-byte ceiling, frozen rows, bundle checker and sealing rules.
 For an oversize Plan that has not started, split it with `dstack plan insert --after P1 …`.
 An in-progress Plan cannot be split by that command. If a valid committed range also exceeds
 the ceiling, stop and report the limitation; do not trim the diff, rewrite Task records, bypass
