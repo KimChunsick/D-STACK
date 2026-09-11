@@ -56,9 +56,10 @@ fn R18__developers_own_semantic_boundaries_with_proportional_judgment() {
             "missing shared responsibility: {concept}"
         );
     }
-    for (role, concepts) in [
+    for (role, effort, concepts) in [
         (
             "frontend-dev",
+            "max",
             vec![
                 "server state",
                 "hook",
@@ -78,6 +79,7 @@ fn R18__developers_own_semantic_boundaries_with_proportional_judgment() {
         ),
         (
             "general-dev",
+            "xhigh",
             vec![
                 "domain",
                 "adapter",
@@ -104,8 +106,11 @@ fn R18__developers_own_semantic_boundaries_with_proportional_judgment() {
         }
         assert!(!text.contains("no abstraction for one use"));
         assert!(!text.contains("Tokens spent on edits are best minimised"));
-        assert!(text.contains(
-            "model: opus\neffort: max\nmaxTurns: 80\ntools: Read, Edit, Write, Grep, Glob, Bash"
-        ));
+        assert!(
+            text.contains(&format!(
+                "model: opus\neffort: {effort}\nmaxTurns: 80\ntools: Read, Edit, Write, Grep, Glob, Bash"
+            )),
+            "{role} frontmatter"
+        );
     }
 }
