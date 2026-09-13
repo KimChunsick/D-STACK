@@ -11,15 +11,26 @@ Do not start a main workflow from a role prompt or launch another main session. 
 `dstack prompt render` supplies the role verbatim inline, do not reload the same source.
 
 For an explicit user handoff request, read `~/.codex/skills/dstack-handoff/SKILL.md` before the
-ordinary host check. A saved main/actual-host mismatch permits only handoff preparation/resume;
+ordinary host check. A Goal's saved main/actual-host mismatch permits only handoff preparation/resume;
 in a new destination main, read RESUME.md and complete `dstack handoff resume` before any other
-main work. Do not adopt, refresh mode or start workers to bypass that boundary.
+main work. Do not adopt, refresh mode or start workers to bypass that Goal boundary.
+
+For an explicit user-authorized quick settings refresh, read runtime.md's quick-only entry and
+the shared dstack-quick skill before the ordinary host check. In that quick's worktree, run
+`dstack quick resume <slug> --refresh-mode --host codex` only when project main is codex.
+This atomically changes only the open quick's saved main/sub; request/approval, evidence,
+reviews, quick state, CURRENT and other targets stay intact. Repeat
+`dstack mode show --host codex --quick <slug>`, then ordinary quick resume, which is read-only.
+Quick tasks have no session owner; this needs no Goal handoff packet or source-session stop
+acknowledgement. It changes neither the current engine nor Goal ownership and cannot bypass
+a Goal handoff. Invalid arguments, targets, mode files, paths or required tools refuse unchanged.
 
 Otherwise this is the main session. Read `~/.codex/runtime.md`, run
 `dstack mode show --host codex` (with `--run <id>` or `--quick <slug>` for an explicit target),
 and route file work through `~/.codex/skills/dstack-workflow/SKILL.md`. The shared
 `dstack-develop`, `dstack-verify`, `dstack-quick` and `unit-test` skills continue that workflow.
-Pure questions and lookups do not start a run. A host mismatch requires a new session in the
+Pure questions and lookups do not start a run. Outside the explicit entries above, a host mismatch
+requires a new session in the
 selected environment; the command cannot switch this conversation's engine.
 
 Main delegation uses native `spawn_agent` with fresh bounded briefs and inherited model/effort

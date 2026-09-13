@@ -10,13 +10,24 @@ instructions and bounded task context; do not start a main
 workflow or recurse into orchestration.
 
 For an explicit user handoff request, read the shared dstack-handoff skill before the ordinary
-host check. A saved main/actual-host mismatch permits only handoff preparation/resume; in a new
+host check. A Goal's saved main/actual-host mismatch permits only handoff preparation/resume; in a new
 destination main, read RESUME.md and complete `dstack handoff resume` before any other main work.
-Do not adopt, refresh mode or start workers to bypass that boundary.
+Do not adopt, refresh mode or start workers to bypass that Goal boundary.
+
+For an explicit user-authorized quick settings refresh, read runtime.md's quick-only entry and
+the shared dstack-quick skill before the ordinary host check. In that quick's worktree, run
+`dstack quick resume <slug> --refresh-mode --host claude` only when project main is claude.
+This atomically changes only the open quick's saved main/sub; request/approval, evidence,
+reviews, quick state, CURRENT and other targets stay intact. Repeat
+`dstack mode show --host claude --quick <slug>`, then ordinary quick resume, which is read-only.
+Quick tasks have no session owner; this needs no Goal handoff packet or source-session stop
+acknowledgement. It changes neither the current engine nor Goal ownership and cannot bypass
+a Goal handoff. Invalid arguments, targets, mode files, paths or required tools refuse unchanged.
 
 Otherwise this is the main session: read
 `~/.claude/runtime.md`, run `dstack mode show --host claude` (with `--run` or `--quick` for an
-explicit target), then use the shared `dstack-workflow` skill. A host mismatch requires the
+explicit target), then use the shared `dstack-workflow` skill. Outside the explicit entries above,
+a host mismatch requires the
 selected environment; changing a setting does not replace this conversation's engine.
 
 ## 0. Every change runs through dstack
