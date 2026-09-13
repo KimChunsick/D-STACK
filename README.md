@@ -68,9 +68,10 @@ dstack mode exec audit-batch-001 --role audit --context audit-context.md --outpu
 ```
 
 `--writable <dir>`는 감사 역할에 대상(`--run`·`--quick`)까지 준 codex 서브에서만 받아요. 이 옵션을
-주면 그 실행만 workspace-write 샌드박스로 바뀌고 작업 루트가 `<dir>`로 잡혀서, 쓸 수 있는 곳은 그
-디렉터리 하나예요. 경로는 이미 있어야 하고 `--worktree`를 줬다면 그 아래에 있어야 해요. 캡처
-디렉터리에는 `sandbox` 영수증이 함께 남고, 옵션을 빼면 지금처럼 읽기 전용으로 실행해요.
+주면 그 실행만 workspace-write 샌드박스로 바뀌고 작업 루트가 `<dir>`로 잡혀요. codex가 기본으로
+열어 두는 `/tmp`와 `$TMPDIR`까지 함께 막아서 쓸 수 있는 곳은 그 디렉터리 하나뿐이에요. 경로는 이미
+있어야 하고 `--worktree`를 줬다면 그 아래에 있어야 해요. 캡처 디렉터리에는 `sandbox` 영수증이 함께
+남고, 옵션을 빼면 지금처럼 읽기 전용으로 실행해요.
 
 서브가 Codex면 gpt-6-astra, Claude면 opus를 high 강도로 실행해요. 메인과 서브가 같아도 매번
 별도의 읽기 전용 세션에서 검토해요. 성공한 구조화 결과를 받은 뒤에만 출력 파일을 만들고,

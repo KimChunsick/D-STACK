@@ -15,6 +15,13 @@ fn artifacts(t: &Scratch) -> String {
     dir.canonicalize().unwrap().to_str().unwrap().to_string()
 }
 
+/// Codex leaves `/tmp` and `$TMPDIR` writable under workspace-write unless both exclusions ride
+/// with the sandbox flag, so the granted directory would not be the only writable place.
+const EXCLUSIONS: &str = concat!(
+    "-c sandbox_workspace_write.exclude_slash_tmp=true ",
+    "-c sandbox_workspace_write.exclude_tmpdir_env_var=true"
+);
+
 fn argv(stdout: &[u8]) -> (serde_json::Value, Vec<String>) {
     let plan: serde_json::Value = serde_json::from_slice(stdout).unwrap();
     let argv = plan["argv"]
@@ -56,6 +63,8 @@ fn r01_audit_writable_roots_the_codex_sandbox_at_the_writable_directory() {
     );
     let (plan, argv) = argv(&output.stdout);
     assert_eq!(after(&argv, "--sandbox"), "workspace-write");
+    let at = argv.iter().position(|value| value == "--sandbox").unwrap();
+    assert_eq!(argv[at + 2..at + 6].join(" "), EXCLUSIONS, "{argv:?}");
     assert_eq!(after(&argv, "-C"), dir);
     assert!(!argv.iter().any(|value| value == "read-only"), "{argv:?}");
     assert_eq!(plan["cwd"], dir);
@@ -136,7 +145,10 @@ fn r04_audit_writable_keeps_the_sandbox_and_root_in_the_capture() {
         String::from_utf8_lossy(&output.stderr)
     );
     let cmd = t.read(".dstack/local/exec/check/cmd");
-    assert!(cmd.contains("--sandbox workspace-write"), "{cmd}");
+    assert!(
+        cmd.contains(&format!("--sandbox workspace-write {EXCLUSIONS}")),
+        "{cmd}"
+    );
     assert!(cmd.contains(&format!("-C {dir}")), "{cmd}");
     assert_eq!(
         t.read(".dstack/local/exec/check/sandbox"),
@@ -159,7 +171,9 @@ fn r05_without_writable_the_read_only_argv_and_receipt_stay() {
     let worktree = t.0.join("work").canonicalize().unwrap();
     assert_eq!(after(&argv, "-C"), worktree.to_str().unwrap());
     assert!(
-        !argv.iter().any(|value| value == "workspace-write"),
+        !argv
+            .iter()
+            .any(|value| value == "workspace-write" || value.contains("sandbox_workspace_write")),
         "{argv:?}"
     );
     assert_eq!(plan["cwd"], worktree.to_str().unwrap());

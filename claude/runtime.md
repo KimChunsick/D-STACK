@@ -169,9 +169,9 @@ dstack mode exec audit-batch-001 --role audit --context <context-file> --output 
 
 `--writable <dir>` is refused unless the role is audit, a target (`--run`/`--quick`) is named and
 that target's saved sub is codex; the directory must exist and stay inside `--worktree`. It moves
-that one session to the workspace-write sandbox and roots it at `<dir>`, so `<dir>` is the only
-writable place and reads are unchanged; the capture keeps a `sandbox` receipt beside `cmd`.
-Every other pass stays read-only.
+that one session to the workspace-write sandbox, roots it at `<dir>` and excludes the `/tmp` and
+`$TMPDIR` roots codex would otherwise add, so exactly `<dir>` is writable and reads are unchanged;
+the capture keeps a `sandbox` receipt beside `cmd`. Every other pass stays read-only.
 
 Use `--dry-run` to inspect provider, role, model, argv, cwd and output without launching or
 writing. It is configuration evidence only. Keep legacy `codex-review-NNN.md` sealed names and

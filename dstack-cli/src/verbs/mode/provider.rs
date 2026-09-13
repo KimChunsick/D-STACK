@@ -20,7 +20,8 @@ struct ClaudeResult {
 
 /// Codex keeps its working root writable under workspace-write, so the sandbox and the root are
 /// one decision: read-only roots at the worktree, workspace-write roots at the writable directory
-/// and nothing outside it becomes writable. Claude has no sandbox knob and ignores this.
+/// and, with /tmp and $TMPDIR excluded, nothing outside it becomes writable. Claude has no
+/// sandbox knob and ignores this.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sandbox {
     ReadOnly,
@@ -52,21 +53,36 @@ pub fn command(
 ) -> Vec<String> {
     let web = matches!(role, "research" | "audit");
     let mut args: Vec<String> = match provider {
-        Provider::Codex => [
-            "codex",
-            "exec",
-            "--ignore-user-config",
-            "-m",
-            "gpt-6-astra",
-            "-c",
-            "model_reasoning_effort=high",
-            "--sandbox",
-            sandbox.as_str(),
-            "--json",
-            "-o",
-        ]
-        .map(str::to_string)
-        .into(),
+        Provider::Codex => {
+            let mut codex: Vec<String> = [
+                "codex",
+                "exec",
+                "--ignore-user-config",
+                "-m",
+                "gpt-6-astra",
+                "-c",
+                "model_reasoning_effort=high",
+                "--sandbox",
+                sandbox.as_str(),
+            ]
+            .map(str::to_string)
+            .into();
+            // workspace-write also grants /tmp and $TMPDIR by default, which would put writable
+            // places outside the granted root; both exclusions belong to the sandbox decision.
+            if sandbox == Sandbox::WorkspaceWrite {
+                codex.extend(
+                    [
+                        "-c",
+                        "sandbox_workspace_write.exclude_slash_tmp=true",
+                        "-c",
+                        "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                    ]
+                    .map(str::to_string),
+                );
+            }
+            codex.extend(["--json", "-o"].map(str::to_string));
+            codex
+        }
         Provider::Claude => [
             "claude",
             "--print",
