@@ -10,6 +10,8 @@ Follow runtime.md's coordinator boundary, compact receipt and interruptible wait
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
+Before the ordinary host check, an explicitly authorized quick settings refresh follows
+runtime.md's quick-only exception and §9 below. It cannot bypass a Goal handoff.
 
 Same system, shorter path. A quick task uses the same request format, the same case ledger and
 the same checkers as a Goal; what changes is that everything costing a model round trip is off
@@ -164,11 +166,23 @@ after the user accepts it by name with `dstack verify --accept-abstain R<NN> --w
 | `dstack quick list` | Every quick task with its status and the counts by status |
 | `dstack quick status <slug>` | Fields, R rows, pending, cases for one task |
 | `dstack quick resume <slug>` | What this task still needs, item by item, with the command for each |
+| `dstack quick resume <slug> --refresh-mode --host <actual-provider>` | Explicitly copy project main/sub to this open quick's saved mode; actual host must match project main |
 | `dstack gate` | The Stop-hook verdict: it checks the run at `CURRENT` **and** every open quick task in this worktree, on the same conditions — R rows, evidence, `check coverage` |
 
 After a new session or `/clear`, check `dstack mode show --host <actual-provider> --quick <slug>`.
 Quick tasks need no adoption: they are not owned by a session. Run
 `dstack quick list`, then `dstack quick resume <slug>` and continue.
+
+When the user explicitly authorizes applying project settings to an existing quick, run the
+refresh command above before the ordinary host check, from that quick's worktree. This is the
+only quick exception to a saved-main mismatch: it requires project main to match the actual
+host. Invalid arguments, a missing/closed/ambiguous target, damaged mode files, redirected paths
+or missing required tools refuse before the snapshot write. Only the selected mode.json is
+atomically replaced; request/approval hash, evidence, reviews, quick state, CURRENT and other
+targets stay intact. Legacy quicks without mode.json use the historical pair until refreshed.
+Repeat the target host check, then ordinary resume to inspect remaining work. Refresh success
+does not mean evidence is complete. Ordinary resume stays read-only. No session ownership or
+Goal handoff is added, and the command cannot change the current conversation's engine.
 
 **Tidy at milestone close (R99)**: when a Milestone of the Goal run closes, run
 `dstack quick list`, close every finished quick task with `dstack quick close <slug>`, and name

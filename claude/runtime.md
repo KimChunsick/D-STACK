@@ -12,9 +12,22 @@ Before the ordinary host check below, route an explicit user request to prepare 
 handoff through the shared dstack-handoff skill. The saved main may differ from the current
 host; this exception permits only handoff preparation/resume. Read the CLI-produced RESUME.md
 in a new destination main and complete `dstack handoff resume` before other main work.
-Never adopt, refresh mode or start workers to bypass the mismatch. Resume requires explicit
+For a Goal, never adopt, refresh mode or start workers to bypass the mismatch. Resume requires explicit
 acknowledgement that the source session and all native workers are stopped. Failed or stale
 packets need fresh preparation. A command cannot change the current conversation's engine.
+
+## Explicit quick mode refresh entry
+
+Before the ordinary host check, an explicit user-authorized quick settings refresh may use
+`dstack quick resume <slug> --refresh-mode --host <actual-provider>` in the target worktree.
+The actual host must match project main. The CLI validates the open quick, saved/project modes,
+local target path and tools required by its request, then atomically replaces only its mode.json.
+It preserves request/approval, evidence, reviews, quick state, CURRENT and other targets.
+Quick tasks have no session owner: no Goal handoff packet or source-session stop acknowledgement
+is required. This exception changes neither the current engine nor Goal ownership and never
+permits bypassing a Goal handoff. After success, repeat
+`dstack mode show --host <actual-provider> --quick <slug>`, then ordinary quick resume.
+Refresh success reports the settings transition independently of missing quick evidence.
 
 ## Enter from the actual host
 
@@ -30,7 +43,8 @@ Read `dstack status` at entry and after adopting a run. `dstack-workflow` routes
 handles quick tasks. These names select the same installed source in either home.
 Configuration changes apply to new runs and quick tasks. An existing run keeps its snapshot
 until `dstack run adopt --refresh-mode` explicitly refreshes it. Ordinary adoption preserves it.
-After refresh, repeat the host check in the selected new session before continuing work.
+An existing quick keeps its snapshot until the explicit quick refresh above; ordinary quick
+resume is read-only. After refresh, repeat the target host check before continuing work.
 
 ## Coordinator boundary and compact receipt (R15–R17)
 

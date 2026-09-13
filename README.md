@@ -49,10 +49,22 @@ dstack mode show --host claude --run <run-id>   # Claude 세션에서 지정한 
 dstack mode show --host codex --quick <slug>   # quick 작업은 저장된 조합을 확인해요
 dstack run adopt                              # 기존 조합을 유지하며 이어받아요
 dstack run adopt --refresh-mode               # 현재 프로젝트 설정으로 명시적으로 바꿔 받아요
+dstack quick resume <slug>                    # 남은 항목만 조회해요
+dstack quick resume <slug> --refresh-mode --host codex # 열린 quick에 프로젝트 설정을 반영해요
 ```
 
 일반 작업에서 실행 중인 앱과 메인 설정이 다르면 인계 방법을 출력하고 작업을 멈춰요.
 사용자가 인계를 명시적으로 요청했을 때는 아래 절차로 준비와 재개만 진행할 수 있어요.
+열린 quick의 설정 갱신을 명시적으로 승인했다면, 해당 quick의 작업 디렉터리에서 위 갱신
+명령을 호스트 검사보다 먼저 실행할 수 있어요. `--host`는 실제 앱과 프로젝트의 새 main에
+맞춰요. Claude 세션에서는 `--host claude`를 써요. 선택한 quick의 `mode.json`만 원자적으로
+바꾸고 요청서·승인 해시·증거·리뷰·작업 상태·CURRENT·다른 작업은 유지해요. 잘못된 인자,
+없거나 닫힌 작업, 중복 상태 행, 손상된 설정, 다른 경로로 연결된 대상과 필수 도구 누락은
+설정을 바꾸기 전에 거부해요. 성공 뒤에는 해당 quick의 호스트 검사를 반복하고 일반 재개로
+남은 항목을 확인해요. 갱신 성공은 증거 완료를 뜻하지 않아요. 저장된 설정이 없는 예전
+quick도 이 경로로 갱신할 수 있어요. 현재 대화의 엔진이나 Goal 소유권은 바꾸지 않으며,
+Goal 인계 절차를 대신하지 않아요. 이 명령도 아래의 기존 `install.sh` 설치 절차로 반영해요.
+
 Claude 메인은 `Agent`로 구현에 opus, 탐색·검증에 sonnet을 쓰고, Codex 메인은
 기본 `spawn_agent`로 새 맥락의 워커를 실행해요. Codex 워커는 메인 세션의 모델과 추론 강도를
 물려받아요. D-STACK 호출 기준은 gpt-6-astra와 high이고, 실제 관찰한 엔진을 기록해요.

@@ -10,6 +10,12 @@ Follow runtime.md's coordinator boundary, compact receipt and interruptible wait
 Read the shared `runtime.md` installed in the current provider's agent home before this skill.
 Its host check, native worker mapping, main-only questions/state and mandatory CLI gates apply.
 The same source is installed for Claude and Codex; provider selection never changes these gates.
+An explicit user-authorized quick settings refresh follows runtime.md's quick-only entry before
+the ordinary host check: use **dstack-quick** §9 and
+`dstack quick resume <slug> --refresh-mode --host <actual-provider>` in that quick's worktree.
+The actual host must match project main; only the open quick's saved mode changes. Repeat its
+host check and ordinary resume afterward. This neither changes the current engine nor grants
+Goal ownership, and it never bypasses the explicit Goal handoff procedure.
 
 You are the **main loop**. The host question tool is main-only (R47), so every human round trip
 happens here. Subagents get bounded briefs and return text; the main session records state.
@@ -24,6 +30,7 @@ you read that output and relay it (§3-1, §3-2).
 | New work arrives, `.dstack` store exists | Run this skill from §2 |
 | No store yet | `dstack init`, then §2 |
 | Session resumed / after `/clear` | `dstack run adopt` (or `dstack run adopt <id>`), then continue where `dstack status` says |
+| Existing quick resumed or explicitly authorized for settings refresh | **dstack-quick** §9; ordinary resume is read-only, refresh uses the explicit entry above |
 | A Plan has to be built or executed | Stop here, hand to **dstack-develop** |
 | Evidence, ledger, report | **dstack-verify** |
 | Pure question, lookup or conversation without file work | No pipeline at all |

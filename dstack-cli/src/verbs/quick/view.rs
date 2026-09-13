@@ -115,9 +115,12 @@ fn status(ctx: &mut Context, args: &[String]) -> Result<()> {
 /// What a fresh session must do next. Everything printed here is a command, not a description:
 /// a resumed quick task is resumed by a context that has read nothing.
 fn resume(ctx: &mut Context, args: &[String]) -> Result<()> {
+    let (slug, host) = super::refresh::parse(args)?;
+    if let Some(host) = host {
+        return super::refresh::run(ctx, &slug, host);
+    }
     let roots = ctx.roots()?;
     roots.require_store()?;
-    let slug = args.first().cloned().unwrap_or_default();
     let dir = require_dir(&roots.quick, &slug, "resume")?;
     let request = dir.join("request.md");
     let (mut checked, mut missing) = (1, 0);

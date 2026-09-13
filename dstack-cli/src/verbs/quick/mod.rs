@@ -42,6 +42,7 @@ macro_rules! quick_verb {
 
 pub mod close;
 pub mod new;
+mod refresh;
 pub mod selftests;
 pub mod state;
 pub mod view;

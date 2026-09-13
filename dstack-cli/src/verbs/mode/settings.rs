@@ -116,6 +116,10 @@ fn application(project: Mode, selection: &Selection) -> String {
         Some(target) if target.kind == TargetKind::Run => {
             format!("dstack run adopt {} --refresh-mode", target.id)
         }
+        Some(target) => format!(
+            "dstack quick resume {} --refresh-mode --host {}",
+            target.id, project.main
+        ),
         _ => "dstack run adopt <id> --refresh-mode".to_string(),
     };
     let continuation = if selection.target.is_some() {
@@ -125,7 +129,8 @@ fn application(project: Mode, selection: &Selection) -> String {
     };
     format!(
         "project settings apply to new runs and quick tasks; start {} in a new session for main={}. \
-         Existing runs retain their snapshot until `{refresh}`.{continuation}",
+         Existing targets retain their snapshot until explicitly refreshed: `{refresh}`. \
+         Quick refresh requires an open task and host matching project main.{continuation}",
         project.main, project.main
     )
 }
@@ -141,6 +146,13 @@ fn host_handoff(project: Mode, selection: &Selection, host: Provider) -> String 
                     target.id, target.id, selection.mode.main
                 );
             }
+            return format!(
+                "project main={host} is ready in this session; an explicitly authorized open quick \
+                 refresh uses `dstack quick resume {} --refresh-mode --host {host}`. \
+                 An ordinary `dstack quick resume {}` preserves main={}; \
+                 refresh changes only the saved mode, not this session's engine or Goal ownership.",
+                target.id, target.id, selection.mode.main
+            );
         }
     }
     handoff(selection)

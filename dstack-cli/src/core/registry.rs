@@ -71,7 +71,7 @@ pub const ROSTER: [(&str, &str); 70] = [
     ("quick new", "open a quick task outside any run (--discuss --research --review --validate --full)"),
     ("quick list", "quick tasks by status"),
     ("quick status", "state of one quick task"),
-    ("quick resume", "print what a quick task still needs"),
+    ("quick resume", "print missing work; --refresh-mode --host claude|codex explicitly applies project mode to an open quick"),
     ("quick close", "report and close a quick task"),
     ("issue new", "file the friction you hit with dstack itself into ~/Documents/dstack-issues (--symptom, --repro, --source, --proposal)"),
     ("issue list", "what has been filed: one row per issue with its sightings count and last seen"),
