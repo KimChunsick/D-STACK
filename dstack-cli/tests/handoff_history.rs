@@ -294,7 +294,7 @@ fn r06_handoff_history_resolves_canonical_paths_and_rejects_unreadable_candidate
     assert_eq!(history.path, path.to_str().unwrap());
     assert_eq!(history.cwd, t.0.to_str().unwrap());
     let bad = t.file(".codex/sessions/2026/09/06/rollout-old-session-1.jsonl", "unreadable");
-    fs::set_permissions(&bad, fs::Permissions::from_mode(0)).unwrap();
+    fs::set_permissions(&bad, fs::Permissions::from_mode(0o000)).unwrap();
     if fs::File::open(&bad).is_err() {
         let error = locate(Codex, "session-1", &t.0, &t.0).unwrap_err().to_string();
         assert!(error.contains("read") && !error.contains("missing"), "{error}");

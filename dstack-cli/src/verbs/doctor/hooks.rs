@@ -142,8 +142,6 @@ mod tests {
             lines.iter().any(|line| line.starts_with("  registered: ")),
             "no count line:\n{printed}"
         );
-        assert!(lines
-            .iter()
-            .any(|line| *line == "hook last results (event | exit | at | note):"));
+        assert!(lines.contains(&"hook last results (event | exit | at | note):"));
     }
 }

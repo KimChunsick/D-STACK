@@ -93,7 +93,7 @@ pub fn run_metrics(ctx: &mut Context, roots: &Roots, target: &Target, rate: &str
             add("main-loop-tokens", why.clone(), source.clone());
             add("subagent-tokens", why, source);
         } else {
-            add("main-loop-tokens", usage_sum(&[transcript.clone()]).to_string(), transcript.display().to_string());
+            add("main-loop-tokens", usage_sum(std::slice::from_ref(&transcript)).to_string(), transcript.display().to_string());
             let session = transcript.file_stem().unwrap_or_default().to_string_lossy().into_owned();
             let sub = transcript.parent().unwrap_or(Path::new("")).join(session).join("subagents");
             let mut found: Vec<PathBuf> = Vec::new();

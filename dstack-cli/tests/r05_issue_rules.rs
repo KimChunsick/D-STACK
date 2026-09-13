@@ -244,8 +244,7 @@ fn redirects(line: &str) -> bool {
         }
         let target = chars[at + 1..]
             .iter()
-            .skip_while(|c| **c == '>' || **c == ' ')
-            .next();
+            .find(|c| **c != '>' && **c != ' ');
         if target.is_some_and(|c| {
             *c == '"' || *c == '\'' || *c == '$' || *c == '~' || *c == '/' || *c == '.'
         }) {

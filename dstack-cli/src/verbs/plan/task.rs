@@ -114,7 +114,8 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     }
 
     let tids = doc.task_ids();
-    let id = format!("T{}", tids.iter().map(shell_number).max().unwrap_or(0) + 1);
+    let highest = tids.iter().map(|id| shell_number(id)).max().unwrap_or(0);
+    let id = format!("T{}", highest + 1);
     let task = Task {
         id: id.clone(),
         slug: slug.clone(),
@@ -140,7 +141,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
 }
 
 /// awk's `substr($0, 2) + 0`: the digits after the leading letter, and 0 when there are none.
-fn shell_number(id: &String) -> u32 {
+fn shell_number(id: &str) -> u32 {
     let digits: String = id
         .chars()
         .skip(1)

@@ -299,7 +299,7 @@ mod tests {
 
     #[test]
     fn r01__probe_test_x_expands_home() {
-        let home = PathBuf::from(std::env::var("HOME").expect("HOME"));
+        let _home = PathBuf::from(std::env::var("HOME").expect("HOME"));
         assert_eq!(probe_path("/usr/bin/true"), PathBuf::from("/usr/bin/true"));
         assert!(tool_present("test -x \"/bin/sh\"").expect("supported form"));
         assert!(!tool_present("test -x \"$HOME/dstack-no-such-tool-xyz\"").expect("supported form"));

@@ -419,8 +419,7 @@ fn r05__a_checker_that_cannot_run_is_not_a_verdict() {
     // A fixture that cannot be put in front of the checker is a failure of the runner.
     let error = by("lint-ko")
         .run(&mut ctx, std::path::Path::new("/no/such/fixture.md"))
-        .err()
-        .expect("the fixture cannot be copied");
+        .expect_err("the fixture cannot be copied");
     assert_eq!(error.code(), 2);
     // selftest_lint_ko_rules answers for a missing table itself, and its answer is reject.
     let verdict = by("lint-ko-rules")

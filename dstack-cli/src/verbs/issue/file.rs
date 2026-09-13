@@ -94,7 +94,7 @@ pub fn summary(text: &str, name: &str) -> Summary {
     let last = text
         .lines()
         .filter_map(|line| line.strip_prefix("- "))
-        .last()
+        .next_back()
         .and_then(|line| line.split("  ").next())
         .unwrap_or_default();
     let or_dash = |value: &str| match value.is_empty() {

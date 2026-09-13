@@ -31,7 +31,7 @@ pub fn next_int_id(doc: &PlanDoc, prefix: &str) -> String {
 pub fn next_decimal_id(parent: &str, taken: &[String]) -> Result<String> {
     for k in 1..=99 {
         let id = format!("{parent}.{k}");
-        if !taken.iter().any(|t| *t == id) {
+        if !taken.contains(&id) {
             return Ok(id);
         }
     }

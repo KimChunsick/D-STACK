@@ -518,9 +518,8 @@ fn r07__a_payload_only_the_reference_reads_is_a_block() {
         );
     }
     // Every event that decides something blocks; inject carries a note and exits 0.
-    let write = format!(
-        r#"{{"session_id":"s1","cwd":".","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{{"file_path":"README.md","budget":1e400,"content":"정본은 이 파일이에요.\n"}}}}"#
-    );
+    let write = r#"{"session_id":"s1","cwd":".","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"README.md","budget":1e400,"content":"정본은 이 파일이에요.\n"}}"#
+        .to_string();
     for (event, payload) in [("pre-write", write.as_str()), ("stop", &cases[0].1)] {
         let answered = port.call(&[event], payload);
         assert_eq!(

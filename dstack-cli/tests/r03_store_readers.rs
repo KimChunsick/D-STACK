@@ -220,7 +220,7 @@ fn collect(at: &Path, root: &Path, files: &mut Vec<(String, Vec<u8>)>) {
 
 fn chmod(path: &Path, mode: &str) {
     let done = Command::new("chmod")
-        .args([mode, &path.to_string_lossy().into_owned()])
+        .args([mode, &path.to_string_lossy()])
         .output()
         .expect("run chmod");
     assert!(done.status.success(), "chmod {mode} {path:?} failed");

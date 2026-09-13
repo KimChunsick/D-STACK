@@ -47,10 +47,8 @@ impl<'a> Decoder<'a> {
     }
 
     fn identity(&mut self, value: &Value, key: &str, line: usize, required: bool) -> Result<()> {
-        if required || value.get(key).is_some() {
-            if string(value, key, line)? != self.session {
-                return Err(bad(line, "history session identity mismatch"));
-            }
+        if (required || value.get(key).is_some()) && string(value, key, line)? != self.session {
+            return Err(bad(line, "history session identity mismatch"));
         }
         if required || value.get("cwd").is_some() {
             let cwd = string(value, "cwd", line)?;

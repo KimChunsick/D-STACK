@@ -192,8 +192,7 @@ pub fn is_closed(dir: &Path, scope: &str, id: &str, round: &str) -> Result<bool>
 pub fn latest_round(dir: &Path, scope: &str, id: &str) -> Result<String> {
     Ok(index_rows(dir)?
         .into_iter()
-        .filter(|row| row.scope == scope && row.id == id)
-        .next_back()
+        .rfind(|row| row.scope == scope && row.id == id)
         .map(|row| row.round)
         .unwrap_or_else(|| "000".to_string()))
 }

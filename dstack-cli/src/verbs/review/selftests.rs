@@ -120,7 +120,7 @@ impl Selftest for ReviewClose {
         let (checked, output) = sandbox.dsx(ctx, &["verify", "--quick", "qq"])?;
         Ok(match checked {
             2 if output.lines().any(|line| line == CLOSED) => Verdict::Pass,
-            0 | 1 | 2 => Verdict::Reject,
+            0..=2 => Verdict::Reject,
             other => {
                 return Err(Error::cannot_decide(format!(
                     "selftest: dstack verify exited {other} instead of judging the closed row"

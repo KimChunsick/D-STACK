@@ -599,8 +599,7 @@ fn r04__list_prints_a_row_per_file_and_a_closing_count() {
     let filed = read(&folder(&home).join(format!("{SLUG}.md")));
     let last = filed
         .lines()
-        .filter(|line| line.starts_with("- 20"))
-        .last()
+        .rfind(|line| line.starts_with("- 20"))
         .expect("a sighting line")
         .split("  ")
         .next()

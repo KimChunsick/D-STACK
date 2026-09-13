@@ -306,9 +306,6 @@ pub fn kind_word(kind: TargetKind) -> &'static str {
     }
 }
 
-/// verify: the fixture is a request.md; `<!-- selftest-tamper: yes -->` makes the driver edit a
-/// recorded artifact after recording it, which is exactly the hand-edit the sha256 recheck owes
-
 #[cfg(test)]
 mod tests {
     use super::*;
