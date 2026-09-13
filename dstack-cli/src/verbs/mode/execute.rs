@@ -7,19 +7,26 @@ use serde_json::json;
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::mode;
+use crate::core::mode::{self, Provider};
 use crate::verbs::exec;
 
-use super::provider;
+use super::provider::{self, Sandbox};
 
 pub fn run(ctx: &mut Context, args: &[String]) -> Result<()> {
     let options = Options::parse(args)?;
     let roots = ctx.roots()?;
     let selected = mode::selected(&roots, options.target)?;
-    let cwd = directory(
+    let sub = selected.mode.sub;
+    let worktree = directory(
         options.worktree.map(Path::new).unwrap_or(&roots.wt_root),
         "worktree",
     )?;
+    let writable = writable_root(&options, sub, &worktree)?;
+    let sandbox = match writable {
+        Some(_) => Sandbox::WorkspaceWrite,
+        None => Sandbox::ReadOnly,
+    };
+    let cwd = writable.unwrap_or(worktree);
     let context = fs::canonicalize(options.context)
         .map_err(|e| Error::failed(format!("cannot read context: {e}")))?;
     if !context.is_file() {
@@ -39,18 +46,23 @@ pub fn run(ctx: &mut Context, args: &[String]) -> Result<()> {
     if rendered.code != 0 {
         return Err(Error::failed(rendered.stderr.trim_end()));
     }
-    let sub = selected.mode.sub;
     if options.dry_run {
         ctx.out.say(
             &json!({"provider":sub, "role":options.role, "model":provider::model(sub),
-            "argv":provider::command(sub, options.role, &cwd, &planned.join("result.txt")),
+            "argv":provider::command(sub, options.role, &cwd, &planned.join("result.txt"), sandbox),
             "cwd":cwd, "output":output})
             .to_string(),
         );
         return Ok(());
     }
     let dir = exec::reserve(ctx, options.label)?;
-    let command = provider::command(sub, options.role, &cwd, &dir.join("result.txt"));
+    if sandbox == Sandbox::WorkspaceWrite {
+        // The capture keeps the one place this session could write, beside the argv that set it.
+        let path = dir.join("sandbox");
+        fs::write(&path, format!("{} {}\n", sandbox.as_str(), cwd.display()))
+            .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", path.display())))?;
+    }
+    let command = provider::command(sub, options.role, &cwd, &dir.join("result.txt"), sandbox);
     if !rendered.stderr.is_empty() {
         ctx.out.err_line(rendered.stderr.trim_end());
     }
@@ -81,6 +93,7 @@ struct Options<'a> {
     context: &'a str,
     output: &'a str,
     worktree: Option<&'a str>,
+    writable: Option<&'a str>,
     target: Option<(&'a str, &'a str)>,
     dry_run: bool,
 }
@@ -90,8 +103,9 @@ impl<'a> Options<'a> {
             .first()
             .filter(|a| !a.starts_with('-'))
             .ok_or_else(usage)?;
-        let (mut role, mut context, mut output, mut worktree, mut target, mut dry_run) =
-            (None, None, None, None, None, false);
+        let (mut role, mut context, mut output, mut worktree, mut writable) =
+            (None, None, None, None, None);
+        let (mut target, mut dry_run) = (None, false);
         let mut i = 1;
         while i < args.len() {
             let key = args[i].as_str();
@@ -113,6 +127,7 @@ impl<'a> Options<'a> {
                 "--context" => context.replace(value).is_some(),
                 "--output" => output.replace(value).is_some(),
                 "--worktree" => worktree.replace(value).is_some(),
+                "--writable" => writable.replace(value).is_some(),
                 "--run" | "--quick" => target.replace((&key[2..], value)).is_some(),
                 _ => return Err(usage()),
             };
@@ -124,16 +139,53 @@ impl<'a> Options<'a> {
         let role = role
             .filter(|r| matches!(*r, "review" | "research" | "audit"))
             .ok_or_else(usage)?;
+        if writable.is_some() {
+            // A writable sandbox belongs to one recorded task, so the caller names it explicitly:
+            // the review and research passes and an unnamed target keep the read-only sandbox.
+            if role != "audit" {
+                return Err(Error::failed(
+                    "--writable is accepted only with --role audit",
+                ));
+            }
+            if target.is_none() {
+                return Err(Error::failed(
+                    "--writable needs a target: --run <id> or --quick <slug>",
+                ));
+            }
+        }
         Ok(Self {
             label,
             role,
             context: context.ok_or_else(usage)?,
             output: output.ok_or_else(usage)?,
             worktree,
+            writable,
             target,
             dry_run,
         })
     }
+}
+
+/// The writable directory is the codex working root itself: under workspace-write that root is
+/// always writable and `--add-dir` only widens it, so rooting the session at `<dir>` is what keeps
+/// everything outside it read-only. A claude sub has no such knob and is refused instead.
+fn writable_root(options: &Options, sub: Provider, worktree: &Path) -> Result<Option<PathBuf>> {
+    let Some(path) = options.writable else {
+        return Ok(None);
+    };
+    if sub != Provider::Codex {
+        return Err(Error::failed(format!(
+            "--writable is codex-only, but the selected sub is {sub}"
+        )));
+    }
+    let dir = directory(Path::new(path), "--writable")?;
+    if options.worktree.is_some() && !dir.starts_with(worktree) {
+        return Err(Error::failed(format!(
+            "--writable must be inside --worktree {}",
+            worktree.display()
+        )));
+    }
+    Ok(Some(dir))
 }
 
 fn directory(path: &Path, name: &str) -> Result<PathBuf> {
@@ -198,5 +250,5 @@ fn publish(output: &Path, text: &[u8]) -> Result<()> {
 }
 
 fn usage() -> Error {
-    Error::failed("usage: dstack mode exec <label> --role review|research|audit --context <file> --output <file> [--worktree <dir>] [--quick <slug>|--run <id>] [--dry-run]")
+    Error::failed("usage: dstack mode exec <label> --role review|research|audit --context <file> --output <file> [--worktree <dir>] [--quick <slug>|--run <id>] [--writable <dir>] [--dry-run] (--writable: --role audit with a target and a codex sub only)")
 }

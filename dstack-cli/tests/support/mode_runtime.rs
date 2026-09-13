@@ -1,3 +1,6 @@
+// The sub-session scratch worktree: two fake providers on PATH, a saved mode and a trace
+// directory. Shared by every test binary that drives `dstack mode exec`.
+#![allow(dead_code)]
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;

@@ -164,7 +164,14 @@ numbered suffixes. Check the short completion/exit/usage receipt for the specifi
 dstack mode exec review-P1-001 --role review --context <context-file> --output <raw-file> --worktree <plan-worktree>
 dstack mode exec research-001 --role research --context <context-file> --output <pass-file> --run <run-id>
 dstack mode exec research-audit-001 --role audit --context <context-file> --output <audit-file> --quick <slug>
+dstack mode exec audit-batch-001 --role audit --context <context-file> --output <audit-file> --quick <slug> --writable <dir>
 ```
+
+`--writable <dir>` is refused unless the role is audit, a target (`--run`/`--quick`) is named and
+that target's saved sub is codex; the directory must exist and stay inside `--worktree`. It moves
+that one session to the workspace-write sandbox and roots it at `<dir>`, so `<dir>` is the only
+writable place and reads are unchanged; the capture keeps a `sandbox` receipt beside `cmd`.
+Every other pass stays read-only.
 
 Use `--dry-run` to inspect provider, role, model, argv, cwd and output without launching or
 writing. It is configuration evidence only. Keep legacy `codex-review-NNN.md` sealed names and

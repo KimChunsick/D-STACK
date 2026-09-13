@@ -1,4 +1,4 @@
-// Provider-specific read-only argv and successful completion normalization.
+// Provider-specific sandboxed argv and successful completion normalization.
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -18,6 +18,24 @@ struct ClaudeResult {
     result: String,
 }
 
+/// Codex keeps its working root writable under workspace-write, so the sandbox and the root are
+/// one decision: read-only roots at the worktree, workspace-write roots at the writable directory
+/// and nothing outside it becomes writable. Claude has no sandbox knob and ignores this.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sandbox {
+    ReadOnly,
+    WorkspaceWrite,
+}
+
+impl Sandbox {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ReadOnly => "read-only",
+            Self::WorkspaceWrite => "workspace-write",
+        }
+    }
+}
+
 pub fn model(provider: Provider) -> &'static str {
     match provider {
         Provider::Claude => "opus",
@@ -25,7 +43,13 @@ pub fn model(provider: Provider) -> &'static str {
     }
 }
 
-pub fn command(provider: Provider, role: &str, cwd: &Path, result: &Path) -> Vec<String> {
+pub fn command(
+    provider: Provider,
+    role: &str,
+    cwd: &Path,
+    result: &Path,
+    sandbox: Sandbox,
+) -> Vec<String> {
     let web = matches!(role, "research" | "audit");
     let mut args: Vec<String> = match provider {
         Provider::Codex => [
@@ -37,7 +61,7 @@ pub fn command(provider: Provider, role: &str, cwd: &Path, result: &Path) -> Vec
             "-c",
             "model_reasoning_effort=high",
             "--sandbox",
-            "read-only",
+            sandbox.as_str(),
             "--json",
             "-o",
         ]

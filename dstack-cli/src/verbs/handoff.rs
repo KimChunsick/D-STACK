@@ -71,7 +71,7 @@ fn prepare(ctx: &mut Context, args: &[String]) -> Result<()> {
     let label = format!("handoff-{}-{}", target.id, to);
     let planned = exec::planned(ctx, &label)?;
     if options.dry_run {
-        let value = serde_json::json!({"provider":to,"source":state.mode.main,"role":"handoff","model":provider::model(to),"effort":"high","run":target.id,"worktree":state.worktree,"session":history.session,"history":history.path,"warnings":history.warnings,"argv":provider::command(to,"handoff",Path::new(&state.worktree),&planned.join("result.txt")),"applies":false});
+        let value = serde_json::json!({"provider":to,"source":state.mode.main,"role":"handoff","model":provider::model(to),"effort":"high","run":target.id,"worktree":state.worktree,"session":history.session,"history":history.path,"warnings":history.warnings,"argv":provider::command(to,"handoff",Path::new(&state.worktree),&planned.join("result.txt"),provider::Sandbox::ReadOnly),"applies":false});
         ctx.out
             .say(&serde_json::to_string_pretty(&value).map_err(packet::io)?);
         return Ok(());
@@ -107,6 +107,7 @@ fn prepare(ctx: &mut Context, args: &[String]) -> Result<()> {
         "handoff",
         Path::new(&data.snapshot.worktree),
         &capture.join("result.txt"),
+        provider::Sandbox::ReadOnly,
     );
     let code = exec::captured(
         ctx,
