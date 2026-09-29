@@ -54,8 +54,8 @@ impl Place {
     }
 }
 
-/// One heading line outside the frontmatter and outside every code fence. `lineno` counts from
-/// the start of the scanned text.
+/// One heading line outside the frontmatter and outside every code fence. `lineno` is the line
+/// of the whole text, frontmatter included.
 struct Heading<'a> {
     level: usize,
     text: &'a str,
@@ -64,17 +64,25 @@ struct Heading<'a> {
     end: usize,
 }
 
-/// The headings of a text and whether a code fence is still open at its end.
+/// The headings of a text and the line of a code fence still open at its end.
 struct Outline<'a> {
     headings: Vec<Heading<'a>>,
-    open_fence: bool,
+    open_fence: Option<usize>,
 }
 
-/// The byte range of one body. A missing heading, a heading that appears more than once and a
-/// document without a title are refusals naming the heading, so no caller writes to a guessed
-/// place.
+/// The byte range of one body. A missing heading, a heading that appears more than once, a
+/// document without a title and a fence the document never closes are refusals naming the
+/// heading or line, so no caller writes to a guessed place.
 pub fn locate(text: &str, place: &Place) -> Result<Range<usize>> {
-    let headings = outline(text, frontmatter_end(text)).headings;
+    let outline = outline(text, frontmatter_end(text));
+    // An unclosed fence hides every heading after it: a body reaching it would run to the end
+    // of the file, and a heading past it would look missing.
+    if let Some(line) = outline.open_fence {
+        return Err(Error::failed(format!(
+            "line {line} opens a code fence that never closes; it hides every heading after it"
+        )));
+    }
+    let headings = outline.headings;
     let at = match place {
         Place::Summary => match headings.first() {
             Some(first) if first.level == 1 => 0,
@@ -165,7 +173,7 @@ pub fn check_prose(content: &str, place: &Place) -> Result<()> {
             content.lines().nth(heading.lineno - 1).unwrap_or("")
         )));
     }
-    if outline.open_fence {
+    if outline.open_fence.is_some() {
         return Err(Error::failed(
             "the content opens a code fence it never closes; it would hide every heading after it",
         ));
@@ -248,25 +256,28 @@ fn frontmatter_end(text: &str) -> usize {
 /// section boundary.
 fn outline(text: &str, from: usize) -> Outline<'_> {
     let mut headings = Vec::new();
-    let mut fence: Option<(u8, usize)> = None;
+    // The open fence's mark and length, and the line it opened on.
+    let mut fence: Option<((u8, usize), usize)> = None;
     let mut start = from;
+    let skipped = text[..from].matches('\n').count();
     for (index, line) in text[from..].split_inclusive('\n').enumerate() {
+        let lineno = skipped + index + 1;
         let end = start + line.len();
         let bare = line.trim_end_matches(['\n', '\r']);
         match fence {
-            Some(open) => {
+            Some((open, _)) => {
                 if closes(bare, open) {
                     fence = None;
                 }
             }
             None => {
                 if let Some(open) = fence_mark(bare) {
-                    fence = Some(open);
+                    fence = Some((open, lineno));
                 } else if let Some((level, heading)) = heading(bare) {
                     headings.push(Heading {
                         level,
                         text: heading,
-                        lineno: index + 1,
+                        lineno,
                         start,
                         end,
                     });
@@ -277,7 +288,7 @@ fn outline(text: &str, from: usize) -> Outline<'_> {
     }
     Outline {
         headings,
-        open_fence: fence.is_some(),
+        open_fence: fence.map(|(_, line)| line),
     }
 }
 
@@ -298,7 +309,8 @@ fn heading(line: &str) -> Option<(usize, &str)> {
     Some((level, after.trim()))
 }
 
-/// The opening of a code fence: three or more backticks or tildes.
+/// The opening of a code fence: three or more backticks or tildes. A backtick fence's info
+/// string holds no backtick, so a line starting with an inline span like ```x``` opens nothing.
 fn fence_mark(line: &str) -> Option<(u8, usize)> {
     let rest = unindented(line)?;
     let mark = *rest.as_bytes().first()?;
@@ -306,7 +318,8 @@ fn fence_mark(line: &str) -> Option<(u8, usize)> {
         return None;
     }
     let run = rest.bytes().take_while(|b| *b == mark).count();
-    (run >= 3).then_some((mark, run))
+    let info = &rest[run..];
+    (run >= 3 && !(mark == b'`' && info.contains('`'))).then_some((mark, run))
 }
 
 /// A closing fence: the same mark, at least as long as the opening, and nothing after it.

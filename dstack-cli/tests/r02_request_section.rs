@@ -324,3 +324,54 @@ fn R02_request_section_reads_bodies_and_blank_sections() {
     }
     assert!(body(&text, &Place::Section("없는 절")).is_err());
 }
+
+#[test]
+fn R02_request_section_inline_triple_backticks_are_not_a_fence() {
+    // An inline code span at the start of a line opens no fence, so the headings after it
+    // still end `## 지금 구조`: the R rows above, `## 바꿀 구조`, `## 위험` and the frontmatter
+    // stay byte for byte.
+    let mut parts = goal();
+    parts[10].2 = "\n```old```는 옛 이름이에요.\n\n".to_string();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "current", "지금 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = "\n지금 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(
+        t.read(REQUEST),
+        render(&parts),
+        "only ## 지금 구조 may change"
+    );
+
+    let content = "```new```는 새 이름이에요.";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = format!("\n{content}\n\n");
+    assert_eq!(t.read(REQUEST), render(&parts));
+}
+
+#[test]
+fn R02_request_section_refuses_unclosed_fence_in_document() {
+    // A fence the document never closes hides every heading after it; no body may run past it
+    // to the end of the file, so every write names the opening line instead.
+    let mut parts = goal();
+    parts[10].2 = "\n```\n# 닫히지 않은 코드\n\n".to_string();
+    let opener = render(&parts[..10]).lines().count() + 3;
+    let t = scratch(&render(&parts));
+    for key in ["current", "goals", "risks"] {
+        refused(
+            &t,
+            key,
+            "새 내용이에요.",
+            &format!("line {opener} opens a code fence that never closes"),
+        );
+    }
+
+    // A tilde fence may hold backticks in its info string and still hides the `##` line inside.
+    let mut tilde = goal();
+    tilde[10].2 = "\n~~~ ```x```\n## 코드 안의 절\n~~~\n\n".to_string();
+    let text = render(&tilde);
+    assert_eq!(
+        body(&text, &Place::Section("지금 구조")).unwrap(),
+        tilde[10].2
+    );
+}
