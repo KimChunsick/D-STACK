@@ -142,6 +142,16 @@ fn r13__an_unknown_verb_names_its_noun() {
 }
 
 #[test]
+fn R02_request_section_is_on_the_help_roster() {
+    let help = stdout(&dstack(&["help"]));
+    assert!(
+        help.lines().any(|line| line.starts_with("  request section ")),
+        "{help}"
+    );
+    assert!(Registry::new(all_verbs()).has_handler("request section"));
+}
+
+#[test]
 fn r13__a_roster_entry_without_a_handler_cannot_decide() {
     // The entry is looked up, never written down: an entry named by hand turns into a real call
     // the day that verb is ported, and this test drives dstack inside this repository. The

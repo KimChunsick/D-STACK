@@ -39,6 +39,7 @@ mod marks;
 mod new;
 mod open_show;
 mod rowfile;
+mod section;
 mod selftests;
 mod udiff;
 
@@ -46,6 +47,7 @@ request_verb!(RequestNew, "request new", new::new);
 request_verb!(RequestOpen, "request open", open_show::open);
 request_verb!(RequestApprove, "request approve", approve::approve);
 request_verb!(RequestShow, "request show", open_show::show);
+request_verb!(RequestSection, "request section", section::section);
 request_verb!(ReqAdd, "req add", add::add);
 request_verb!(ReqAccept, "req accept", marks::accept);
 request_verb!(ReqSplit, "req split", marks::split);
@@ -60,6 +62,7 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
         Box::new(RequestOpen),
         Box::new(RequestApprove),
         Box::new(RequestShow),
+        Box::new(RequestSection),
         Box::new(ReqAdd),
         Box::new(ReqAccept),
         Box::new(ReqSplit),
