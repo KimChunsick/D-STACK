@@ -158,8 +158,19 @@ fn R13_request_design_skip_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request design-skip ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 72"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 73"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request design-skip"));
+}
+
+#[test]
+fn R14_request_brief_is_on_the_help_roster() {
+    let help = stdout(&dstack(&["help"]));
+    assert!(
+        help.lines().any(|line| line.starts_with("  request brief ")),
+        "{help}"
+    );
+    assert!(help.lines().any(|line| line == "verbs: 73"), "{help}");
+    assert!(Registry::new(all_verbs()).has_handler("request brief"));
 }
 
 #[test]
