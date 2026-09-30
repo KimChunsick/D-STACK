@@ -1,7 +1,8 @@
 // tests/r03_prd_checks.rs
-// R03: check request fails a Goal request whose required part-1 section is missing or holds only
-// guidance, and a quick request whose summary does; the 60-line cap counts 요구사항 alone; an
-// approved request is not judged again; and the check-request fixtures prove every case.
+// R03: check request fails a Goal request whose required part-1 section is missing, holds only
+// guidance or keeps its guidance beside prose, a quick request whose summary does, and either one
+// with no R row; the 60-line cap counts 요구사항 alone, or the row span when that heading is
+// absent; an approved request is not judged again; and the check-request fixtures prove every case.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -310,6 +311,125 @@ fn R03_prd_checks_pass_an_approved_legacy_request() {
     t.ok(&["check", "request", "--run", RUN]);
 }
 
+const ROW: &str = "- [ ] **R01** 첫 요구사항이에요. — accept: 첫 확인이에요.\n";
+
+/// check request on a quick task whose request is `summary` under its title and `rows` under
+/// 요구사항.
+fn quick(summary: &str, rows: &str) -> Output {
+    let t = Scratch::new();
+    t.init();
+    t.ok(&["quick", "new", "qq"]);
+    let front = FRONT.replace("route: new-goal", "route: quick");
+    t.write(
+        ".dstack/quick/qq/request.md",
+        &format!("{front}# 빠른 작업: qq\n\n{summary}\n## 요구사항\n\n{rows}"),
+    );
+    t.run(&["check", "request", "--quick", "qq"])
+}
+
+#[test]
+fn R03_prd_checks_require_a_row() {
+    // The template's standing guidance under 요구사항 is an instruction, not a row.
+    let guidance =
+        "\n<!-- dstack req add \"<한국어 요구사항>\" --accept \"<한국어 완료 기준>\"으로 행을 추가해요. -->\n";
+    let out = check(&scratch(&render(&with_body(
+        "## 요구사항",
+        &format!("{guidance}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+    let out = check(&scratch(&render(&with_body(
+        "## 요구사항",
+        &format!("{guidance}{ROW}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+
+    let out = quick("요약 문단을 채웠어요.\n", "");
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row"),
+        "{}",
+        stdout(&out)
+    );
+    let out = quick("요약 문단을 채웠어요.\n", ROW);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+}
+
+#[test]
+fn R03_prd_checks_refuse_guidance_kept_beside_prose() {
+    let goal =
+        "<!-- 이번 작업이 끝나면 누가 무엇을 할 수 있게 되는지 번호 목록으로 적어요. (키: goals) -->\n";
+    let prose = "1. 빈 절을 검사에서 막아요.\n";
+    let out = check(&scratch(&render(&with_body(
+        "## 목표",
+        &format!("\n{goal}{prose}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 목표: template guidance still present"),
+        "{}",
+        stdout(&out)
+    );
+    let out = check(&scratch(&render(&with_body(
+        "## 목표",
+        &format!("\n{prose}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+
+    let summary = "<!-- 무엇을 왜 바꾸는지 한 문단으로 적어요. (키: summary) -->\n요약 문단을 채웠어요.\n";
+    let out = quick(summary, ROW);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out)
+            .contains("section the paragraph under # 빠른 작업: qq: template guidance still present"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn R03_prd_checks_count_the_row_span_without_a_requirements_heading() {
+    let long: String = (1..=80)
+        .map(|n| format!("배경 {n}번째 줄이에요.\n"))
+        .collect();
+    let text = render(&with_body("## 배경과 문제", &format!("\n{long}\n")))
+        .replace("## 요구사항\n", "## Requirements\n");
+    let out = check(&scratch(&text));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(
+        !stderr(&out).contains("requirement lines"),
+        "long prose warned: {}",
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains("requirement lines 1 (max 60)"),
+        "{}",
+        stdout(&out)
+    );
+
+    let gap: String = (1..=59).map(|n| format!("<!-- 안내 {n} -->\n")).collect();
+    let rows =
+        format!("\n{ROW}{gap}- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n\n");
+    let text =
+        render(&with_body("## 요구사항", &rows)).replace("## 요구사항\n", "## Requirements\n");
+    let out = check(&scratch(&text));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the cap only warns: {}",
+        stdout(&out)
+    );
+    assert!(
+        stderr(&out).contains("requirement lines 61 > 60"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 /// The stamp an approval made before these checks left behind.
 fn stamp(run: &Path) {
     let hash = sha256_file(&run.join("request.md")).expect("the request");
@@ -332,10 +452,14 @@ fn R03_prd_checks_fixtures_cover_every_case() {
         "bad-guidance-only-section.md",
         "bad-missing-section.md",
         "bad-quick-guidance-summary.md",
+        "bad-quick-retained-summary.md",
+        "bad-retained-guidance.md",
+        "bad-zero-rows.md",
         "good-legacy-approved.md",
         "good-long-prose.md",
         "good-minimal.md",
         "good-quick-summary.md",
+        "good-standing-guidance.md",
     ] {
         assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
     }
