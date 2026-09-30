@@ -1,8 +1,10 @@
 // tests/r03_prd_checks.rs
 // R03: check request fails a Goal request whose required part-1 section is missing, holds only
-// guidance or keeps its guidance beside prose, a quick request whose summary does, and either one
-// with no R row; the 60-line cap counts 요구사항 alone, or the row span when that heading is
-// absent; an approved request is not judged again; and the check-request fixtures prove every case.
+// guidance or keeps its guidance beside prose, a quick request whose summary does (its fallback body
+// included), and either one with no R row inside its requirements section; the 60-line cap counts
+// that section alone (`## 요구사항` or the legacy `## Requirements`), or the row span when neither
+// heading exists; an approved request is not judged again; and the check-request fixtures prove
+// every case.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -11,7 +13,7 @@
 mod support;
 
 use std::path::{Path, PathBuf};
-use std::process::Output;
+use std::process::{Command, Output};
 use std::rc::Rc;
 
 use dstack_cli::core::context::Context;
@@ -392,12 +394,54 @@ fn R03_prd_checks_refuse_guidance_kept_beside_prose() {
 }
 
 #[test]
-fn R03_prd_checks_count_the_row_span_without_a_requirements_heading() {
+fn R03_prd_checks_count_the_whole_english_requirements_section() {
     let long: String = (1..=80)
         .map(|n| format!("배경 {n}번째 줄이에요.\n"))
         .collect();
     let text = render(&with_body("## 배경과 문제", &format!("\n{long}\n")))
         .replace("## 요구사항\n", "## Requirements\n");
+    let out = check(&scratch(&text));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(
+        !stderr(&out).contains("requirement lines"),
+        "long prose warned: {}",
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains("requirement lines 3 (max 60)"),
+        "{}",
+        stdout(&out)
+    );
+
+    // Guidance above the first row is part of the section, as under 요구사항.
+    let guidance: String = (1..=61).map(|n| format!("<!-- 안내 {n} -->\n")).collect();
+    let rows = format!(
+        "\n{guidance}{ROW}- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n\
+         - [ ] **R03** 셋째 요구사항이에요. — accept: 셋째 확인이에요.\n\n"
+    );
+    let text =
+        render(&with_body("## 요구사항", &rows)).replace("## 요구사항\n", "## Requirements\n");
+    let out = check(&scratch(&text));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "the cap only warns: {}",
+        stdout(&out)
+    );
+    assert!(
+        stderr(&out).contains("requirement lines 66 > 60"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn R03_prd_checks_count_the_row_span_without_a_requirements_heading() {
+    let long: String = (1..=80)
+        .map(|n| format!("배경 {n}번째 줄이에요.\n"))
+        .collect();
+    let text = render(&with_body("## 배경과 문제", &format!("\n{long}\n")))
+        .replace("## 요구사항\n", "## R rows\n");
     let out = check(&scratch(&text));
     assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
     assert!(
@@ -414,8 +458,7 @@ fn R03_prd_checks_count_the_row_span_without_a_requirements_heading() {
     let gap: String = (1..=59).map(|n| format!("<!-- 안내 {n} -->\n")).collect();
     let rows =
         format!("\n{ROW}{gap}- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n\n");
-    let text =
-        render(&with_body("## 요구사항", &rows)).replace("## 요구사항\n", "## Requirements\n");
+    let text = render(&with_body("## 요구사항", &rows)).replace("## 요구사항\n", "## R rows\n");
     let out = check(&scratch(&text));
     assert_eq!(
         out.status.code(),
@@ -428,6 +471,101 @@ fn R03_prd_checks_count_the_row_span_without_a_requirements_heading() {
         "{}",
         stderr(&out)
     );
+}
+
+#[test]
+fn R03_prd_checks_require_the_row_inside_the_requirements_section() {
+    let guidance = "\n<!-- 행을 추가해요. -->\n\n";
+    let outside = with_body("## 요구사항", guidance);
+    let mut parts = outside.clone();
+    let at = parts.iter().position(|(h, _)| *h == "## 열린 가정").unwrap();
+    parts[at].1 = format!("\n없음.\n\n{ROW}\n");
+    let out = check(&scratch(&render(&parts)));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+    // The same row moved under 요구사항.
+    let out = check(&scratch(&render(&with_body(
+        "## 요구사항",
+        &format!("{guidance}{ROW}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+
+    let text = render(&parts).replace("## 요구사항\n", "## Requirements\n");
+    let out = check(&scratch(&text));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## Requirements: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+
+    let mut both = goal();
+    both.push((
+        "## Requirements",
+        "\n- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n".to_string(),
+    ));
+    let out = check(&scratch(&render(&both)));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("'## 요구사항' and '## Requirements'"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn R03_prd_checks_quick_fallback_summary_keeps_its_marker() {
+    let t = Scratch::new();
+    t.init();
+    // A home without templates/request, so quick new writes its fallback body.
+    let home = t.0.join("home-without-templates");
+    std::fs::create_dir_all(&home).expect("the empty home");
+    let out = Command::new(env!("CARGO_BIN_EXE_dstack"))
+        .current_dir(&t.0)
+        .env("DSTACK_ROOT", &t.0)
+        .env("DSTACK_HOME", &home)
+        .env("DSTACK_DEPS", t.0.join("deps.tsv"))
+        .env("CLAUDE_CODE_SESSION_ID", "mode-settings-test")
+        .args(["quick", "new", "qq"])
+        .output()
+        .expect("quick new");
+    assert!(out.status.success(), "{}", stderr(&out));
+    t.ok(&[
+        "req",
+        "add",
+        "첫 요구사항이에요.",
+        "--accept",
+        "첫 확인이에요.",
+        "--quick",
+        "qq",
+    ]);
+    let request = ".dstack/quick/qq/request.md";
+    let text = t.read(request);
+    let guidance = text
+        .lines()
+        .find(|l| l.starts_with("<!-- "))
+        .expect("the fallback guidance")
+        .to_string();
+    let prose = "요약 문단을 채웠어요.";
+    t.write(
+        request,
+        &text.replacen(&guidance, &format!("{guidance}\n{prose}"), 1),
+    );
+    let out = t.run(&["check", "request", "--quick", "qq"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out)
+            .contains("section the paragraph under # 빠른 작업: qq: template guidance still present"),
+        "{}",
+        stdout(&out)
+    );
+    t.write(request, &text.replacen(&guidance, prose, 1));
+    let out = t.run(&["check", "request", "--quick", "qq"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
 }
 
 /// The stamp an approval made before these checks left behind.
@@ -449,15 +587,19 @@ fn R03_prd_checks_fixtures_cover_every_case() {
         .map(|(path, _)| path.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
     for name in [
+        "bad-both-requirements-headings.md",
         "bad-guidance-only-section.md",
         "bad-missing-section.md",
         "bad-quick-guidance-summary.md",
         "bad-quick-retained-summary.md",
         "bad-retained-guidance.md",
+        "bad-row-outside-english-section.md",
+        "bad-row-outside-section.md",
         "bad-zero-rows.md",
         "good-legacy-approved.md",
         "good-long-prose.md",
         "good-minimal.md",
+        "good-no-requirements-heading.md",
         "good-quick-summary.md",
         "good-standing-guidance.md",
     ] {

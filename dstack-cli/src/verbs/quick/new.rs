@@ -223,7 +223,7 @@ fn request_text(
         return text;
     }
     text.push_str(&format!("# 빠른 작업: {slug}\n\n"));
-    text.push_str("<!-- 무엇을 왜 바꾸는지 한 문단으로 적어요. 빠른 작업이에요(R99). 완료 기준이 있는 요구사항 행, 작업, 증거, 보고서가 각각 하나 이상 필요해요. -->\n");
+    text.push_str("<!-- 무엇을 왜 바꾸는지 한 문단으로 적어요. 빠른 작업이에요(R99). 완료 기준이 있는 요구사항 행, 작업, 증거, 보고서가 각각 하나 이상 필요해요. (키: summary) -->\n");
     text.push_str("<!-- 요청서의 제목, 설명, 요구사항과 완료 기준은 항상 한국어 해요체로 적어요. -->\n\n## 요구사항\n\n");
     text.push_str(&format!(
         "    dstack req add \"<한국어 요구사항>\" --accept \"<한국어 완료 기준>\" --quick {slug}\n"

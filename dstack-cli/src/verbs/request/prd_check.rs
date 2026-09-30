@@ -6,6 +6,7 @@ use crate::core::context::Context;
 use crate::core::target::{Target, TargetKind};
 use crate::store::request::RequestDoc;
 use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS};
+use crate::store::rows;
 
 use super::is_approved;
 
@@ -20,9 +21,12 @@ const GOAL: [&str; 5] = [
     "assumptions",
 ];
 
+/// The heading a request written before the Korean layout holds its rows under.
+const LEGACY: &str = "Requirements";
+
 /// How many required places fail: each of the five part-1 sections of a Goal request, or the
 /// summary paragraph of a quick one, that is missing, empty or still holds its template
-/// guidance, and 요구사항 when the request has no R row. An approved request is not judged
+/// guidance, and the requirements section when it holds no R row. An approved request is not judged
 /// again — it was stamped before these checks existed or passed them when it was, and its hash
 /// guards the text since — so no earlier approval starts failing.
 pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
@@ -58,13 +62,27 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
         );
         failed += 1;
     }
-    // Rows are read anywhere in the file, as every row reader reads them.
-    if doc.rows().is_empty() {
-        say!(
-            ctx,
-            "  section ## {REQUIREMENTS}: no R row (dstack req add \"<requirement>\" --accept \"<criterion>\")"
-        );
-        failed += 1;
+    // Only rows inside the requirements section count; a request with neither heading reads its
+    // rows anywhere, as every row reader does.
+    match requirements(doc.text()) {
+        Err(message) if refusals.contains(&message) => {}
+        Err(message) => {
+            say!(ctx, "  section requirements: {message}");
+            failed += 1;
+        }
+        Ok(section) => {
+            let (heading, found) = match section {
+                Some((heading, rows)) => (heading, holds_row(rows)),
+                None => (REQUIREMENTS, !doc.rows().is_empty()),
+            };
+            if !found {
+                say!(
+                    ctx,
+                    "  section ## {heading}: no R row (dstack req add \"<requirement>\" --accept \"<criterion>\")"
+                );
+                failed += 1;
+            }
+        }
     }
     say!(
         ctx,
@@ -91,16 +109,48 @@ fn keeps_guidance(body: &str, key: &str) -> bool {
     false
 }
 
-/// The lines the R43 cap counts: the `## 요구사항` section only, so prose above and below it
-/// costs nothing. A request without that section (a legacy `## Requirements`, an outline the
-/// reader refuses) counts the span from its first R row to its last, never its prose.
-pub fn requirement_lines(doc: &RequestDoc) -> usize {
-    if let Ok(rows) = body(doc.text(), &Place::Section(REQUIREMENTS)) {
-        return rows.matches('\n').count();
+/// The requirements section (D-21): the heading and body of exactly one of `## 요구사항` and the
+/// legacy `## Requirements`, None when neither heading exists, or the line naming why the outline
+/// gives no single section (both headings, a repeated one, an outline the reader refuses).
+/// `locate` says a heading is absent only through its message, so that message is matched here.
+fn requirements(text: &str) -> Result<Option<(&'static str, &str)>, String> {
+    let mut found = None;
+    for heading in [REQUIREMENTS, LEGACY] {
+        match body(text, &Place::Section(heading)) {
+            Ok(_) if found.is_some() => {
+                return Err(format!(
+                    "'## {REQUIREMENTS}' and '## {LEGACY}' both appear; keep one"
+                ))
+            }
+            Ok(rows) => found = Some((heading, rows)),
+            Err(error) if error.message() == format!("no '## {heading}' heading") => {}
+            Err(error) => return Err(error.message().to_string()),
+        }
     }
-    let rows = doc.rows();
-    match (rows.first(), rows.last()) {
-        (Some(first), Some(last)) => last.lineno - first.lineno + 1,
-        _ => 0,
+    Ok(found)
+}
+
+/// Whether one body holds an R row, read line by line as `RequestDoc::rows` reads the file.
+fn holds_row(body: &str) -> bool {
+    body.split('\n')
+        .enumerate()
+        .any(|(index, line)| rows::parse_line(index + 1, line).is_some())
+}
+
+/// The lines the R43 cap counts: the whole requirements section, comments and blank lines
+/// included, so prose in other sections costs nothing. A request with neither heading counts the
+/// span from its first R row to its last; one whose outline gives no single section (already a
+/// failure before approval) counts the whole file, as the cap did before the sections existed.
+pub fn requirement_lines(doc: &RequestDoc) -> usize {
+    match requirements(doc.text()) {
+        Ok(Some((_, rows))) => rows.matches('\n').count(),
+        Ok(None) => {
+            let rows = doc.rows();
+            match (rows.first(), rows.last()) {
+                (Some(first), Some(last)) => last.lineno - first.lineno + 1,
+                _ => 0,
+            }
+        }
+        Err(_) => doc.line_count(),
     }
 }
