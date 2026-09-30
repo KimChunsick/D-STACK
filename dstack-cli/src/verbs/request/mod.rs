@@ -35,6 +35,8 @@ macro_rules! request_verb {
 mod add;
 mod approve;
 mod check;
+mod design_gate;
+mod design_skip;
 mod marks;
 mod new;
 mod open_show;
@@ -49,6 +51,7 @@ request_verb!(RequestOpen, "request open", open_show::open);
 request_verb!(RequestApprove, "request approve", approve::approve);
 request_verb!(RequestShow, "request show", open_show::show);
 request_verb!(RequestSection, "request section", section::section);
+request_verb!(RequestDesignSkip, "request design-skip", design_skip::design_skip);
 request_verb!(ReqAdd, "req add", add::add);
 request_verb!(ReqAccept, "req accept", marks::accept);
 request_verb!(ReqSplit, "req split", marks::split);
@@ -64,6 +67,7 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
         Box::new(RequestApprove),
         Box::new(RequestShow),
         Box::new(RequestSection),
+        Box::new(RequestDesignSkip),
         Box::new(ReqAdd),
         Box::new(ReqAccept),
         Box::new(ReqSplit),

@@ -3,7 +3,7 @@ work_type: cli
 route: new-goal
 external_research: none
 risk_axes: none
-design_review: auto
+design_review: skip
 review: on
 codex_effort: high
 e2e: cli

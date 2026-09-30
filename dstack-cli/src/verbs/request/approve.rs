@@ -1,5 +1,6 @@
 // verbs/request/approve.rs
-// dstack request approve: validate, clear pending, stamp the sha256, diff, sync cases (R46, R48, R94, R105).
+// dstack request approve: validate, gate design, clear pending, stamp the sha256, diff, sync cases
+// (R46, R48, R94, R105, R13).
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
@@ -11,7 +12,8 @@ use crate::store::cases;
 use crate::store::request::write_approval;
 
 use super::{
-    check, counts, draft_file, load, require_file, rowfile, stamp_file, target_flags, udiff,
+    check, counts, design_gate, draft_file, load, require_file, rowfile, stamp_file, target_flags,
+    udiff,
 };
 
 pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
@@ -28,11 +30,12 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
         ));
         fail!("request does not validate; fix the lines above and approve again");
     }
+    let doc = load(&target)?;
+    design_gate::gate(ctx, &target, &doc)?;
 
     // R105 again with the REAL fields, not the work_type defaults `run new` guessed from: the
     // user may have turned e2e to capture or review on during the approval loop.
     ctx.out.say("== tools (R105, from the approved fields)");
-    let doc = load(&target)?;
     let fields: Vec<String> = ["e2e", "review", "visual", "unit_tests"]
         .iter()
         .map(|field| format!("{field}={}", doc.field(field).unwrap_or_default()))
