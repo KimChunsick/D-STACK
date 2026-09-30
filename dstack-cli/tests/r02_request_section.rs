@@ -482,3 +482,87 @@ fn R02_request_section_content_follows_comment_and_indent_rules() {
     parts[10].2 = format!("\n{content}\n\n");
     assert_eq!(t.read(REQUEST), render(&parts));
 }
+
+#[test]
+fn R02_request_section_refuses_raw_html_blocks() {
+    // The review fragment: backticks inside `<pre>` are literal to a renderer, so pairing them as
+    // a fence would hide `## 바꿀 구조` and a write to `current` would delete it. Every raw HTML
+    // block start refuses instead, naming its line, and the rows above and the store stay.
+    for open in ["<pre>", "<details>", "</div>", "<!DOCTYPE html>", "  <pre>"] {
+        let mut parts = goal();
+        parts[10].2 = format!("\n{open}\n```\n</pre>\n\n");
+        parts[11].2 = format!("\n보존해야 하는 설계예요.\n{open}\n```\n</pre>\n\n");
+        parts[14].2 = "\n위험 설명이에요.\n\n".to_string();
+        let line = render(&parts[..10]).lines().count() + 3;
+        let t = scratch(&render(&parts));
+        let reason = format!("line {line} starts raw HTML, which request section does not support");
+        for key in ["current", "risks"] {
+            refused(&t, key, "새 내용이에요.", &reason);
+        }
+    }
+}
+
+#[test]
+fn R02_request_section_keeps_html_in_fences_and_comments() {
+    // Fence content is literal and a column-0 comment is opaque, so HTML there is text: writing
+    // another section keeps both byte for byte, and new content may hold them too.
+    let mut parts = goal();
+    parts[10].2 = "\n```html\n<pre>\n## 코드 안의 절\n</pre>\n```\n\n".to_string();
+    parts[14].2 = "\n<!--\n<pre>\n```\n</pre>\n-->\n위험 설명이에요.\n\n".to_string();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "proposed", "바꿀 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[11].2 = "\n바꿀 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(
+        t.read(REQUEST),
+        render(&parts),
+        "only ## 바꿀 구조 may change"
+    );
+
+    let content = "~~~\n<details>\n```\n</details>\n~~~\n<!-- <pre> -->\n<!--\n</div>\n-->";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = format!("\n{content}\n\n");
+    assert_eq!(t.read(REQUEST), render(&parts));
+}
+
+#[test]
+fn R02_request_section_refuses_raw_html_in_content() {
+    let t = scratch(&render(&goal()));
+    for (content, line) in [
+        ("<div>\n설명이에요.\n</div>", 1),
+        ("설명이에요.\n  <pre>\n```\n</pre>", 2),
+    ] {
+        let reason = format!("line {line} of the content starts raw HTML, which request section");
+        refused(&t, "current", content, &reason);
+    }
+    // A comment opened after text hides nothing from a renderer, so HTML in it is not safe.
+    refused(&t, "current", "설명이에요 <!--\n<pre>\n-->", "ambiguous");
+}
+
+#[test]
+fn R02_request_section_refuses_tab_before_heading_or_fence() {
+    // A tab indents a line past what a top-level heading or fence allows but not past a list
+    // item's, so no reading of such a line is certain.
+    let mut parts = goal();
+    parts[10].2 = "\n- 항목이에요.\n\t## 탭 뒤의 제목\n\n".to_string();
+    let line = render(&parts[..10]).lines().count() + 4;
+    let t = scratch(&render(&parts));
+    refused(
+        &t,
+        "risks",
+        "새 내용이에요.",
+        &format!("line {line} indents"),
+    );
+    refused(&t, "risks", "새 내용이에요.", "with a tab");
+
+    let t = scratch(&render(&goal()));
+    for (content, line) in [
+        ("\t## 새 절", 1),
+        ("설명이에요.\n \t```\n코드예요.\n \t```", 2),
+    ] {
+        let reason =
+            format!("line {line} of the content indents a heading, fence or `<` with a tab");
+        refused(&t, "current", content, &reason);
+    }
+}

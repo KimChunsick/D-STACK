@@ -230,19 +230,17 @@ fn frontmatter_end(text: &str) -> usize {
     text.len()
 }
 
-/// Why an uncertain reading refuses: a renderer may place the section boundaries elsewhere.
+/// Why a line refuses: a renderer may read it otherwise, or the grammar has no place for it.
 const AMBIGUOUS: &str = "; a renderer may read it otherwise, so the sections are ambiguous";
+const UNSUPPORTED: &str = ", which request section does not support";
 
-/// The column-0 ATX headings from byte `from` on, as a renderer reads the blocks: a `#` line in
-/// a ``` or ~~~ fence or in an HTML comment is no heading. Where that reading is uncertain the
-/// outline is refused naming the line `of` the text: a fence or comment that never closes, a
-/// fence marker indented as in a list item, and a heading or fence line inside a comment opened
-/// past column 0 (after text, an indent or a `>`), which a renderer need not hide.
+/// The column-0 ATX headings from byte `from` on, in the grammar `read_line` reads. Refused,
+/// naming the line `of` the text: what `read_line` refuses, a fence or comment that never closes
+/// and a non-text line in a comment opened past column 0, which a renderer need not hide.
 fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>> {
     let refuse = |line: usize, why: String| Err(Error::failed(format!("line {line}{of} {why}")));
     let mut headings = Vec::new();
-    // The open fence's mark, length and line; the open comment's line and whether it opened at
-    // column 0, an HTML block hiding every line up to its close.
+    // The open fence: mark, length, line. The open comment: line, opened at column 0 (a block).
     let mut fence: Option<((u8, usize), usize)> = None;
     let mut comment: Option<(usize, bool)> = None;
     let mut start = from;
@@ -251,34 +249,27 @@ fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>>
         let lineno = skipped + index + 1;
         let end = start + line.len();
         let bare = line.trim_end_matches(['\n', '\r']);
-        let marker = unindented(bare).and_then(fence_mark);
         if let Some((open, _)) = fence {
-            if closes(bare, open) {
-                fence = None;
-            }
+            fence = fence.filter(|_| !closes(bare, open));
         } else if let Some((opened, block)) = comment {
-            if !block && (heading(bare).is_some() || marker.is_some()) {
-                let why = format!("is a heading or code fence in the comment line {opened} opens");
-                return refuse(lineno, why + " past column 0" + AMBIGUOUS);
+            if !block && !matches!(read_line(bare), Line::Text) {
+                let why = format!("is a heading, fence or HTML line in the comment line {opened}");
+                return refuse(lineno, why + " opens past column 0" + AMBIGUOUS);
             }
             comment = comment_end(bare, lineno, comment);
-        } else if let Some(open) = fence_mark(bare) {
-            fence = Some((open, lineno));
-        } else if marker.is_some() {
-            return refuse(
-                lineno,
-                format!("indents a fence marker as in a list item{AMBIGUOUS}"),
-            );
-        } else if let Some((level, name)) = heading(bare) {
-            headings.push(Heading {
-                level,
-                text: name,
-                lineno,
-                start,
-                end,
-            });
         } else {
-            comment = comment_end(bare, lineno, None);
+            match read_line(bare) {
+                Line::Text => comment = comment_end(bare, lineno, None),
+                Line::Fence(open) => fence = Some((open, lineno)),
+                Line::Heading(level, text) => headings.push(Heading {
+                    level,
+                    text,
+                    lineno,
+                    start,
+                    end,
+                }),
+                Line::Refused(what, why) => return refuse(lineno, format!("{what}{why}")),
+            }
         }
         start = end;
     }
@@ -287,6 +278,34 @@ fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>>
         (Some((_, line)), _) => refuse(line, format!("opens a code fence that {hides}")),
         (_, Some((line, _))) => refuse(line, format!("opens an HTML comment that {hides}")),
         _ => Ok(headings),
+    }
+}
+
+/// How one line outside every fence and comment reads.
+enum Line<'a> {
+    Text,
+    Heading(usize, &'a str),
+    Fence((u8, usize)),
+    Refused(&'static str, &'static str),
+}
+
+/// Column-0 headings and ``` or ~~~ fences; the rest is text (paragraphs, lists, tables, quotes,
+/// comments) but a tab before a heading, fence or `<`, a `<` within three spaces that opens no
+/// comment (raw HTML, literal to a renderer) and a fence indented as in a list item, refused.
+fn read_line(line: &str) -> Line<'_> {
+    let rest = line.trim_start_matches([' ', '\t']);
+    let indent = line.len() - rest.len();
+    let (fence, head, tag) = (fence_mark(rest), heading(rest), rest.starts_with('<'));
+    if line[..indent].contains('\t') && (fence.is_some() || head.is_some() || tag) {
+        return Line::Refused("indents a heading, fence or `<` with a tab", UNSUPPORTED);
+    }
+    match (indent, fence, head) {
+        (4.., _, _) => Line::Text,
+        _ if tag && !rest.starts_with("<!--") => Line::Refused("starts raw HTML", UNSUPPORTED),
+        (0, Some(open), _) => Line::Fence(open),
+        (_, Some(_), _) => Line::Refused("indents a fence marker as in a list item", AMBIGUOUS),
+        (0, _, Some((level, name))) => Line::Heading(level, name),
+        _ => Line::Text,
     }
 }
 
@@ -307,38 +326,25 @@ fn comment_end(line: &str, n: usize, mut open: Option<(usize, bool)>) -> Option<
     }
 }
 
-/// The line without the up-to-three spaces of indent a Markdown block allows.
-fn unindented(line: &str) -> Option<&str> {
-    let rest = line.trim_start_matches(' ');
-    (line.len() - rest.len() <= 3).then_some(rest)
-}
-
-/// An ATX heading at column 0: one to six `#`, then a space, a tab or the end of the line. An
-/// indented `#` line, a list item's heading for one, is body text.
+/// An ATX heading: one to six `#`, then a space, a tab or the end of the line.
 fn heading(line: &str) -> Option<(usize, &str)> {
     let level = line.bytes().take_while(|b| *b == b'#').count();
     let after = &line[level..];
-    if level == 0 || level > 6 || !(after.is_empty() || after.starts_with([' ', '\t'])) {
-        return None;
-    }
-    Some((level, after.trim()))
+    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with([' ', '\t']));
+    atx.then(|| (level, after.trim()))
 }
 
 /// A code fence marker at the start of `line`: three or more backticks or tildes. A backtick
 /// fence's info string holds no backtick, so a line starting with ```x``` opens nothing.
 fn fence_mark(line: &str) -> Option<(u8, usize)> {
-    let mark = *line.as_bytes().first()?;
-    if mark != b'`' && mark != b'~' {
-        return None;
-    }
+    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
     let run = line.bytes().take_while(|b| *b == mark).count();
     (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
 }
 
 /// A closing fence: up to three spaces, the opening's mark at least as long, nothing after it.
 fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
-    unindented(line).is_some_and(|rest| {
-        let length = rest.bytes().take_while(|b| *b == mark).count();
-        length >= run && rest[length..].trim().is_empty()
-    })
+    let rest = line.trim_start_matches(' ');
+    let length = rest.bytes().take_while(|b| *b == mark).count();
+    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim().is_empty()
 }
