@@ -23,8 +23,7 @@ pub const SECTION_KEYS: [(&str, &str); 10] = [
     ("risks", "위험"),
 ];
 
-/// CommonMark's whitespace within a line, and with the line ends across lines; U+00A0 and every
-/// other Unicode space are text, never an indent, a separator or a blank line.
+/// CommonMark's whitespace in a line, and across lines; any other Unicode space (U+00A0) is text.
 const SPACE: [char; 2] = [' ', '\t'];
 const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
 
@@ -66,9 +65,8 @@ struct Heading<'a> {
     end: usize,
 }
 
-/// The byte range of one body. A missing heading, a heading that appears more than once, a
-/// document without a title and a document the outline cannot read for certain are refusals
-/// naming the heading or line, so no caller writes to a guessed place.
+/// The byte range of one body. A missing or repeated heading, a missing title and a document the
+/// outline cannot read for certain refuse, naming it, so no caller writes to a guessed place.
 pub fn locate(text: &str, place: &Place) -> Result<Range<usize>> {
     let headings = outline(text, frontmatter_end(text), "")?;
     let at = match place {
@@ -154,9 +152,8 @@ pub fn check_prose(content: &str, place: &Place) -> Result<()> {
     Ok(())
 }
 
-/// The text with one body replaced by `content`: a blank line after the heading, the content
-/// without its leading blank lines and trailing whitespace, and a blank line before the next
-/// heading. A body holding an R row is refused, because replacing it would drop the row.
+/// The text with one body replaced by `content` less its leading blank lines and trailing
+/// whitespace, set off by blank lines. A body holding an R row refuses: it would drop the row.
 pub fn replace(text: &str, place: &Place, content: &str) -> Result<String> {
     let range = locate(text, place)?;
     for line in text[range.clone()].lines() {
@@ -219,17 +216,21 @@ fn frontmatter_end(text: &str) -> usize {
 const AMBIGUOUS: &str = "; a renderer may read it otherwise, so the sections are ambiguous";
 const UNSUPPORTED: &str = ", which request section does not support";
 
-/// The column-0 ATX headings from byte `from` on, in the grammar `read_line` reads. Refused,
-/// naming the line `of` the text: what `read_line` refuses, a fence or comment that never closes
-/// and a non-text line in a comment opened past column 0, which a renderer need not hide.
+/// The column-0 ATX headings from byte `from` on, as `read_line` reads them. Refused, naming the
+/// line `of` the text: a carriage return without a line feed anywhere, what `read_line` refuses,
+/// a fence or comment that never closes and a non-text line in a comment opened past column 0.
 fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>> {
     let refuse = |line: usize, why: String| Err(Error::failed(format!("line {line}{of} {why}")));
+    let lf = text.replace("\r\n", "\n");
+    if let Some(at) = lf.find('\r') {
+        let why = format!("holds a carriage return without a line feed{AMBIGUOUS}");
+        return refuse(lf[..at].matches('\n').count() + 1, why);
+    }
     let mut headings = Vec::new();
     // The open fence: mark, length, line. The open comment: line, opened at column 0 (a block).
     let mut fence: Option<((u8, usize), usize)> = None;
     let mut comment: Option<(usize, bool)> = None;
-    // Whether the last line was paragraph text, which an underline makes a setext heading. A
-    // column-0 comment opens an HTML block instead, even one that closes on its own line.
+    // Paragraph text above, which an underline makes a setext heading; not a column-0 comment.
     let mut text_above = false;
     let mut start = from;
     let skipped = text[..from].matches('\n').count();

@@ -729,3 +729,76 @@ fn R02_request_section_spaces_and_tabs_stay_structural() {
     parts[10].2 = "\n설명이에요.\n\n".to_string();
     assert_eq!(t.read(REQUEST), render(&parts));
 }
+
+#[test]
+fn R02_request_section_refuses_lone_carriage_return_in_document() {
+    // The T23 fragment: a renderer ends a line at a carriage return no line feed follows, so the
+    // `## 바꿀 구조` after it is a section a write to `current` would delete, the rows above in
+    // place. Every write names the line instead, and the store stays byte for byte.
+    let mut parts = goal();
+    parts.retain(|part| part.0 != "proposed");
+    parts[10].2 = "\n현재 설명이에요.\r## 바꿀 구조\n\n보존해야 하는 설계예요.\n\n".to_string();
+    let line = render(&parts[..10]).lines().count() + 3;
+    let t = scratch(&render(&parts));
+    let reason = format!("line {line} holds a carriage return without a line feed");
+    for key in ["current", "risks"] {
+        refused(&t, key, "새 내용이에요.", &reason);
+    }
+}
+
+#[test]
+fn R02_request_section_refuses_lone_carriage_return_anywhere() {
+    // A lone carriage return may move any boundary, so it refuses inside a fence, in a comment,
+    // in the frontmatter, before a carriage return and line feed, and at the end of the file.
+    let lead = render(&goal()[..10]).lines().count();
+    let mut cases = Vec::new();
+    for (body, line) in [
+        ("\n```\n코드예요.\r```\n\n", lead + 4),
+        ("\n<!--\n안내예요.\r-->\n\n", lead + 4),
+        ("\n현재 설명이에요.\r\r\n\n", lead + 3),
+    ] {
+        let mut parts = goal();
+        parts[10].2 = body.to_string();
+        cases.push((render(&parts), line));
+    }
+    let text = render(&goal());
+    cases.push((text.replacen("on\n---\n", "on\r---\n", 1), 12));
+    let end = text.trim_end_matches('\n');
+    cases.push((format!("{end}\r"), end.matches('\n').count() + 1));
+    for (text, line) in cases {
+        let t = scratch(&text);
+        let reason = format!("line {line} holds a carriage return without a line feed");
+        refused(&t, "current", "새 내용이에요.", &reason);
+    }
+}
+
+#[test]
+fn R02_request_section_refuses_lone_carriage_return_in_content() {
+    let t = scratch(&render(&goal()));
+    for (content, line) in [
+        ("설명이에요.\r## 새 절", 1),
+        ("앞이에요.\n설명이에요.\r\r\n뒤예요.", 2),
+        ("설명이에요.\r", 1),
+    ] {
+        let reason =
+            format!("line {line} of the content holds a carriage return without a line feed");
+        refused(&t, "current", content, &reason);
+    }
+}
+
+#[test]
+fn R02_request_section_keeps_crlf_line_endings() {
+    // Every line under the frontmatter ends in CRLF, rows, fences, comments and headings too: a
+    // write changes only the named body, CRLF content included, and keeps every other byte.
+    let parts = goal();
+    let lines = render(&parts)[FRONT.len()..].replace('\n', "\r\n");
+    let crlf = format!("{FRONT}{lines}");
+    let t = scratch(&crlf);
+    let content = "지금 구조를 새로 적었어요.\r\n\r\n둘째 줄이에요.\r\n";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let old = format!("## 지금 구조\r\n{}", parts[10].2.replace('\n', "\r\n"));
+    let new = "## 지금 구조\r\n\n지금 구조를 새로 적었어요.\r\n\r\n둘째 줄이에요.\n\n";
+    assert!(crlf.contains(&old));
+    assert_eq!(t.read(REQUEST), crlf.replacen(&old, new, 1));
+}
