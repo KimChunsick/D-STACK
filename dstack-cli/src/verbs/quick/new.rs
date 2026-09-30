@@ -11,6 +11,7 @@ use crate::core::mode::Mode;
 use crate::core::paths::valid_slug;
 use crate::core::tools::tool_check_for_mode;
 use crate::store::request::{field_default, req_enum};
+use crate::store::request_sections::{body, Place, REQUIREMENTS};
 
 use super::state;
 
@@ -136,8 +137,9 @@ fn new(ctx: &mut Context, args: &[String]) -> Result<()> {
 }
 
 /// The work_type template without its own frontmatter and with the title filled the way
-/// `request new` fills it (R40), so the two entry points produce the same body. The trailing
-/// newlines the shell's `$(…)` drops are dropped here too.
+/// `request new` fills it (R40), cut to the summary and `## 요구사항` (D-01): the PRD sections
+/// belong to a Goal, and a quick task would only carry them empty. A template those two places
+/// cannot be read from stops here, before anything is written.
 fn template_body(ctx: &Context, work_type: &str, slug: &str) -> Result<String> {
     let path = ctx
         .home
@@ -146,10 +148,22 @@ fn template_body(ctx: &Context, work_type: &str, slug: &str) -> Result<String> {
     if !path.is_file() {
         return Ok(String::new());
     }
-    Ok(strip_frontmatter(
-        &read(&path)?,
-        &format!("빠른 작업: {slug}"),
-    ))
+    let title = format!("빠른 작업: {slug}");
+    let text = strip_frontmatter(&read(&path)?, &title);
+    if text.is_empty() {
+        return Ok(text);
+    }
+    quick_body(&text, &title)
+        .map_err(|e| Error::cannot_decide(format!("{}: {}", path.display(), e.message())))
+}
+
+/// The title, the summary paragraph and the rows section of a template body. The trailing
+/// newlines the shell's `$(…)` drops are dropped here too.
+fn quick_body(text: &str, title: &str) -> Result<String> {
+    let summary = body(text, &Place::Summary)?;
+    let rows = body(text, &Place::Section(REQUIREMENTS))?;
+    let kept = format!("# {title}\n{summary}## {REQUIREMENTS}\n{rows}");
+    Ok(kept.trim_end_matches('\n').to_string())
 }
 
 fn strip_frontmatter(template: &str, title: &str) -> String {
@@ -209,8 +223,8 @@ fn request_text(
         return text;
     }
     text.push_str(&format!("# 빠른 작업: {slug}\n\n"));
-    text.push_str("빠른 작업이에요(R99). 완료 기준이 있는 요구사항 행, 작업, 증거, 보고서가 각각 하나 이상 필요해요.\n");
-    text.push_str("요청서의 제목, 설명, 요구사항과 완료 기준은 항상 한국어 해요체로 적어요.\n\n## 요구사항\n\n");
+    text.push_str("<!-- 무엇을 왜 바꾸는지 한 문단으로 적어요. 빠른 작업이에요(R99). 완료 기준이 있는 요구사항 행, 작업, 증거, 보고서가 각각 하나 이상 필요해요. -->\n");
+    text.push_str("<!-- 요청서의 제목, 설명, 요구사항과 완료 기준은 항상 한국어 해요체로 적어요. -->\n\n## 요구사항\n\n");
     text.push_str(&format!(
         "    dstack req add \"<한국어 요구사항>\" --accept \"<한국어 완료 기준>\" --quick {slug}\n"
     ));
