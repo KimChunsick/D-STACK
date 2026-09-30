@@ -22,6 +22,24 @@ fn providers(t: &Scratch, present: &[&str]) {
     t.write("deps.tsv", &table);
 }
 
+/// Approval refuses a Goal request whose part-1 sections are missing or hold only guidance, and
+/// whether `request new` wrote their headings depends on the template: a missing heading goes in
+/// above the rows, then `request section` fills all five.
+fn fill_part_one(t: &Scratch) {
+    let path = format!(".dstack/runs/{}/request.md", t.read(".dstack/local/CURRENT").trim());
+    let mut text = t.read(&path);
+    for heading in ["배경과 문제", "목표", "비목표", "사용 시나리오", "열린 가정"] {
+        if !text.lines().any(|line| line == format!("## {heading}")) {
+            text = text.replacen("\n## 요구사항\n", &format!("\n## {heading}\n\n## 요구사항\n"), 1);
+        }
+    }
+    t.write(&path, &text);
+    t.write("section.md", "채운 절이에요.\n");
+    for key in ["background", "goals", "non-goals", "scenarios", "assumptions"] {
+        t.ok(&["request", "section", key, "--from", "section.md"]);
+    }
+}
+
 #[test]
 fn r03_sub_runtime_preflight_requires_only_the_selected_providers() {
     for main in ["claude", "codex"] {
@@ -64,6 +82,7 @@ fn r03_sub_runtime_approval_uses_its_target_snapshot_not_current_project() {
     t.ok(&["mode", "set", "--main", "claude", "--sub", "claude"]);
     t.ok(&["run", "new", "snapshot"]);
     t.ok(&["request", "new", "--type", "cli", "--title", "선택한 실행 환경을 유지해요"]);
+    fill_part_one(&t);
     t.ok(&["req", "add", "선택한 실행 환경을 사용해요.", "--accept", "선택한 환경을 확인해요."]);
     t.ok(&["mode", "set", "--main", "codex", "--sub", "codex"]);
     let approved = t.ok(&["request", "approve"]);
