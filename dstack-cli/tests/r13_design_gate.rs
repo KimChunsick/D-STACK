@@ -227,3 +227,41 @@ fn R13_request_section_writes_only_the_named_part_two_section() {
     let expected = before.replacen(&guidance("proposed"), "바꾼 구조를 적었어요.\n", 1);
     assert_eq!(t.read(REQUEST), expected);
 }
+
+#[test]
+fn R13_design_gate_refuses_a_skip_decision_without_a_reason() {
+    // `decision add` can write the skip prefix alone; that row is no reason, so auto still asks
+    // for part 2 and names every unfilled section.
+    let t = scratch(&request("auto", guidance));
+    for text in ["design skipped:", "design skipped:   "] {
+        t.ok(&["decision", "add", text, "--affects", "R01", "--run", RUN]);
+        let out = approve(&t);
+        refused(&t, &out);
+        for (_, heading) in PART_TWO {
+            assert!(
+                stdout(&out).contains(&format!("section ## {heading}:")),
+                "{text:?} {heading}: {}",
+                stdout(&out)
+            );
+        }
+    }
+}
+
+#[test]
+fn R13_design_skip_refuses_a_reason_with_a_line_break() {
+    // A line break would split the decision row, and approval could not read the reason back.
+    let t = scratch(&request("auto", guidance));
+    let why = "명령 하나를 고치는 작은 변경이에요.";
+    t.ok(&["request", "design-skip", "--why", why, "--run", RUN]);
+    let decisions = ".dstack/runs/20261001T000000Z_design/decisions.md";
+    let before = t.read(decisions);
+    for broken in ["첫 줄\n둘째 줄", "첫 줄\r둘째 줄", "첫 줄\r\n둘째 줄"] {
+        let out = t.run(&["request", "design-skip", "--why", broken, "--run", RUN]);
+        assert_eq!(out.status.code(), Some(1), "{broken:?}: {}", stdout(&out));
+        assert!(stderr(&out).contains("line break"), "{}", stderr(&out));
+        assert_eq!(t.read(decisions), before, "{broken:?} wrote nothing");
+    }
+    let out = approve(&t);
+    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
+    assert!(stdout(&out).contains(why), "the reason is printed: {}", stdout(&out));
+}

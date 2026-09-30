@@ -98,14 +98,15 @@ fn unfilled(text: &str) -> Vec<(&'static str, String, String)> {
     found
 }
 
-/// The latest design-skip decision of a run, as (D id, reason).
+/// The latest design-skip decision of a run that gives a reason, as (D id, reason). A row with
+/// nothing but blanks after the prefix (`decision add "design skipped:"` writes one) is no reason.
 pub fn recorded_skip(dir: &Path) -> Result<Option<(String, String)>> {
     Ok(decisions(&dec_file(dir))?
         .into_iter()
         .rev()
         .find_map(|row| {
             let reason = row.text.strip_prefix(SKIP_PREFIX)?.trim().to_string();
-            Some((row.id, reason))
+            (!reason.is_empty()).then_some((row.id, reason))
         }))
 }
 

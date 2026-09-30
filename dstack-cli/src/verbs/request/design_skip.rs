@@ -43,6 +43,9 @@ pub fn design_skip(ctx: &mut Context, args: &[String]) -> Result<()> {
     if why.is_empty() {
         fail!("--why must not be empty: the reason is what approval prints");
     }
+    if why.contains(['\n', '\r']) {
+        fail!("--why must be one line: a line break would split the decision row, and approval could not read the reason back");
+    }
     q_text_ok("--why", why)?;
     let doc = load(&target)?;
     if doc.field("design_review").as_deref() == Some("required") {
