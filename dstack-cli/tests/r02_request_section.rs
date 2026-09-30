@@ -566,3 +566,66 @@ fn R02_request_section_refuses_tab_before_heading_or_fence() {
         refused(&t, "current", content, &reason);
     }
 }
+
+#[test]
+fn R02_request_section_refuses_setext_heading_in_document() {
+    // The review fragment: a renderer shows `바꿀 구조` over its underline as an h2 section, so
+    // reading both lines as text would let a write to `current` delete it. Every underline form
+    // refuses instead, naming its line, and the rows above and the store stay.
+    for underline in ["---", "===", " ---", "  ===", "   --- \t"] {
+        let mut parts = goal();
+        parts.retain(|part| part.0 != "proposed");
+        parts[10].2 =
+            format!("\n현재 설명이에요.\n\n바꿀 구조\n{underline}\n\n보존해야 하는 설계예요.\n\n");
+        let risks = parts.iter_mut().find(|part| part.0 == "risks").unwrap();
+        risks.2 = "\n위험 설명이에요.\n\n".to_string();
+        let line = render(&parts[..10]).lines().count() + 6;
+        let t = scratch(&render(&parts));
+        let reason = format!(
+            "line {line} underlines a setext heading, which request section does not support"
+        );
+        for key in ["current", "risks"] {
+            refused(&t, key, "새 내용이에요.", &reason);
+        }
+    }
+}
+
+#[test]
+fn R02_request_section_refuses_setext_heading_in_content() {
+    // A comment opened after text is inline, so its closing line is still paragraph text.
+    let t = scratch(&render(&goal()));
+    for (content, line) in [
+        ("바꿀 구조\n---\n\n설계예요.", 2),
+        ("앞이에요.\n\n설명이에요.\n   ===", 4),
+        ("설명이에요 <!-- 주석\n닫혀요 -->\n-", 3),
+    ] {
+        let reason = format!("line {line} of the content underlines a setext heading");
+        refused(&t, "current", content, &reason);
+    }
+}
+
+#[test]
+fn R02_request_section_keeps_thematic_breaks() {
+    // After a blank line, an ATX heading or a column-0 comment a `---` or `===` line underlines
+    // nothing, so writing another section keeps it byte for byte and new content may hold it.
+    // The frontmatter's closing `---` sits under `korean_polish: on` and is never an underline.
+    assert!(FRONT.ends_with("korean_polish: on\n---\n"));
+    let mut parts = goal();
+    parts[6].2 = "\n### S1 시나리오\n---\n흐름이에요.\n\n".to_string();
+    parts[10].2 = "\n현재 설명이에요.\n\n---\n\n===\n\n<!--\n안내\n-->\n---\n\n".to_string();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "proposed", "바꿀 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[11].2 = "\n바꿀 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(
+        t.read(REQUEST),
+        render(&parts),
+        "only ## 바꿀 구조 may change"
+    );
+
+    let content = "---\n\n앞이에요.\n\n===\n\n### 소절\n===\n뒤예요.";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = format!("\n{content}\n\n");
+    assert_eq!(t.read(REQUEST), render(&parts));
+}

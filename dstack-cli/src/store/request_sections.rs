@@ -6,8 +6,7 @@ use std::ops::Range;
 use crate::core::error::{Error, Result};
 use crate::store::rows;
 
-/// The `##` heading that holds the R rows. No prose writer touches it: rows are minted by
-/// `req add` and changed only through the row verbs.
+/// The `##` heading that holds the R rows; only `req add` and the row verbs write under it.
 pub const REQUIREMENTS: &str = "요구사항";
 
 /// The prose keys of parts 1 and 2 and the `##` heading each one names.
@@ -44,8 +43,7 @@ impl Place {
             .map(|&(_, heading)| Place::Section(heading))
     }
 
-    /// The deepest heading level that ends this body: a line of that level or above in new
-    /// content would cut the body short on the next read.
+    /// The deepest heading level that ends this body; one in new content would cut it short.
     fn boundary(&self) -> usize {
         match self {
             Place::Summary => 6,
@@ -54,8 +52,7 @@ impl Place {
     }
 }
 
-/// One column-0 heading line outside the frontmatter, every code fence and every HTML comment.
-/// `lineno` is the line of the whole text, frontmatter included.
+/// One heading `outline` found; `lineno` counts every line of the text, frontmatter included.
 struct Heading<'a> {
     level: usize,
     text: &'a str,
@@ -132,9 +129,8 @@ pub fn is_blank(body: &str) -> bool {
     rest.trim().is_empty()
 }
 
-/// What new prose may hold. A row-shaped line would be read back as an R row, a heading that
-/// ends this body would split it, and what the outline refuses in a document (an unclosed fence
-/// or comment, an ambiguous indent) would make the next write refuse or cut the wrong place.
+/// What new prose may hold: no row-shaped line (read back as an R row), no heading ending this
+/// body, nothing the outline refuses, read as if under the blank line `replace` puts above it.
 pub fn check_prose(content: &str, place: &Place) -> Result<()> {
     for (index, line) in content.lines().enumerate() {
         if row_shaped(line) {
@@ -173,7 +169,9 @@ pub fn replace(text: &str, place: &Place, content: &str) -> Result<String> {
             )));
         }
     }
-    let content = trimmed(content);
+    let content = content.trim_end();
+    let lead = &content[..content.len() - content.trim_start().len()];
+    let content = &content[lead.rfind('\n').map_or(0, |at| at + 1)..];
     let mut out = String::with_capacity(text.len() + content.len() + 2);
     out.push_str(&text[..range.start]);
     if !out.ends_with('\n') {
@@ -200,18 +198,6 @@ fn row_shaped(line: &str) -> bool {
             let digits = rest.chars().take_while(char::is_ascii_digit).count();
             digits > 0 && rest[digits..].starts_with("**")
         })
-}
-
-/// The content without its leading blank lines and trailing whitespace.
-fn trimmed(content: &str) -> &str {
-    let mut rest = content.trim_end();
-    while let Some(at) = rest.find('\n') {
-        if !rest[..at].trim().is_empty() {
-            break;
-        }
-        rest = &rest[at + 1..];
-    }
-    rest
 }
 
 /// Where the first `---` block ends: the block every frontmatter reader stops at.
@@ -243,23 +229,29 @@ fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>>
     // The open fence: mark, length, line. The open comment: line, opened at column 0 (a block).
     let mut fence: Option<((u8, usize), usize)> = None;
     let mut comment: Option<(usize, bool)> = None;
+    // Whether the last line was paragraph text, which an underline makes a setext heading. A
+    // column-0 comment opens an HTML block instead, even one that closes on its own line.
+    let mut text_above = false;
     let mut start = from;
     let skipped = text[..from].matches('\n').count();
     for (index, line) in text[from..].split_inclusive('\n').enumerate() {
         let lineno = skipped + index + 1;
         let end = start + line.len();
         let bare = line.trim_end_matches(['\n', '\r']);
+        let above = std::mem::take(&mut text_above);
+        let paragraph = !bare.trim_matches([' ', '\t']).is_empty() && !bare.starts_with("<!--");
         if let Some((open, _)) = fence {
             fence = fence.filter(|_| !closes(bare, open));
         } else if let Some((opened, block)) = comment {
-            if !block && !matches!(read_line(bare), Line::Text) {
+            if !block && !matches!(read_line(bare, above), Line::Text) {
                 let why = format!("is a heading, fence or HTML line in the comment line {opened}");
                 return refuse(lineno, why + " opens past column 0" + AMBIGUOUS);
             }
             comment = comment_end(bare, lineno, comment);
+            text_above = !block && paragraph;
         } else {
-            match read_line(bare) {
-                Line::Text => comment = comment_end(bare, lineno, None),
+            match read_line(bare, above) {
+                Line::Text => (comment, text_above) = (comment_end(bare, lineno, None), paragraph),
                 Line::Fence(open) => fence = Some((open, lineno)),
                 Line::Heading(level, text) => headings.push(Heading {
                     level,
@@ -290,9 +282,9 @@ enum Line<'a> {
 }
 
 /// Column-0 headings and ``` or ~~~ fences; the rest is text (paragraphs, lists, tables, quotes,
-/// comments) but a tab before a heading, fence or `<`, a `<` within three spaces that opens no
-/// comment (raw HTML, literal to a renderer) and a fence indented as in a list item, refused.
-fn read_line(line: &str) -> Line<'_> {
+/// comments), but refused: a tab before a heading, fence or `<`; a `<` within three spaces that
+/// opens no comment (raw HTML); a list-indented fence; a setext underline under text `above`.
+fn read_line(line: &str, above: bool) -> Line<'_> {
     let rest = line.trim_start_matches([' ', '\t']);
     let indent = line.len() - rest.len();
     let (fence, head, tag) = (fence_mark(rest), heading(rest), rest.starts_with('<'));
@@ -305,8 +297,17 @@ fn read_line(line: &str) -> Line<'_> {
         (0, Some(open), _) => Line::Fence(open),
         (_, Some(_), _) => Line::Refused("indents a fence marker as in a list item", AMBIGUOUS),
         (0, _, Some((level, name))) => Line::Heading(level, name),
+        _ if above && underline(line) => Line::Refused("underlines a setext heading", UNSUPPORTED),
         _ => Line::Text,
     }
+}
+
+/// A setext underline: up to three spaces, a run of `-` or of `=`, then spaces or tabs only.
+fn underline(line: &str) -> bool {
+    let rest = line.trim_start_matches(' ');
+    let run = rest.trim_end_matches([' ', '\t']);
+    let one_mark = run.trim_matches('-').is_empty() || run.trim_matches('=').is_empty();
+    line.len() - rest.len() <= 3 && !run.is_empty() && one_mark
 }
 
 /// The HTML comment still open at the end of line `n`, given the one open at its start: the line
@@ -334,8 +335,7 @@ fn heading(line: &str) -> Option<(usize, &str)> {
     atx.then(|| (level, after.trim()))
 }
 
-/// A code fence marker at the start of `line`: three or more backticks or tildes. A backtick
-/// fence's info string holds no backtick, so a line starting with ```x``` opens nothing.
+/// A code fence marker: three or more backticks or tildes, and no backtick after a backtick run.
 fn fence_mark(line: &str) -> Option<(u8, usize)> {
     let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
     let run = line.bytes().take_while(|b| *b == mark).count();
