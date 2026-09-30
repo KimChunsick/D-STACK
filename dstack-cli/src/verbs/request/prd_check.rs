@@ -88,7 +88,7 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
         failed += 1;
     }
     // Only rows inside the requirements section count; a request with neither heading reads its
-    // rows anywhere, as every row reader does.
+    // rows anywhere, as every row reader does. Either way a row inside a comment is unseen (D-24).
     match requirements(doc.text()) {
         Err(message) if refusals.contains(&message) => {}
         Err(message) => {
@@ -98,7 +98,7 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
         Ok(section) => {
             let (heading, found) = match section {
                 Some((heading, rows)) => (heading, holds_row(rows)),
-                None => (REQUIREMENTS, !doc.rows().is_empty()),
+                None => (REQUIREMENTS, holds_row(doc.text())),
             };
             if !found {
                 say!(
@@ -168,11 +168,29 @@ fn requirements(text: &str) -> Result<Option<(&'static str, &str)>, String> {
     Ok(found)
 }
 
-/// Whether one body holds an R row, read line by line as `RequestDoc::rows` reads the file.
-fn holds_row(body: &str) -> bool {
-    body.split('\n')
-        .enumerate()
-        .any(|(index, line)| rows::parse_line(index + 1, line).is_some())
+/// Whether a text holds an R row a reader sees, read line by line as `RequestDoc::rows` reads the
+/// file, less a line that starts inside an HTML comment (D-24).
+fn holds_row(text: &str) -> bool {
+    let mut open = false;
+    text.split('\n').enumerate().any(|(index, line)| {
+        let hidden = open;
+        open = comment_open(line, open);
+        !hidden && rows::parse_line(index + 1, line).is_some()
+    })
+}
+
+/// Whether an HTML comment is still open at the end of `line`, given whether one was at its
+/// start. A comment runs from `<!--` to the next `-->`, as `is_blank` reads it, so an unclosed
+/// one hides the rest of the text.
+fn comment_open(line: &str, mut open: bool) -> bool {
+    let mut rest = line;
+    loop {
+        let mark = if open { "-->" } else { "<!--" };
+        let Some(at) = rest.find(mark) else {
+            return open;
+        };
+        (rest, open) = (&rest[at + mark.len()..], !open);
+    }
 }
 
 /// The lines the R43 cap counts: the whole requirements section, comments and blank lines

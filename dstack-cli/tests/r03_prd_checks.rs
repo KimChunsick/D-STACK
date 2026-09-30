@@ -1,7 +1,8 @@
 // tests/r03_prd_checks.rs
 // R03: check request fails a Goal request whose required part-1 section is missing, holds only
 // guidance or keeps its guidance beside prose, a quick request whose summary does (its fallback body
-// included), and either one with no R row inside its requirements section; the 60-line cap counts
+// included), and either one with no R row inside its requirements section (one inside an HTML
+// comment does not count, nor in the whole file read without that section); the 60-line cap counts
 // that section alone (`## 요구사항` or the legacy `## Requirements`), or the row span when neither
 // heading exists; an approved request is not judged again while its text matches the stamp, is
 // judged again once changed unless it is a Goal request with none of the PRD layout headings (a
@@ -646,6 +647,58 @@ fn R03_prd_checks_require_the_row_inside_the_requirements_section() {
     );
 }
 
+const SECOND: &str = "- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n";
+
+#[test]
+fn R03_prd_checks_ignore_a_row_inside_a_comment() {
+    let multi = format!("\n<!--\n{ROW}-->\n\n");
+    let out = check(&scratch(&render(&with_body("## 요구사항", &multi))));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+    let single = format!("\n<!-- {} -->\n\n", ROW.trim_end());
+    let out = check(&scratch(&render(&with_body("## 요구사항", &single))));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+    let out = check(&scratch(&render(&with_body(
+        "## 요구사항",
+        &format!("\n{ROW}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    let out = check(&scratch(&render(&with_body(
+        "## 요구사항",
+        &format!("\n<!--\n{ROW}-->\n{SECOND}\n"),
+    ))));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+}
+
+#[test]
+fn R03_prd_checks_ignore_a_commented_row_without_a_requirements_heading() {
+    let text = render(&with_body("## 요구사항", &format!("\n<!--\n{ROW}-->\n\n")))
+        .replace("## 요구사항\n", "## R rows\n");
+    let out = check(&scratch(&text));
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 요구사항: no R row (dstack req add"),
+        "{}",
+        stdout(&out)
+    );
+    let text = render(&with_body(
+        "## 요구사항",
+        &format!("\n<!--\n{ROW}-->\n{SECOND}\n"),
+    ))
+    .replace("## 요구사항\n", "## R rows\n");
+    let out = check(&scratch(&text));
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+}
+
 #[test]
 fn R03_prd_checks_quick_fallback_summary_keeps_its_marker() {
     let t = Scratch::new();
@@ -723,6 +776,7 @@ fn R03_prd_checks_fixtures_cover_every_case() {
         "bad-quick-retained-summary.md",
         "bad-retained-guidance.md",
         "bad-row-outside-english-section.md",
+        "bad-row-inside-comment.md",
         "bad-row-outside-section.md",
         "bad-zero-rows.md",
         "good-legacy-approved.md",
