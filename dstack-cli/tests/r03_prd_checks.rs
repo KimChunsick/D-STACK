@@ -4,8 +4,9 @@
 // included), and either one with no R row inside its requirements section; the 60-line cap counts
 // that section alone (`## 요구사항` or the legacy `## Requirements`), or the row span when neither
 // heading exists; an approved request is not judged again while its text matches the stamp, is
-// judged again once changed unless it has none of the PRD layout headings; and the check-request
-// fixtures prove every case.
+// judged again once changed unless it is a Goal request with none of the PRD layout headings (a
+// quick one always is), and then hints an edit and a new approval; and the check-request fixtures
+// prove every case.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -352,11 +353,72 @@ fn R03_prd_checks_judge_again_a_request_emptied_after_approval() {
         "{}",
         stdout(&out)
     );
+    // request section refuses an approved request, so the hint names the edit and approve.
+    assert!(stdout(&out).contains(EDIT_HINT), "{}", stdout(&out));
+    assert!(
+        !stdout(&out).contains("request section"),
+        "{}",
+        stdout(&out)
+    );
     let now = std::fs::read(run.join("request.approved")).expect("the stamp");
     assert_eq!(now, stamped, "a refused approval leaves the stamp alone");
     let out = check(&t);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
     assert!(stdout(&out).contains("section ## 목표: empty"));
+}
+
+const EDIT_HINT: &str = "(edit it in request.md, then dstack request approve again)";
+
+#[test]
+fn R03_prd_checks_judge_again_an_edited_approved_quick_request() {
+    let t = Scratch::new();
+    t.init();
+    let quick = ["--quick", "qq"];
+    t.ok(&["quick", "new", "qq"]);
+    t.ok(&[
+        "req",
+        "add",
+        "첫 요구사항이에요.",
+        "--accept",
+        "첫 확인이에요.",
+        quick[0],
+        quick[1],
+    ]);
+    let prose = "요약 문단을 채웠어요.\n";
+    t.write("section.md", prose);
+    t.ok(&[
+        "request",
+        "section",
+        "summary",
+        "--from",
+        "section.md",
+        quick[0],
+        quick[1],
+    ]);
+    t.ok(&["request", "approve", quick[0], quick[1]]);
+    let stamp = t.0.join(".dstack/quick/qq/request.approved");
+    let stamped = std::fs::read(&stamp).expect("the stamp");
+    let out = t.run(&["check", "request", quick[0], quick[1]]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("sections: not judged (approved and unchanged since"),
+        "{}",
+        stdout(&out)
+    );
+
+    // A quick request never has the PRD layout headings, yet an edit is judged all the same.
+    let request = ".dstack/quick/qq/request.md";
+    t.write(request, &t.read(request).replacen(prose, "", 1));
+    let out = t.run(&["request", "approve", quick[0], quick[1]]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section the paragraph under # 빠른 작업: qq: empty"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(stdout(&out).contains(EDIT_HINT), "{}", stdout(&out));
+    let now = std::fs::read(&stamp).expect("the stamp");
+    assert_eq!(now, stamped, "a refused approval leaves the stamp alone");
 }
 
 #[test]

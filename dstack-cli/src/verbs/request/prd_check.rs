@@ -33,11 +33,15 @@ const LAYOUT: [(usize, &str); 3] = [(1, "1부 요청"), (1, "2부 설계"), (2, 
 /// summary paragraph of a quick one, that is missing, empty or still holds its template
 /// guidance, and the requirements section when it holds no R row. An approved request whose text
 /// still matches its stamp is not judged again: it passed these checks or predates them. Once
-/// changed (an edit, a merged pending row) it is judged again before a re-stamp, except one with
-/// none of the PRD layout headings (D-22): `request section` refuses an approved request, so a
-/// legacy one could never gain part 1, and no earlier approval starts failing.
+/// changed (an edit, a merged pending row) it is judged again before a re-stamp, except a Goal
+/// request with none of the PRD layout headings (D-22): `request section` refuses an approved
+/// request, so a legacy one could never gain part 1, and no earlier approval starts failing. A
+/// quick request never has those headings, but its one required place, the summary, an old quick
+/// request has too, so it is always judged (D-23). While approved, a failing place is hinted as
+/// an edit and a new approval.
 pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
-    if is_approved(target) {
+    let approved = is_approved(target);
+    if approved {
         // An unreadable file or stamp proves nothing unchanged, so the request is judged.
         let unchanged = sha256_file(&request_file(target))
             .is_ok_and(|hash| approval_matches(&target.dir, &hash).unwrap_or(false));
@@ -47,7 +51,7 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
             );
             return 0;
         }
-        if !prd_layout(doc.text()) {
+        if target.kind == TargetKind::Run && !prd_layout(doc.text()) {
             ctx.out.say("  sections: not judged (approved without the PRD layout headings; request section refuses an approved request)");
             return 0;
         }
@@ -72,9 +76,13 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
                 continue;
             }
         };
+        let hint = match approved {
+            true => "edit it in request.md, then dstack request approve again".to_string(),
+            false => format!("dstack request section {key} --from <file>"),
+        };
         say!(
             ctx,
-            "  section {}: {problem} (dstack request section {key} --from <file>)",
+            "  section {}: {problem} ({hint})",
             label(doc.text(), &place)
         );
         failed += 1;
