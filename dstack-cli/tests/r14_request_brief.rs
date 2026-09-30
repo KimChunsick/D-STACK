@@ -63,7 +63,7 @@ const FULL: &str = "<!-- dstack request brief가 decisions.md, recon.md, 비목�
                     - D-DESIGN-01: design round 1: document layout — one request file\n\
                     - D-03 설계를 건너뛴 사유: 작은 변경이에요.\n\n\
                     **비목표**\n\n\
-                    1. 이미 승인된 요청서는 다시 쓰지 않아요.\n\
+                    1. 이미 승인된 요청서는 다시 쓰지 않아요.\n\n\
                     2. 화면 캡처는 추가하지 않아요.\n\n\
                     **영향 파일**\n\n\
                     - `claude/templates/request/cli.md`\n\
@@ -193,4 +193,42 @@ fn R14_request_brief_refuses_a_request_without_the_heading() {
     let t = scratch(&text);
     let out = brief(&t);
     refused(&t, REQUEST, &out, &text, "## 한눈에 보기");
+}
+
+/// The body of one bold group of the generated section, between its label and the next group.
+fn group<'a>(section: &'a str, label: &str) -> &'a str {
+    let start = section.find(&format!("**{label}**\n\n")).expect("the group") + label.len() + 6;
+    section[start..].split("\n\n**").next().unwrap().trim_end()
+}
+
+#[test]
+fn R14_request_brief_lists_extensionless_files_that_exist() {
+    let t = scratch(&request(NON_GOALS, "| R | 파일 |\n|---|---|\n| R01 | `Makefile`, `Dockerfile` |\n"));
+    t.write("Makefile", "all:\n");
+    t.write("Dockerfile", "FROM scratch\n");
+    let out = brief(&t);
+    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
+    let text = t.read(REQUEST);
+    assert_eq!(group(section(&text), "영향 파일"), "- `Makefile`\n- `Dockerfile`");
+}
+
+#[test]
+fn R14_request_brief_ignores_a_bare_word_that_names_no_file() {
+    let t = scratch(&request(NON_GOALS, "| R | 파일 |\n|---|---|\n| R01 | `Procfile` |\n"));
+    let out = brief(&t);
+    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
+    let text = t.read(REQUEST);
+    assert_eq!(group(section(&text), "영향 파일"), "없음");
+}
+
+#[test]
+fn R14_request_brief_keeps_the_blank_lines_of_the_non_goals() {
+    let t = scratch(&request(NON_GOALS, MAPPING));
+    let body = "제외해요.\n\n---\n\n더 제외해요.";
+    t.write("non-goals.md", &format!("{body}\n"));
+    t.ok(&["request", "section", "non-goals", "--from", "non-goals.md", "--run", RUN]);
+    let out = brief(&t);
+    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
+    let text = t.read(REQUEST);
+    assert_eq!(group(section(&text), "비목표"), body);
 }
