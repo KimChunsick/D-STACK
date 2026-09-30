@@ -84,6 +84,9 @@ fn r03_sub_runtime_approval_uses_its_target_snapshot_not_current_project() {
     t.ok(&["request", "new", "--type", "cli", "--title", "선택한 실행 환경을 유지해요"]);
     fill_part_one(&t);
     t.ok(&["req", "add", "선택한 실행 환경을 사용해요.", "--accept", "선택한 환경을 확인해요."]);
+    // Part 2 answers to design_review (R13); this test is about the runtime snapshot.
+    let path = format!(".dstack/runs/{}/request.md", t.read(".dstack/local/CURRENT").trim());
+    t.write(&path, &t.read(&path).replacen("design_review: auto\n", "design_review: skip\n", 1));
     t.ok(&["mode", "set", "--main", "codex", "--sub", "codex"]);
     let approved = t.ok(&["request", "approve"]);
     assert!(approved.contains("ok      claude"), "{approved}");

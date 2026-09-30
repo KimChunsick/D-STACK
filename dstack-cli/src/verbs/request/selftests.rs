@@ -96,7 +96,9 @@ impl Selftest for CheckRequest {
 }
 
 /// The scenario, not just the file, is the fixture here: R46's claim is about what happens to an
-/// approved file when someone edits it, so the bad case has to perform that edit.
+/// approved file when someone edits it, so the bad case has to perform that edit. A fixture with
+/// `<!-- selftest-judge: approve -->` is judged by the approval itself (R16: its lint refuses);
+/// the sandbox lints with the scope table this checkout ships, not an older installed one.
 struct RequestApprove;
 
 impl Selftest for RequestApprove {
@@ -108,6 +110,17 @@ impl Selftest for RequestApprove {
         let sandbox = Sandbox::new(ctx)?;
         let request = sandbox.run_dir()?.join("request.md");
         copy(fixture, &request)?;
+        let project = sandbox.dir.join(".dstack/project");
+        std::fs::create_dir_all(&project).map_err(|e| {
+            Error::cannot_decide(format!("cannot create {}: {e}", project.display()))
+        })?;
+        copy(
+            &ctx.home.home.join("lint/ko-scope.tsv"),
+            &project.join("ko-scope.tsv"),
+        )?;
+        if Sandbox::directive(fixture, "judge").as_deref() == Some("approve") {
+            return verdict(sandbox.dsx(ctx, &["request", "approve"])?.0, "request approve");
+        }
         setup(&sandbox, ctx, &["request", "approve"])?;
         if name(fixture).starts_with("bad-") {
             append(&request, "a line appended after approval\n")?;

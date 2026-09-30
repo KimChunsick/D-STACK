@@ -31,7 +31,7 @@ const RUN: &str = "20260930T000000Z_prd";
 const REQUEST: &str = ".dstack/runs/20260930T000000Z_prd/request.md";
 
 const FRONT: &str = "---\nwork_type: cli\nroute: new-goal\nexternal_research: none\n\
-risk_axes: none\ndesign_review: auto\nreview: on\ncodex_effort: high\ne2e: cli\n\
+risk_axes: none\ndesign_review: skip\nreview: on\ncodex_effort: high\ne2e: cli\n\
 unit_tests: on\nvisual: none\nkorean_polish: on\n---\n";
 
 /// The five part-1 sections a Goal request fills before approval, as (key, heading).
@@ -157,6 +157,12 @@ fn R03_prd_checks_refuse_a_fresh_goal_request_until_part_one_is_filled() {
         let want = if index + 1 < REQUIRED.len() { 1 } else { 0 };
         assert_eq!(code, Some(want), "after {key}");
     }
+    // Part 2 answers to design_review (R13); this test is about part 1.
+    let request = format!(".dstack/runs/{id}/request.md");
+    let skipped = t
+        .read(&request)
+        .replacen("design_review: auto\n", "design_review: skip\n", 1);
+    t.write(&request, &skipped);
     t.ok(&["request", "approve"]);
     t.ok(&["check", "request"]);
 }

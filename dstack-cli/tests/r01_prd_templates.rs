@@ -147,6 +147,11 @@ fn R01_prd_templates_keep_row_approval_and_hash_exit_codes() {
         ];
         assert_eq!(code(&t, &add), 0, "{work_type}: req add");
         assert_eq!(code(&t, &["check", "request"]), 0, "{work_type}: check");
+        // Part 2 answers to design_review (R13); this test is about part 1 and the hash.
+        let skipped = t
+            .read(&request)
+            .replacen("design_review: auto\n", "design_review: skip\n", 1);
+        t.write(&request, &skipped);
         assert_eq!(code(&t, &["request", "approve"]), 0, "{work_type}: approve");
         assert_eq!(code(&t, &["check", "request"]), 0, "{work_type}: approved");
         let edited = format!("{}승인 뒤에 덧붙인 줄이에요.\n", t.read(&request));
