@@ -23,6 +23,11 @@ pub const SECTION_KEYS: [(&str, &str); 10] = [
     ("risks", "위험"),
 ];
 
+/// CommonMark's whitespace within a line, and with the line ends across lines; U+00A0 and every
+/// other Unicode space are text, never an indent, a separator or a blank line.
+const SPACE: [char; 2] = [' ', '\t'];
+const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
+
 /// Where a body sits: the paragraph between the `# <title>` line and the first heading, or the
 /// lines under one `## <heading>` up to the next `#` or `##` heading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,17 +121,11 @@ pub fn label(text: &str, place: &Place) -> String {
 /// Blank is what a template leaves behind: whitespace and HTML comments only. An unclosed
 /// comment runs to the end of the body, as a renderer shows it.
 pub fn is_blank(body: &str) -> bool {
-    let mut rest = body;
-    while let Some(at) = rest.find("<!--") {
-        if !rest[..at].trim().is_empty() {
-            return false;
-        }
-        rest = match rest[at + 4..].find("-->") {
-            Some(close) => &rest[at + 4 + close + 3..],
-            None => "",
-        };
-    }
-    rest.trim().is_empty()
+    let Some((before, after)) = body.split_once("<!--") else {
+        return body.trim_matches(BLANK).is_empty();
+    };
+    let rest = after.split_once("-->").map_or("", |(_, rest)| rest);
+    before.trim_matches(BLANK).is_empty() && is_blank(rest)
 }
 
 /// What new prose may hold: no row-shaped line (read back as an R row), no heading ending this
@@ -169,8 +168,8 @@ pub fn replace(text: &str, place: &Place, content: &str) -> Result<String> {
             )));
         }
     }
-    let content = content.trim_end();
-    let lead = &content[..content.len() - content.trim_start().len()];
+    let content = content.trim_end_matches(BLANK);
+    let lead = &content[..content.len() - content.trim_start_matches(BLANK).len()];
     let content = &content[lead.rfind('\n').map_or(0, |at| at + 1)..];
     let mut out = String::with_capacity(text.len() + content.len() + 2);
     out.push_str(&text[..range.start]);
@@ -239,7 +238,7 @@ fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>>
         let end = start + line.len();
         let bare = line.trim_end_matches(['\n', '\r']);
         let above = std::mem::take(&mut text_above);
-        let paragraph = !bare.trim_matches([' ', '\t']).is_empty() && !bare.starts_with("<!--");
+        let paragraph = !bare.trim_matches(SPACE).is_empty() && !bare.starts_with("<!--");
         if let Some((open, _)) = fence {
             fence = fence.filter(|_| !closes(bare, open));
         } else if let Some((opened, block)) = comment {
@@ -285,7 +284,7 @@ enum Line<'a> {
 /// comments), but refused: a tab before a heading, fence or `<`; a `<` within three spaces that
 /// opens no comment (raw HTML); a list-indented fence; a setext underline under text `above`.
 fn read_line(line: &str, above: bool) -> Line<'_> {
-    let rest = line.trim_start_matches([' ', '\t']);
+    let rest = line.trim_start_matches(SPACE);
     let indent = line.len() - rest.len();
     let (fence, head, tag) = (fence_mark(rest), heading(rest), rest.starts_with('<'));
     if line[..indent].contains('\t') && (fence.is_some() || head.is_some() || tag) {
@@ -305,7 +304,7 @@ fn read_line(line: &str, above: bool) -> Line<'_> {
 /// A setext underline: up to three spaces, a run of `-` or of `=`, then spaces or tabs only.
 fn underline(line: &str) -> bool {
     let rest = line.trim_start_matches(' ');
-    let run = rest.trim_end_matches([' ', '\t']);
+    let run = rest.trim_end_matches(SPACE);
     let one_mark = run.trim_matches('-').is_empty() || run.trim_matches('=').is_empty();
     line.len() - rest.len() <= 3 && !run.is_empty() && one_mark
 }
@@ -331,8 +330,8 @@ fn comment_end(line: &str, n: usize, mut open: Option<(usize, bool)>) -> Option<
 fn heading(line: &str) -> Option<(usize, &str)> {
     let level = line.bytes().take_while(|b| *b == b'#').count();
     let after = &line[level..];
-    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with([' ', '\t']));
-    atx.then(|| (level, after.trim()))
+    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE));
+    atx.then(|| (level, after.trim_matches(SPACE)))
 }
 
 /// A code fence marker: three or more backticks or tildes, and no backtick after a backtick run.
@@ -342,9 +341,9 @@ fn fence_mark(line: &str) -> Option<(u8, usize)> {
     (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
 }
 
-/// A closing fence: up to three spaces, the opening's mark at least as long, nothing after it.
+/// A closing fence: up to three spaces, the opening's mark at least as long, then spaces or tabs.
 fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
     let rest = line.trim_start_matches(' ');
     let length = rest.bytes().take_while(|b| *b == mark).count();
-    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim().is_empty()
+    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim_matches(SPACE).is_empty()
 }

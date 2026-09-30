@@ -629,3 +629,103 @@ fn R02_request_section_keeps_thematic_breaks() {
     parts[10].2 = format!("\n{content}\n\n");
     assert_eq!(t.read(REQUEST), render(&parts));
 }
+
+#[test]
+fn R02_request_section_nbsp_does_not_close_a_fence() {
+    // The review fragment: only spaces or tabs may follow a closing fence, so a fence then U+00A0
+    // is code and the next bare fence closes the block. `## 바꿀 구조` still ends `## 지금 구조`,
+    // and the rows above, every later section and the frontmatter stay byte for byte.
+    for mark in ["~~~", "```"] {
+        let mut parts = goal();
+        parts[10].2 = format!("\n{mark}\n{mark}\u{a0}\n{mark}\n\n");
+        parts[11].2 = format!("\n보존해야 하는 설계예요.\n{mark}\n{mark}\u{a0}\n{mark}\n\n");
+        parts[14].2 = "\n위험 설명이에요.\n\n".to_string();
+        let t = scratch(&render(&parts));
+        let out = section(&t, "current", "지금 구조를 새로 적었어요.");
+        assert!(out.status.success(), "{mark}: {}", stderr(&out));
+        parts[10].2 = "\n지금 구조를 새로 적었어요.\n\n".to_string();
+        assert_eq!(
+            t.read(REQUEST),
+            render(&parts),
+            "{mark}: only ## 지금 구조 may change"
+        );
+    }
+}
+
+#[test]
+fn R02_request_section_nbsp_after_hashes_is_not_a_heading() {
+    // `##` opens a heading only before a space, a tab or the line end, and a heading's text keeps
+    // a trailing U+00A0: the first line is body text of `## 지금 구조`, the second names no `위험`.
+    let mut parts = goal();
+    parts[10].2 = "\n##\u{a0}바꿀 구조\n\n".to_string();
+    parts[14].1 = "## 위험\u{a0}";
+    let t = scratch(&render(&parts));
+    let out = section(&t, "proposed", "바꿀 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[11].2 = "\n바꿀 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+    refused(&t, "risks", "위험이에요.", "no '## 위험' heading");
+
+    let content = "##\u{a0}새 절\n#\u{a0}새 제목";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = format!("\n{content}\n\n");
+    assert_eq!(
+        t.read(REQUEST),
+        render(&parts),
+        "only ## 지금 구조 may change"
+    );
+}
+
+#[test]
+fn R02_request_section_nbsp_line_is_not_blank() {
+    // A line of only U+00A0 is paragraph text: a `---` under it underlines a setext heading, a
+    // body holding it is filled, and the writer keeps it where new content puts it.
+    let mut parts = goal();
+    parts[10].2 = "\n현재 설명이에요.\n\n\u{a0}\n---\n\n".to_string();
+    let line = render(&parts[..10]).lines().count() + 6;
+    let t = scratch(&render(&parts));
+    let reason = format!("line {line} underlines a setext heading");
+    refused(&t, "risks", "새 내용이에요.", &reason);
+    let content = "앞이에요.\n\n\u{a0}\n---";
+    let reason = "line 4 of the content underlines a setext heading";
+    refused(&scratch(&render(&goal())), "current", content, reason);
+    assert!(!is_blank("\n\u{a0}\n"));
+    assert!(!is_blank("<!-- 안내 -->\u{a0}\n"));
+
+    let mut parts = goal();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "current", "\u{a0}\n\n설명이에요.\u{a0}\n\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = "\n\u{a0}\n\n설명이에요.\u{a0}\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+}
+
+#[test]
+fn R02_request_section_spaces_and_tabs_stay_structural() {
+    // The ASCII forms read as before: a closing fence may end in spaces or tabs, `##` then a tab
+    // opens a heading whose text drops them, and a line of spaces and tabs is blank.
+    let mut parts = goal();
+    parts[10].2 = "\n~~~\n## 코드 안의 절\n~~~ \t\n\n```\n```\t \n \t\n---\n\n".to_string();
+    parts[14].1 = "##\t위험 \t";
+    let t = scratch(&render(&parts));
+    let out = section(&t, "proposed", "바꿀 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[11].2 = "\n바꿀 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+    let out = section(&t, "risks", "위험이에요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[14].2 = "\n위험이에요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+
+    refused(
+        &t,
+        "current",
+        "앞이에요.\n##\t새 절",
+        "line 2 of the content is a heading",
+    );
+    let out = section(&t, "current", " \t\n\n설명이에요. \t\n \t\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = "\n설명이에요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+}
