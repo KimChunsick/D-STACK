@@ -3,8 +3,9 @@
 // guidance or keeps its guidance beside prose, a quick request whose summary does (its fallback body
 // included), and either one with no R row inside its requirements section; the 60-line cap counts
 // that section alone (`## 요구사항` or the legacy `## Requirements`), or the row span when neither
-// heading exists; an approved request is not judged again; and the check-request fixtures prove
-// every case.
+// heading exists; an approved request is not judged again while its text matches the stamp, is
+// judged again once changed unless it has none of the PRD layout headings; and the check-request
+// fixtures prove every case.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -308,8 +309,74 @@ fn R03_prd_checks_pass_an_approved_legacy_request() {
         "--run",
         RUN,
     ]);
-    assert_eq!(check(&t).status.code(), Some(1), "the pending row");
+    let out = check(&t);
+    assert_eq!(out.status.code(), Some(1), "the pending row");
+    // Changed since its stamp, it is still exempt: it holds none of the PRD layout headings.
+    assert!(stdout(&out).contains(LEGACY_LINE), "{}", stdout(&out));
+    let approved = t.ok(&["request", "approve", "--run", RUN]);
+    assert!(approved.contains(LEGACY_LINE), "{approved}");
+    t.ok(&["check", "request", "--run", RUN]);
+}
+
+const LEGACY_LINE: &str = "sections: not judged (approved without the PRD layout";
+
+/// A store whose filled Goal request `request approve` has stamped, and the run directory.
+fn approved_goal() -> (Scratch, PathBuf) {
+    let t = scratch(&render(&goal()));
     t.ok(&["request", "approve", "--run", RUN]);
+    let run = t.0.join(".dstack/runs").join(RUN);
+    (t, run)
+}
+
+#[test]
+fn R03_prd_checks_leave_an_unchanged_approved_request_unjudged() {
+    let (t, _) = approved_goal();
+    let out = check(&t);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("sections: not judged (approved and unchanged since"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn R03_prd_checks_judge_again_a_request_emptied_after_approval() {
+    let (t, run) = approved_goal();
+    let stamped = std::fs::read(run.join("request.approved")).expect("the stamp");
+    t.write(REQUEST, &render(&with_body("## 목표", "\n")));
+    let out = t.run(&["request", "approve", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 목표: empty"),
+        "{}",
+        stdout(&out)
+    );
+    let now = std::fs::read(run.join("request.approved")).expect("the stamp");
+    assert_eq!(now, stamped, "a refused approval leaves the stamp alone");
+    let out = check(&t);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains("section ## 목표: empty"));
+}
+
+#[test]
+fn R03_prd_checks_reapprove_a_filled_request_after_a_merged_row() {
+    let (t, _) = approved_goal();
+    t.ok(&[
+        "req",
+        "add",
+        "덧붙인 요구사항이에요.",
+        "--accept",
+        "덧붙인 확인이에요.",
+        "--run",
+        RUN,
+    ]);
+    // Changed since its stamp, it is judged again and passes because every section is filled.
+    let approved = t.ok(&["request", "approve", "--run", RUN]);
+    assert!(
+        approved.contains("sections: required 6, unfilled 0"),
+        "{approved}"
+    );
     t.ok(&["check", "request", "--run", RUN]);
 }
 

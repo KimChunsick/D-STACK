@@ -3,12 +3,13 @@
 // approval, and the lines the R43 cap counts.
 
 use crate::core::context::Context;
+use crate::core::fsx::sha256_file;
 use crate::core::target::{Target, TargetKind};
-use crate::store::request::RequestDoc;
-use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS};
+use crate::store::request::{approval_matches, RequestDoc};
+use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS, SECTION_KEYS};
 use crate::store::rows;
 
-use super::is_approved;
+use super::{is_approved, request_file};
 
 /// The part-1 sections a Goal request fills before approval (D-01). 요구사항 is filled by its
 /// rows instead, so its standing guidance is an instruction, never a gap; part 2 answers to
@@ -24,16 +25,32 @@ const GOAL: [&str; 5] = [
 /// The heading a request written before the Korean layout holds its rows under.
 const LEGACY: &str = "Requirements";
 
+/// The headings only the PRD layout has besides the ten prose sections of `SECTION_KEYS`, as
+/// (level, text): the two part markers and the brief.
+const LAYOUT: [(usize, &str); 3] = [(1, "1부 요청"), (1, "2부 설계"), (2, "한눈에 보기")];
+
 /// How many required places fail: each of the five part-1 sections of a Goal request, or the
 /// summary paragraph of a quick one, that is missing, empty or still holds its template
-/// guidance, and the requirements section when it holds no R row. An approved request is not judged
-/// again — it was stamped before these checks existed or passed them when it was, and its hash
-/// guards the text since — so no earlier approval starts failing.
+/// guidance, and the requirements section when it holds no R row. An approved request whose text
+/// still matches its stamp is not judged again: it passed these checks or predates them. Once
+/// changed (an edit, a merged pending row) it is judged again before a re-stamp, except one with
+/// none of the PRD layout headings (D-22): `request section` refuses an approved request, so a
+/// legacy one could never gain part 1, and no earlier approval starts failing.
 pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
     if is_approved(target) {
-        ctx.out
-            .say("  sections: not judged (approved; the approval hash guards the text)");
-        return 0;
+        // An unreadable file or stamp proves nothing unchanged, so the request is judged.
+        let unchanged = sha256_file(&request_file(target))
+            .is_ok_and(|hash| approval_matches(&target.dir, &hash).unwrap_or(false));
+        if unchanged {
+            ctx.out.say(
+                "  sections: not judged (approved and unchanged since; the approval hash guards the text)",
+            );
+            return 0;
+        }
+        if !prd_layout(doc.text()) {
+            ctx.out.say("  sections: not judged (approved without the PRD layout headings; request section refuses an approved request)");
+            return 0;
+        }
     }
     let keys: &[&str] = match target.kind {
         TargetKind::Run => &GOAL,
@@ -90,6 +107,19 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
         keys.len() + 1
     );
     failed
+}
+
+/// Whether any column-0 ATX heading of the text is one of the PRD layout's, at its level. Unlike
+/// the section reader this skips no fence or comment, so a doubt only ever means judging.
+fn prd_layout(text: &str) -> bool {
+    let sections = SECTION_KEYS.iter().map(|&(_, heading)| (2, heading));
+    let layout: Vec<(usize, &str)> = LAYOUT.into_iter().chain(sections).collect();
+    text.lines().any(|line| {
+        let level = line.bytes().take_while(|b| *b == b'#').count();
+        let rest = &line[level..];
+        (rest.is_empty() || rest.starts_with([' ', '\t']))
+            && layout.contains(&(level, rest.trim_matches([' ', '\t'])))
+    })
 }
 
 /// Whether a body still holds its template guidance: an HTML comment carrying the `(키: <key>)`
