@@ -375,3 +375,110 @@ fn R02_request_section_refuses_unclosed_fence_in_document() {
         tilde[10].2
     );
 }
+
+#[test]
+fn R02_request_section_html_comments_hide_fences_and_headings() {
+    // The review fragment: a fence marker inside a comment opens nothing, so `## 바꿀 구조` still
+    // ends `## 지금 구조`, and the rows above, every later section and the frontmatter stay.
+    let mut parts = goal();
+    parts[10].2 = "\n현재 설명이에요.\n<!--\n```\n-->\n\n".to_string();
+    parts[11].2 = "\n보존해야 하는 설계예요.\n<!--\n```\n-->\n\n".to_string();
+    parts[14].2 =
+        "\n<!-- a --> 위험 <!-- b -->\n<!--\n## 주석 속 절\n-->\n위험 설명이에요.\n\n".to_string();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "current", "지금 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = "\n지금 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(
+        t.read(REQUEST),
+        render(&parts),
+        "only ## 지금 구조 may change"
+    );
+}
+
+#[test]
+fn R02_request_section_refuses_unclosed_comment_in_document() {
+    // No later `-->` closes it, so it hides every heading after it; every write names its line.
+    let mut parts = goal();
+    parts[10].2 = "\n<!-- 닫히지 않은 주석\n\n".to_string();
+    for later in [11, 14, 15] {
+        parts[later].2 = "\n안내예요.\n\n".to_string();
+    }
+    let opener = render(&parts[..10]).lines().count() + 3;
+    let t = scratch(&render(&parts));
+    for key in ["current", "goals", "risks"] {
+        refused(
+            &t,
+            key,
+            "새 내용이에요.",
+            &format!("line {opener} opens an HTML comment that never closes"),
+        );
+    }
+}
+
+#[test]
+fn R02_request_section_refuses_ambiguous_indent_and_inline_comment() {
+    // A fence marker indented as a list item's would be may close a list's fence or open one a
+    // renderer ends early; either way no boundary after it is certain.
+    let mut parts = goal();
+    parts[10].2 = "\n- 항목이에요.\n  ```\n  코드예요.\n```\n\n".to_string();
+    let marker = render(&parts[..10]).lines().count() + 4;
+    let t = scratch(&render(&parts));
+    for key in ["current", "risks"] {
+        refused(&t, key, "새 내용이에요.", &format!("line {marker} "));
+        refused(&t, key, "새 내용이에요.", "ambiguous");
+    }
+
+    // A comment opened after text cannot hide a heading from a renderer.
+    let mut parts = goal();
+    parts[10].2 = "\n설명이에요 <!-- 여기서 열려요\n\n".to_string();
+    parts[11].2 = "\n-->\n\n".to_string();
+    let heading = render(&parts[..11]).lines().count() + 1;
+    let t = scratch(&render(&parts));
+    refused(&t, "current", "새 내용이에요.", &format!("line {heading} "));
+    refused(&t, "goals", "새 내용이에요.", "ambiguous");
+}
+
+#[test]
+fn R02_request_section_indented_heading_in_list_is_body() {
+    // Only a column-0 `##` line is a section: the list item's heading and the quoted lines are
+    // body text of `## 지금 구조`.
+    let mut parts = goal();
+    parts[10].2 = "\n- 목록 항목이에요.\n  ## 바꿀 구조\n> ## 바꿀 구조\n> ```\n\n".to_string();
+    let t = scratch(&render(&parts));
+    let out = section(&t, "proposed", "바꿀 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[11].2 = "\n바꿀 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+
+    let out = section(&t, "current", "지금 구조를 새로 적었어요.");
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = "\n지금 구조를 새로 적었어요.\n\n".to_string();
+    assert_eq!(t.read(REQUEST), render(&parts));
+}
+
+#[test]
+fn R02_request_section_content_follows_comment_and_indent_rules() {
+    let mut parts = goal();
+    let t = scratch(&render(&parts));
+    refused(
+        &t,
+        "current",
+        "앞이에요.\n<!-- 닫히지 않아요",
+        "line 2 of the content opens an HTML comment that never closes",
+    );
+    refused(
+        &t,
+        "current",
+        "- 항목이에요.\n  ```\n  코드예요.",
+        "ambiguous",
+    );
+    refused(&t, "current", "설명이에요 <!--\n## 새 절\n-->", "ambiguous");
+    refused(&t, "current", "<!-->\n## 새 절\n-->", "is a heading");
+
+    let content = "<!--\n## 안내\n```\n-->\n- 항목이에요.\n  ## 목록 속 제목\n> ```";
+    let out = section(&t, "current", content);
+    assert!(out.status.success(), "{}", stderr(&out));
+    parts[10].2 = format!("\n{content}\n\n");
+    assert_eq!(t.read(REQUEST), render(&parts));
+}

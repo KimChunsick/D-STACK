@@ -54,8 +54,8 @@ impl Place {
     }
 }
 
-/// One heading line outside the frontmatter and outside every code fence. `lineno` is the line
-/// of the whole text, frontmatter included.
+/// One column-0 heading line outside the frontmatter, every code fence and every HTML comment.
+/// `lineno` is the line of the whole text, frontmatter included.
 struct Heading<'a> {
     level: usize,
     text: &'a str,
@@ -64,25 +64,11 @@ struct Heading<'a> {
     end: usize,
 }
 
-/// The headings of a text and the line of a code fence still open at its end.
-struct Outline<'a> {
-    headings: Vec<Heading<'a>>,
-    open_fence: Option<usize>,
-}
-
 /// The byte range of one body. A missing heading, a heading that appears more than once, a
-/// document without a title and a fence the document never closes are refusals naming the
-/// heading or line, so no caller writes to a guessed place.
+/// document without a title and a document the outline cannot read for certain are refusals
+/// naming the heading or line, so no caller writes to a guessed place.
 pub fn locate(text: &str, place: &Place) -> Result<Range<usize>> {
-    let outline = outline(text, frontmatter_end(text));
-    // An unclosed fence hides every heading after it: a body reaching it would run to the end
-    // of the file, and a heading past it would look missing.
-    if let Some(line) = outline.open_fence {
-        return Err(Error::failed(format!(
-            "line {line} opens a code fence that never closes; it hides every heading after it"
-        )));
-    }
-    let headings = outline.headings;
+    let headings = outline(text, frontmatter_end(text), "")?;
     let at = match place {
         Place::Summary => match headings.first() {
             Some(first) if first.level == 1 => 0,
@@ -122,7 +108,7 @@ pub fn body<'a>(text: &'a str, place: &Place) -> Result<&'a str> {
 pub fn label(text: &str, place: &Place) -> String {
     match place {
         Place::Summary => {
-            let headings = outline(text, frontmatter_end(text)).headings;
+            let headings = outline(text, frontmatter_end(text), "").unwrap_or_default();
             let title = headings.first().map_or("", |heading| heading.text);
             format!("the paragraph under # {title}")
         }
@@ -147,7 +133,8 @@ pub fn is_blank(body: &str) -> bool {
 }
 
 /// What new prose may hold. A row-shaped line would be read back as an R row, a heading that
-/// ends this body would split it, and an unclosed fence would hide every heading after it.
+/// ends this body would split it, and what the outline refuses in a document (an unclosed fence
+/// or comment, an ambiguous indent) would make the next write refuse or cut the wrong place.
 pub fn check_prose(content: &str, place: &Place) -> Result<()> {
     for (index, line) in content.lines().enumerate() {
         if row_shaped(line) {
@@ -157,12 +144,8 @@ pub fn check_prose(content: &str, place: &Place) -> Result<()> {
             )));
         }
     }
-    let outline = outline(content, 0);
-    if let Some(heading) = outline
-        .headings
-        .iter()
-        .find(|h| h.level <= place.boundary())
-    {
+    let headings = outline(content, 0, " of the content")?;
+    if let Some(heading) = headings.iter().find(|h| h.level <= place.boundary()) {
         let allowed = match place {
             Place::Summary => "the summary holds no headings",
             Place::Section(_) => "a section holds ### subsections only",
@@ -172,11 +155,6 @@ pub fn check_prose(content: &str, place: &Place) -> Result<()> {
             heading.lineno,
             content.lines().nth(heading.lineno - 1).unwrap_or("")
         )));
-    }
-    if outline.open_fence.is_some() {
-        return Err(Error::failed(
-            "the content opens a code fence it never closes; it would hide every heading after it",
-        ));
     }
     Ok(())
 }
@@ -252,43 +230,80 @@ fn frontmatter_end(text: &str) -> usize {
     text.len()
 }
 
-/// The headings from byte `from` on. A `#` line inside a ``` or ~~~ fence is code, not a
-/// section boundary.
-fn outline(text: &str, from: usize) -> Outline<'_> {
+/// Why an uncertain reading refuses: a renderer may place the section boundaries elsewhere.
+const AMBIGUOUS: &str = "; a renderer may read it otherwise, so the sections are ambiguous";
+
+/// The column-0 ATX headings from byte `from` on, as a renderer reads the blocks: a `#` line in
+/// a ``` or ~~~ fence or in an HTML comment is no heading. Where that reading is uncertain the
+/// outline is refused naming the line `of` the text: a fence or comment that never closes, a
+/// fence marker indented as in a list item, and a heading or fence line inside a comment opened
+/// past column 0 (after text, an indent or a `>`), which a renderer need not hide.
+fn outline<'a>(text: &'a str, from: usize, of: &str) -> Result<Vec<Heading<'a>>> {
+    let refuse = |line: usize, why: String| Err(Error::failed(format!("line {line}{of} {why}")));
     let mut headings = Vec::new();
-    // The open fence's mark and length, and the line it opened on.
+    // The open fence's mark, length and line; the open comment's line and whether it opened at
+    // column 0, an HTML block hiding every line up to its close.
     let mut fence: Option<((u8, usize), usize)> = None;
+    let mut comment: Option<(usize, bool)> = None;
     let mut start = from;
     let skipped = text[..from].matches('\n').count();
     for (index, line) in text[from..].split_inclusive('\n').enumerate() {
         let lineno = skipped + index + 1;
         let end = start + line.len();
         let bare = line.trim_end_matches(['\n', '\r']);
-        match fence {
-            Some((open, _)) => {
-                if closes(bare, open) {
-                    fence = None;
-                }
+        let marker = unindented(bare).and_then(fence_mark);
+        if let Some((open, _)) = fence {
+            if closes(bare, open) {
+                fence = None;
             }
-            None => {
-                if let Some(open) = fence_mark(bare) {
-                    fence = Some((open, lineno));
-                } else if let Some((level, heading)) = heading(bare) {
-                    headings.push(Heading {
-                        level,
-                        text: heading,
-                        lineno,
-                        start,
-                        end,
-                    });
-                }
+        } else if let Some((opened, block)) = comment {
+            if !block && (heading(bare).is_some() || marker.is_some()) {
+                let why = format!("is a heading or code fence in the comment line {opened} opens");
+                return refuse(lineno, why + " past column 0" + AMBIGUOUS);
             }
+            comment = comment_end(bare, lineno, comment);
+        } else if let Some(open) = fence_mark(bare) {
+            fence = Some((open, lineno));
+        } else if marker.is_some() {
+            return refuse(
+                lineno,
+                format!("indents a fence marker as in a list item{AMBIGUOUS}"),
+            );
+        } else if let Some((level, name)) = heading(bare) {
+            headings.push(Heading {
+                level,
+                text: name,
+                lineno,
+                start,
+                end,
+            });
+        } else {
+            comment = comment_end(bare, lineno, None);
         }
         start = end;
     }
-    Outline {
-        headings,
-        open_fence: fence.map(|(_, line)| line),
+    let hides = "never closes; it hides every heading after it";
+    match (fence, comment) {
+        (Some((_, line)), _) => refuse(line, format!("opens a code fence that {hides}")),
+        (_, Some((line, _))) => refuse(line, format!("opens an HTML comment that {hides}")),
+        _ => Ok(headings),
+    }
+}
+
+/// The HTML comment still open at the end of line `n`, given the one open at its start: the line
+/// it opened on and whether it opened at column 0. `<!-->` and `<!--->` close themselves.
+fn comment_end(line: &str, n: usize, mut open: Option<(usize, bool)>) -> Option<(usize, bool)> {
+    let mut at = 0;
+    loop {
+        if open.is_some() {
+            let Some(close) = line[at..].find("-->") else {
+                return open;
+            };
+            (at, open) = (at + close + 3, None);
+        } else {
+            let begin = at + line[at..].find("<!--")?;
+            (at, open) = (begin + 2, Some((n, begin == 0)));
+        }
     }
 }
 
@@ -298,36 +313,32 @@ fn unindented(line: &str) -> Option<&str> {
     (line.len() - rest.len() <= 3).then_some(rest)
 }
 
-/// An ATX heading: one to six `#`, then a space, a tab or the end of the line.
+/// An ATX heading at column 0: one to six `#`, then a space, a tab or the end of the line. An
+/// indented `#` line, a list item's heading for one, is body text.
 fn heading(line: &str) -> Option<(usize, &str)> {
-    let rest = unindented(line)?;
-    let level = rest.bytes().take_while(|b| *b == b'#').count();
-    let after = &rest[level..];
+    let level = line.bytes().take_while(|b| *b == b'#').count();
+    let after = &line[level..];
     if level == 0 || level > 6 || !(after.is_empty() || after.starts_with([' ', '\t'])) {
         return None;
     }
     Some((level, after.trim()))
 }
 
-/// The opening of a code fence: three or more backticks or tildes. A backtick fence's info
-/// string holds no backtick, so a line starting with an inline span like ```x``` opens nothing.
+/// A code fence marker at the start of `line`: three or more backticks or tildes. A backtick
+/// fence's info string holds no backtick, so a line starting with ```x``` opens nothing.
 fn fence_mark(line: &str) -> Option<(u8, usize)> {
-    let rest = unindented(line)?;
-    let mark = *rest.as_bytes().first()?;
+    let mark = *line.as_bytes().first()?;
     if mark != b'`' && mark != b'~' {
         return None;
     }
-    let run = rest.bytes().take_while(|b| *b == mark).count();
-    let info = &rest[run..];
-    (run >= 3 && !(mark == b'`' && info.contains('`'))).then_some((mark, run))
+    let run = line.bytes().take_while(|b| *b == mark).count();
+    (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
 }
 
-/// A closing fence: the same mark, at least as long as the opening, and nothing after it.
+/// A closing fence: up to three spaces, the opening's mark at least as long, nothing after it.
 fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
-    let rest = match unindented(line) {
-        Some(rest) => rest,
-        None => return false,
-    };
-    let length = rest.bytes().take_while(|b| *b == mark).count();
-    length >= run && rest[length..].trim().is_empty()
+    unindented(line).is_some_and(|rest| {
+        let length = rest.bytes().take_while(|b| *b == mark).count();
+        length >= run && rest[length..].trim().is_empty()
+    })
 }
