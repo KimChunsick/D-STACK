@@ -8,6 +8,8 @@
 # repository that never declares a scope table is never blocked (R93).
 pattern	scope
 claude/lint/**	exempt
+**/.dstack/runs/*/request.md	ko-haeyo
+**/.dstack/quick/*/request.md	ko-haeyo
 README.md	ko-haeyo
 claude/skills/**/*.md	en
 claude/agents/**/*.md	en

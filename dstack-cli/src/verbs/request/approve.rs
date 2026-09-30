@@ -1,6 +1,6 @@
 // verbs/request/approve.rs
-// dstack request approve: validate, gate design, clear pending, stamp the sha256, diff, sync cases
-// (R46, R48, R94, R105, R13).
+// dstack request approve: validate, gate design, lint, clear pending, stamp the sha256, diff, sync
+// cases (R46, R48, R94, R105, R13, R16).
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
@@ -32,6 +32,18 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
     }
     let doc = load(&target)?;
     design_gate::gate(ctx, &target, &doc)?;
+
+    // R16: the whole request, parts 2 and 3 included, is Korean 해요체; the scope table decides
+    // what the file is, so a repository that declares its own table keeps that say.
+    ctx.out.say("== Korean lint (R16, the whole request.md)");
+    let called = ctx.call("lint-ko", &[file.display().to_string()]);
+    let merged = format!("{}{}", called.stdout, called.stderr);
+    ctx.out.say(merged.trim_end_matches('\n'));
+    match called.code {
+        0 => {}
+        2 => return Err(Error::Exit(2)),
+        _ => fail!("request.md has S1 Korean lint hits above; fix the wording and approve again"),
+    }
 
     // R105 again with the REAL fields, not the work_type defaults `run new` guessed from: the
     // user may have turned e2e to capture or review on during the approval loop.
