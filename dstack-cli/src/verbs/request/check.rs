@@ -1,5 +1,6 @@
 // verbs/request/check.rs
-// dstack check request: frontmatter, row grammar, ledger counts and the approval hash (R41–R46, R51).
+// dstack check request: frontmatter, row grammar, prose sections, ledger counts and the approval
+// hash (R41–R46, R51, R03).
 //
 // `request approve` calls the same core in approve mode, so approval and check can never
 // disagree about what a valid request is.
@@ -14,7 +15,7 @@ use crate::core::target::{resolve_target, Target};
 use crate::store::request::{approval_matches, req_enum, RequestDoc, REQ_FIELDS};
 use crate::store::tables::{q_count, questions};
 
-use super::{is_approved, load, request_file, rowfile};
+use super::{is_approved, load, prd_check, request_file, rowfile};
 
 /// full = every condition; approve = skip the two conditions `request approve` exists to resolve
 /// (the pending rows it clears and the hash of a file it is about to re-stamp).
@@ -85,6 +86,7 @@ pub fn core(ctx: &mut Context, target: &Target, mode: Mode) -> Result<usize> {
         say!(ctx, "  {line}");
     }
     bad += grammar.len();
+    bad += prd_check::sections(ctx, target, &doc);
 
     let rows = doc.rows();
     let (mut pend, mut wdn, mut dfr, mut sup, mut asm, mut row_bad) = (0, 0, 0, 0, 0, 0);
@@ -162,16 +164,16 @@ pub fn core(ctx: &mut Context, target: &Target, mode: Mode) -> Result<usize> {
         }
     }
 
-    let lines = doc.line_count();
+    let lines = prd_check::requirement_lines(&doc);
     say!(
         ctx,
-        "  size: live rows {live} (max 12), lines {lines} (max 60)"
+        "  size: live rows {live} (max 12), requirement lines {lines} (max 60)"
     );
     if live > 12 {
         ctx.out.warn(&format!("live rows {live} > 12 (R43): split a Milestone (dstack milestone add) or route the rest to a new Goal"));
     }
     if lines > 60 {
-        ctx.out.warn(&format!("lines {lines} > 60 (R43): split a Milestone (dstack milestone add) or route the rest to a new Goal"));
+        ctx.out.warn(&format!("requirement lines {lines} > 60 (R43): split a Milestone (dstack milestone add) or route the rest to a new Goal"));
     }
 
     let mut approved = "no";

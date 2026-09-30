@@ -38,6 +38,7 @@ mod check;
 mod marks;
 mod new;
 mod open_show;
+mod prd_check;
 mod rowfile;
 mod section;
 mod selftests;

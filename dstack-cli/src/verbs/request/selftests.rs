@@ -1,5 +1,5 @@
 // verbs/request/selftests.rs
-// The three fixture checkers of the noun: req add, check request and request approve (R100).
+// The three fixture checkers of the noun: req add, check request and request approve (R100, R03).
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -65,6 +65,9 @@ impl Selftest for ReqAdd {
     }
 }
 
+/// `<!-- selftest-target: quick -->` puts the fixture in a quick task, whose request needs only
+/// its summary; `<!-- selftest-stamp: approved -->` stamps it the way an approval made before
+/// the PRD checks left it, written directly because `request approve` would judge it first.
 struct CheckRequest;
 
 impl Selftest for CheckRequest {
@@ -74,8 +77,21 @@ impl Selftest for CheckRequest {
 
     fn run(&self, ctx: &mut Context, fixture: &Path) -> Result<Verdict> {
         let sandbox = Sandbox::new(ctx)?;
-        copy(fixture, &sandbox.run_dir()?.join("request.md"))?;
-        verdict(sandbox.dsx(ctx, &["check", "request"])?.0, "check request")
+        let quick = Sandbox::directive(fixture, "target").as_deref() == Some("quick");
+        let (dir, args) = match quick {
+            true => (
+                sandbox.dir.join(".dstack/quick/qq"),
+                &["check", "request", "--quick", "qq"][..],
+            ),
+            false => (sandbox.run_dir()?, &["check", "request"][..]),
+        };
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| Error::cannot_decide(format!("cannot create {}: {e}", dir.display())))?;
+        copy(fixture, &dir.join("request.md"))?;
+        if Sandbox::directive(fixture, "stamp").as_deref() == Some("approved") {
+            sandbox.approve(&dir)?;
+        }
+        verdict(sandbox.dsx(ctx, args)?.0, "check request")
     }
 }
 
