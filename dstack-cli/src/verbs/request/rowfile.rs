@@ -1,5 +1,6 @@
 // verbs/request/rowfile.rs
-// The line primitives request.md is edited with: the record split, head/tail slicing, row lines.
+// The line primitives request.md is edited with: the record split, head/tail slicing, row lines
+// and the line the next row goes after.
 //
 // _line_set and _line_insert_after are `head`/`tail` in the shell, chosen there so a row holding
 // a backslash or an `&` is copied byte for byte. The same is done here on the document text,
@@ -9,7 +10,11 @@ use std::path::Path;
 
 use crate::core::error::{Error, Result};
 use crate::core::fsx::atomic_write;
+use crate::store::request_sections::REQUIREMENTS;
 use crate::store::rows::REQ_SEP;
+
+/// The whitespace a heading or a closing fence may carry around its text.
+const SPACE: [char; 2] = [' ', '\t'];
 
 /// The lines of the text, as awk counts records: a trailing newline ends the last line and does
 /// not start an empty one.
@@ -95,7 +100,9 @@ pub fn insert_after(text: &str, lineno: usize, line: &str) -> String {
     )
 }
 
-/// req_last_row_lineno(): the line number of the last R row, 0 when there is none.
+/// req_last_row_lineno(): the line the next row goes after. That is the last R row; with no row
+/// yet, the end of a `## 요구사항` section another heading follows (R01), so the first row does
+/// not land in the section after it; 0 (the end of the file) otherwise.
 pub fn last_row_lineno(text: &str) -> usize {
     let mut last = 0;
     for (index, line) in lines(text).iter().enumerate() {
@@ -103,7 +110,62 @@ pub fn last_row_lineno(text: &str) -> usize {
             last = index + 1;
         }
     }
-    last
+    match last {
+        0 => requirements_end(text).unwrap_or(0),
+        _ => last,
+    }
+}
+
+/// The last non-blank line of the first column-0 `## 요구사항` section, its heading included,
+/// when a heading of any level follows the section. A ``` or ~~~ fence holds no heading.
+fn requirements_end(text: &str) -> Option<usize> {
+    let mut fence: Option<(u8, usize)> = None;
+    // Once the heading is read: the section's last non-blank line so far.
+    let mut end: Option<usize> = None;
+    for (index, line) in lines(text).iter().enumerate() {
+        let lineno = index + 1;
+        if let Some(open) = fence {
+            if closes(line, open) {
+                fence = None;
+            }
+        } else if let Some(open) = fence_mark(line) {
+            fence = Some(open);
+        } else if let Some((level, name)) = heading(line) {
+            if end.is_some() {
+                return end;
+            }
+            if level == 2 && name == REQUIREMENTS {
+                end = Some(lineno);
+            }
+            continue;
+        }
+        if !line.trim_matches(SPACE).is_empty() {
+            end = end.map(|_| lineno);
+        }
+    }
+    None
+}
+
+/// A column-0 ATX heading: one to six `#`, then a space, a tab or the end of the line.
+fn heading(line: &str) -> Option<(usize, &str)> {
+    let level = line.bytes().take_while(|b| *b == b'#').count();
+    let after = &line[level..];
+    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE));
+    atx.then(|| (level, after.trim_matches(SPACE)))
+}
+
+/// A column-0 code fence marker: ` or ~, and the length of its run of three or more.
+fn fence_mark(line: &str) -> Option<(u8, usize)> {
+    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
+    let run = line.bytes().take_while(|b| *b == mark).count();
+    (run >= 3).then_some((mark, run))
+}
+
+/// A line closing the fence `open`: its mark, a run at least as long, then only spaces or tabs.
+fn closes(line: &str, open: (u8, usize)) -> bool {
+    fence_mark(line).is_some_and(|(mark, run)| {
+        mark == open.0 && run >= open.1 && line[run..].trim_matches(SPACE).is_empty()
+    })
 }
 
 /// The awk match `/^- \[[ xX]\] \*\*R[0-9]+\*\* /` every row reader starts from.
