@@ -110,3 +110,32 @@ fn R01_row_placement_pending_approval_follows_the_last_row() {
         format!("{FRONT}{UPPER}{FIRST}\n{pending}\n{LOWER}")
     );
 }
+
+#[test]
+fn R01_row_placement_indented_fence_falls_back_to_the_end() {
+    // A fence indented two spaces still holds code: its `## 요구사항` must not anchor the row.
+    // The scanner cannot read such a document for certain, so the row goes at the end.
+    let before = format!(
+        "{FRONT}# 행 위치 시험\n\n## 배경과 문제\n\n  ```text\n## 요구사항\nexample\n## 목표\n  ```\n\n\
+## 목표\n\n목표예요.\n\n## 요구사항\n\n<!-- dstack req add로 행을 추가해요. -->\n{LOWER}"
+    );
+    let t = scratch(&before);
+    add_first(&t, &["--run", RUN]);
+    assert_eq!(t.read(REQUEST), format!("{before}{FIRST}\n"));
+}
+
+#[test]
+fn R01_row_placement_tilde_fence_holds_no_heading() {
+    let upper = UPPER.replace("```", "~~~");
+    let t = scratch(&format!("{FRONT}{upper}{LOWER}"));
+    add_first(&t, &["--run", RUN]);
+    assert_eq!(t.read(REQUEST), format!("{FRONT}{upper}{FIRST}\n{LOWER}"));
+}
+
+#[test]
+fn R01_row_placement_repeated_requirements_appends_at_the_end() {
+    let before = format!("{FRONT}{UPPER}\n## 요구사항\n\n두 번째 절이에요.\n{LOWER}");
+    let t = scratch(&before);
+    add_first(&t, &["--run", RUN]);
+    assert_eq!(t.read(REQUEST), format!("{before}{FIRST}\n"));
+}

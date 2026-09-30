@@ -10,10 +10,10 @@ use std::path::Path;
 
 use crate::core::error::{Error, Result};
 use crate::core::fsx::atomic_write;
-use crate::store::request_sections::REQUIREMENTS;
+use crate::store::request_sections::{locate, Place, REQUIREMENTS};
 use crate::store::rows::REQ_SEP;
 
-/// The whitespace a heading or a closing fence may carry around its text.
+/// The whitespace a blank line may hold.
 const SPACE: [char; 2] = [' ', '\t'];
 
 /// The lines of the text, as awk counts records: a trailing newline ends the last line and does
@@ -116,56 +116,20 @@ pub fn last_row_lineno(text: &str) -> usize {
     }
 }
 
-/// The last non-blank line of the first column-0 `## 요구사항` section, its heading included,
-/// when a heading of any level follows the section. A ``` or ~~~ fence holds no heading.
+/// The last non-blank line of the `## 요구사항` section, its heading included, when a heading
+/// follows the section. `store::request_sections` is the one reader of the structure: a document
+/// it refuses (a missing, repeated or ambiguous section) and a last section give None.
 fn requirements_end(text: &str) -> Option<usize> {
-    let mut fence: Option<(u8, usize)> = None;
-    // Once the heading is read: the section's last non-blank line so far.
-    let mut end: Option<usize> = None;
-    for (index, line) in lines(text).iter().enumerate() {
-        let lineno = index + 1;
-        if let Some(open) = fence {
-            if closes(line, open) {
-                fence = None;
-            }
-        } else if let Some(open) = fence_mark(line) {
-            fence = Some(open);
-        } else if let Some((level, name)) = heading(line) {
-            if end.is_some() {
-                return end;
-            }
-            if level == 2 && name == REQUIREMENTS {
-                end = Some(lineno);
-            }
-            continue;
-        }
-        if !line.trim_matches(SPACE).is_empty() {
-            end = end.map(|_| lineno);
-        }
+    let body = locate(text, &Place::Section(REQUIREMENTS)).ok()?;
+    if body.end == text.len() {
+        return None;
     }
-    None
-}
-
-/// A column-0 ATX heading: one to six `#`, then a space, a tab or the end of the line.
-fn heading(line: &str) -> Option<(usize, &str)> {
-    let level = line.bytes().take_while(|b| *b == b'#').count();
-    let after = &line[level..];
-    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE));
-    atx.then(|| (level, after.trim_matches(SPACE)))
-}
-
-/// A column-0 code fence marker: ` or ~, and the length of its run of three or more.
-fn fence_mark(line: &str) -> Option<(u8, usize)> {
-    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
-    let run = line.bytes().take_while(|b| *b == mark).count();
-    (run >= 3).then_some((mark, run))
-}
-
-/// A line closing the fence `open`: its mark, a run at least as long, then only spaces or tabs.
-fn closes(line: &str, open: (u8, usize)) -> bool {
-    fence_mark(line).is_some_and(|(mark, run)| {
-        mark == open.0 && run >= open.1 && line[run..].trim_matches(SPACE).is_empty()
-    })
+    // A heading follows, so the section's own heading line ends with a newline.
+    let heading = text[..body.start].matches('\n').count();
+    let last = lines(&text[body])
+        .iter()
+        .rposition(|line| !line.trim_matches(SPACE).is_empty());
+    Some(heading + last.map_or(0, |index| index + 1))
 }
 
 /// The awk match `/^- \[[ xX]\] \*\*R[0-9]+\*\* /` every row reader starts from.
