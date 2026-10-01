@@ -47,6 +47,7 @@ It is configuration, not an application: nothing renders, nothing serves.
   titles, headings, descriptions, R-row text and acceptance criteria. This applies even when
   `korean_polish: off`. Keep frontmatter keys/enum values, R ids, `accept:` and status markers,
   commands, paths and code identifiers unchanged. Quoted request rows stay in their original Korean.
+- `request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
 - Other workflow artifacts (recon, decisions, plans, reviews) are English. Commit messages and
   `README.md` are Korean 해요체. No AI co-author trailers.
 - `.dstack/` is local-only and ignored; never commit it and never edit it by hand.

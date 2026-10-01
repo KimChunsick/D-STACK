@@ -54,6 +54,7 @@ implementation worker files the friction it hit there, never by hand.
   even with `korean_polish: off`; that field controls polishing, not the request language.
   Keep frontmatter keys/enum values, R ids, `accept:` and status markers, commands, paths and code
   identifiers unchanged. Write new, split and assumption-derived R rows in Korean as well.
+- `request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
 - Other workflow artifacts are English: recon.md, decisions.md, plan/roadmap/state, review rounds,
   research.md, and prompts or reports exchanged between agents or models. Preserve quoted request
   rows in their original Korean; never translate the frozen request for a review or research pass.

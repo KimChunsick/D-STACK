@@ -72,6 +72,7 @@ of source main and saved sub. Only a separate successful resume changes this run
   acceptance criteria are always Korean 해요체, including quick requests and `korean_polish: off`.
   Keep machine-readable keys, enum values, R ids, `accept:`, status markers and code unchanged.
   Preserve quoted request rows verbatim in Korean; do not translate the frozen request.
+- `request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
 - **Other artifacts are English**: reviews, research notes, and reports handed back to the
   pipeline, except verbatim Korean request quotes. Address the person directly in Korean 해요체.
 - **Commits** (only when a prompt explicitly asks you to commit): the message is Korean 해요체,

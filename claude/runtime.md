@@ -126,6 +126,8 @@ output/artifact contract as the fresh brief. A worker never asks the user a ques
 pipeline state. Return ambiguity to the main session. Reports and prompt context stay English;
 quoted request rows remain Korean. Read the installed Korean output style before user prose.
 
+`request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
+
 The main session runs `dstack next --max 3` and `dstack plan start P<n> --worktree <path>`;
 only the CLI creates worktrees and records them. Supply the actual cwd, common-dir, branch,
 HEAD, declared files, R rows and artifact path. Never enable native worktree isolation.

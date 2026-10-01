@@ -14,6 +14,11 @@ keep-coding-instructions: true
 한국어가 아닌 텍스트에는 이 규칙을 적용하지 않아요. 아래 규칙표의 원본은
 `~/.claude/lint/ko-rules.tsv`이고, 파일은 `dstack lint-ko`가 같은 표로 검사해요.
 
+요청서는 1부 요청, 2부 설계, 3부 계획과 검증을 한 파일에 담아요. 2부와 3부도 해요체로 써요.
+규칙 문서들이 함께 쓰는 원문은 아래 한 줄이에요.
+
+`request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
+
 ## 1. 영어 직역 단어를 쓰지 않아요
 
 처음 보는 동료가 뜻을 물어볼 것 같은 단어는 풀어 써요. 코드 식별자라면 백틱으로 감싸고 옆에
