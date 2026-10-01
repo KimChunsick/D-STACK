@@ -10,7 +10,7 @@ use crate::core::verb::Verb;
 /// dstack help renders it and the doctor sweep reads it, so a roster entry no handler answers
 /// is a stated "not ported yet", never a silent gap.
 #[rustfmt::skip]
-pub const ROSTER: [(&str, &str); 74] = [
+pub const ROSTER: [(&str, &str); 75] = [
     ("init", "bootstrap the .dstack store in this repository (never expands cases)"),
     ("run new", "mint a run: .dstack/runs/<UTC>_<slug>, write CURRENT, check tools (--type, --worktree)"),
     ("run adopt", "take over a run (--force for a live owner; --refresh-mode to apply project mode)"),
@@ -48,6 +48,7 @@ pub const ROSTER: [(&str, &str); 74] = [
     ("decision add", "record a decision row (D-NN; --design for a design round)"),
     ("decision list", "print decisions with counts"),
     ("milestone add", "append a milestone (decimal id when --after is not the last)"),
+    ("milestone edit", "set the goal of a milestone (--goal <text>)"),
     ("plan add", "add a plan with declared files and deps"),
     ("plan insert", "insert a decimal plan after another (refused while the subtree is in progress)"),
     ("plan remove", "remove a plan (refused when in progress or depended on)"),
@@ -176,7 +177,7 @@ mod tests {
 
     #[test]
     fn r13__roster_has_seventy_one_entries() {
-        assert_eq!(ROSTER.len(), 74);
+        assert_eq!(ROSTER.len(), 75);
     }
 
     #[test]
@@ -193,7 +194,7 @@ mod tests {
     fn r13__verb_list_is_the_roster_order() {
         let registry = Registry::new(Vec::new());
         let list = registry.verb_list();
-        assert_eq!(list.len(), 74);
+        assert_eq!(list.len(), 75);
         assert_eq!(list[0], "init");
         assert_eq!(list[list.len() - 1], "help");
     }

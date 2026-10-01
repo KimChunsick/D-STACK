@@ -16,6 +16,8 @@ use crate::store::plan_ids::{
 };
 use crate::store::request::RequestDoc;
 
+const ADD_USAGE: &str = "usage: dstack task add <slug> --plan P<n> --covers R.. --files a,b [--deps T..] [--purpose <text>]";
+
 plan_verb!(TaskAdd, "task add", add);
 plan_verb!(TaskDone, "task done", done);
 
@@ -24,6 +26,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     target.require()?;
     let (mut slug, mut p) = (String::new(), String::new());
     let (mut covers, mut files, mut deps) = (String::new(), String::new(), String::new());
+    let mut purpose = None;
     let mut i = 0;
     while i < rest.len() {
         let arg = rest[i].as_str();
@@ -40,8 +43,11 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         } else if let Some((value, eaten)) = opt(arg, next, "deps")? {
             deps = value;
             i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "purpose")? {
+            purpose = Some(value);
+            i += eaten;
         } else if is_option(arg) {
-            fail!("unknown option: {arg} (usage: dstack task add <slug> --plan P<n> --covers R.. --files a,b [--deps T..])")
+            fail!("unknown option: {arg} ({ADD_USAGE})")
         } else if slug.is_empty() {
             slug = arg.to_string();
             i += 1;
@@ -50,11 +56,12 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
     if slug.is_empty() {
-        fail!("usage: dstack task add <slug> --plan P<n> --covers R.. --files a,b [--deps T..]")
+        fail!("{ADD_USAGE}")
     }
     if !valid_slug(&slug) {
         fail!("slug must match [a-z0-9][a-z0-9-]* (got '{slug}')")
     }
+    let purpose = super::free_text("purpose", purpose)?.unwrap_or_default();
     if p.is_empty() {
         fail!("--plan P<n> is required (a task lives inside exactly one plan, R60)")
     }
@@ -124,6 +131,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         deps: csv_list(&deps),
         commit: String::new(),
         done_at: String::new(),
+        purpose,
     };
     doc.plan_mut(&p)
         .expect("the plan was found above")

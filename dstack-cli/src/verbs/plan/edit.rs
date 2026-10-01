@@ -10,6 +10,8 @@ use crate::store::plan_ids::{
     assert_acyclic_plans, csv_list, path_within, validate_deps, validate_files,
 };
 
+const EDIT_USAGE: &str = "usage: dstack plan edit P<n> [--slug s] [--files a,b] [--deps P..] [--purpose <text>] [--e2e-focus <text>]";
+
 plan_verb!(PlanRemove, "plan remove", remove);
 plan_verb!(PlanEdit, "plan edit", edit);
 
@@ -54,6 +56,7 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (mut p, mut slug) = (String::new(), String::new());
     let (mut files, mut deps) = (String::new(), String::new());
     let (mut set_files, mut set_deps) = (false, false);
+    let (mut purpose, mut e2e_focus) = (None, None);
     let mut i = 0;
     while i < rest.len() {
         let arg = rest[i].as_str();
@@ -69,8 +72,14 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
             deps = value;
             set_deps = true;
             i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "purpose")? {
+            purpose = Some(value);
+            i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "e2e-focus")? {
+            e2e_focus = Some(value);
+            i += eaten;
         } else if is_option(arg) {
-            fail!("unknown option: {arg} (usage: dstack plan edit P<n> [--slug s] [--files a,b] [--deps P..])")
+            fail!("unknown option: {arg} ({EDIT_USAGE})")
         } else if p.is_empty() {
             p = arg.to_string();
             i += 1;
@@ -79,14 +88,14 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
     if p.is_empty() {
-        fail!("usage: dstack plan edit P<n> [--slug s] [--files a,b] [--deps P..]")
+        fail!("{EDIT_USAGE}")
     }
     let mut doc = target.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
-    if slug.is_empty() && !set_files && !set_deps {
-        fail!("nothing to edit: pass --slug, --files or --deps")
+    if slug.is_empty() && !set_files && !set_deps && purpose.is_none() && e2e_focus.is_none() {
+        fail!("nothing to edit: pass --slug, --files, --deps, --purpose or --e2e-focus")
     }
     let status = doc.field(&p, "status");
     if status == "done" {
@@ -99,6 +108,8 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     if !slug.is_empty() && !valid_slug(&slug) {
         fail!("slug must match [a-z0-9][a-z0-9-]* (got '{slug}')")
     }
+    let purpose = super::free_text("purpose", purpose)?;
+    let e2e_focus = super::free_text("e2e-focus", e2e_focus)?;
     let files = match set_files {
         true => validate_files(&files)?,
         false => Vec::new(),
@@ -113,6 +124,12 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     }
     if set_deps {
         plan.deps = csv_list(&deps);
+    }
+    if let Some(purpose) = purpose {
+        plan.purpose = purpose;
+    }
+    if let Some(e2e_focus) = e2e_focus {
+        plan.e2e_focus = e2e_focus;
     }
     if set_deps {
         let known = doc.plan_ids();

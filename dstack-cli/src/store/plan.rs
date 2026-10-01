@@ -14,15 +14,21 @@ use crate::store::plan_graph::{refresh, render_roadmap, render_state};
 pub const SEED: &str = "{\"v\":2,\"milestones\":[],\"plans\":[]}\n";
 
 /// The field order of every struct here is the order jq wrote them in, because to_json has to
-/// reproduce the file byte for byte (design D-02).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// reproduce the file byte for byte (design D-02). The planning fields come last and are left out
+/// while empty, so a plan.json written before them loads and writes back unchanged.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Milestone {
     pub id: String,
     pub slug: String,
     pub order: u32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub goal: String,
+    /// The Plan ids whose decomposition the user confirmed for this milestone.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub confirmed: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Plan {
     pub id: String,
     pub milestone: String,
@@ -34,9 +40,13 @@ pub struct Plan {
     pub started_at: String,
     pub done_at: String,
     pub tasks: Vec<Task>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub purpose: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub e2e_focus: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
     pub slug: String,
@@ -45,6 +55,8 @@ pub struct Task {
     pub deps: Vec<String>,
     pub commit: String,
     pub done_at: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub purpose: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

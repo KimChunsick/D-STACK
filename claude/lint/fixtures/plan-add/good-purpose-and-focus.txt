@@ -1,0 +1,3 @@
+plan add first --milestone M1 --files a/b.sh --purpose '설치 스크립트를 정리해요' --e2e-focus '설치 출력이 그대로예요'
+plan add second --milestone M1 --files c/d.sh --deps P1
+plan edit P2 --purpose '마무리 점검을 해요' --e2e-focus='보고서 출력을 봐요'

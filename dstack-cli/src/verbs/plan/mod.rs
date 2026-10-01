@@ -52,6 +52,7 @@ pub mod task;
 pub fn verbs() -> Vec<Box<dyn Verb>> {
     vec![
         Box::new(milestone::MilestoneAdd),
+        Box::new(milestone::MilestoneEdit),
         Box::new(add::PlanAdd),
         Box::new(add::PlanInsert),
         Box::new(edit::PlanRemove),
@@ -67,6 +68,22 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
 
 pub fn selftests() -> Vec<Box<dyn Selftest>> {
     selftests::all()
+}
+
+/// The free text of --goal, --purpose and --e2e-focus when the flag was given: one line with
+/// something on it, since every document rendered from the ledger is read line by line.
+pub(crate) fn free_text(flag: &str, value: Option<String>) -> Result<Option<String>> {
+    let text = match value {
+        Some(text) => text,
+        None => return Ok(None),
+    };
+    if text.trim().is_empty() {
+        fail!("--{flag} needs a value that is not empty or blank")
+    }
+    if text.chars().any(char::is_control) {
+        fail!("--{flag} must be one line without newlines or other control characters")
+    }
+    Ok(Some(text))
 }
 
 /// What _plan_target() leaves behind: the run directory that holds plan.json, and the roots the

@@ -199,6 +199,7 @@ mod tests {
             started_at: String::new(),
             done_at: String::new(),
             tasks: Vec::new(),
+            ..Default::default()
         }
     }
 

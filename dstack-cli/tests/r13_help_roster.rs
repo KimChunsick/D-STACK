@@ -158,7 +158,7 @@ fn R13_request_design_skip_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request design-skip ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 75"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request design-skip"));
 }
 
@@ -169,7 +169,7 @@ fn R14_request_brief_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request brief ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 75"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request brief"));
 }
 
@@ -180,8 +180,21 @@ fn R09_request_background_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request background ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 75"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request background"));
+}
+
+#[test]
+fn R15_milestone_edit_is_on_the_help_roster() {
+    let help = stdout(&dstack(&["help"]));
+    let lines: Vec<&str> = help.lines().collect();
+    let add = lines
+        .iter()
+        .position(|line| line.starts_with("  milestone add "))
+        .expect("the roster has milestone add");
+    assert!(lines[add + 1].starts_with("  milestone edit "), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 75"), "{help}");
+    assert!(Registry::new(all_verbs()).has_handler("milestone edit"));
 }
 
 #[test]

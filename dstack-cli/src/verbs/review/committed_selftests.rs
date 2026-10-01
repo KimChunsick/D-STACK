@@ -64,8 +64,10 @@ impl Selftest for CommittedReview {
                     deps: vec![],
                     commit,
                     done_at: "fixture".into(),
+                    ..Default::default()
                 })
                 .collect(),
+            ..Default::default()
         };
         match CommittedRange::derive(wt, &plan).and_then(|r| r.emit(&mut Vec::new(), wt)) {
             Ok(_) => Ok(Verdict::Pass),

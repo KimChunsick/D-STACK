@@ -11,8 +11,7 @@ use crate::store::plan_ids::{
     assert_acyclic_plans, csv_list, next_decimal_id, next_int_id, validate_deps, validate_files,
 };
 
-const OPTION_USAGE: &str =
-    "usage: dstack plan add <slug> --milestone M<n> --files a,b [--deps P..]";
+const OPTION_USAGE: &str = "usage: dstack plan add <slug> --milestone M<n> --files a,b [--deps P..] [--purpose <text>] [--e2e-focus <text>]";
 
 plan_verb!(PlanAdd, "plan add", add);
 plan_verb!(PlanInsert, "plan insert", insert);
@@ -29,6 +28,7 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
     let (target, rest) = super::plan_target(ctx, args)?;
     let (mut slug, mut ms) = (String::new(), String::new());
     let (mut files, mut deps, mut after) = (String::new(), String::new(), String::new());
+    let (mut purpose, mut e2e_focus) = (None, None);
     let mut i = 0;
     while i < rest.len() {
         let arg = rest[i].as_str();
@@ -45,6 +45,12 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
         } else if let Some((value, eaten)) = opt(arg, next, "after")? {
             after = value;
             i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "purpose")? {
+            purpose = Some(value);
+            i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "e2e-focus")? {
+            e2e_focus = Some(value);
+            i += eaten;
         } else if is_option(arg) {
             fail!("unknown option: {arg} ({OPTION_USAGE})")
         } else if slug.is_empty() {
@@ -59,11 +65,13 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
             true => ("insert", " --after P<n>"),
             false => ("add", ""),
         };
-        fail!("usage: dstack plan {verb} <slug> --milestone M<n> --files a,b [--deps P..]{tail}")
+        fail!("usage: dstack plan {verb} <slug> --milestone M<n> --files a,b [--deps P..] [--purpose <text>] [--e2e-focus <text>]{tail}")
     }
     if !valid_slug(&slug) {
         fail!("slug must match [a-z0-9][a-z0-9-]* (got '{slug}')")
     }
+    let purpose = super::free_text("purpose", purpose)?.unwrap_or_default();
+    let e2e_focus = super::free_text("e2e-focus", e2e_focus)?.unwrap_or_default();
     if inserting {
         if after.is_empty() {
             fail!("dstack plan insert needs --after P<n> (which plan the new one follows)")
@@ -113,6 +121,8 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
         started_at: String::new(),
         done_at: String::new(),
         tasks: Vec::new(),
+        purpose,
+        e2e_focus,
     };
     let mut plans: Vec<Plan> = Vec::new();
     for plan in doc.plans {
