@@ -3,6 +3,8 @@
 // section writer, the design gate's skip verb, the merge path's background writer and the brief
 // regenerated before `request open`; dstack-quick names the quick body and its summary writer;
 // README.md lists the verbs; every skill file stays at or under 300 lines.
+// R14 (skill half): the approval step regenerates the brief, shows the whole 한눈에 보기 and only
+// then asks its one three-option question (Q-04).
 #![allow(non_snake_case)]
 
 use std::path::{Path, PathBuf};
@@ -107,6 +109,26 @@ fn R11_every_skill_file_stays_within_300_lines() {
         }
     }
     assert!(over.is_empty(), "skill files over 300 lines: {over:?}");
+}
+
+#[test]
+fn R14_workflow_approval_shows_the_whole_brief_before_its_one_question() {
+    let text = read(WORKFLOW);
+    let approval = section(&text, "8. Approval loop (R44, R45, R46)");
+    let brief = position(approval, "dstack request brief");
+    let shown = position(approval, "Show the whole `## 한눈에 보기`");
+    let asked = position(approval, "| 승인 |");
+    assert!(
+        brief < shown && shown < asked,
+        "the brief is regenerated, then shown whole, then the question is asked"
+    );
+    for option in ["| 승인 |", "| 수정 요청 |", "| 재작성 |"] {
+        assert_eq!(
+            approval.matches(option).count(),
+            1,
+            "{option} belongs to exactly one question"
+        );
+    }
 }
 
 fn relative(path: &Path) -> String {

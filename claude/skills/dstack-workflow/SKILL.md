@@ -209,7 +209,8 @@ assumption rows (§6) must be on the page the user approves.
 2. `dstack request brief` regenerates `## 한눈에 보기`, then `dstack request open` snapshots
    `request.agent-draft.md` and opens `code -g <abs>:1`. With no `code` on PATH it prints the path
    and exits 0; say the path out loud.
-3. Ask, in Korean, with exactly these three options plus the tool's built-in **Other**:
+3. Show the whole `## 한눈에 보기` first, every group with its 없음, then ask one question in
+   Korean with exactly these three options plus the tool's built-in **Other**:
 
    | Option label | Meaning | Your next move |
    |---|---|---|
