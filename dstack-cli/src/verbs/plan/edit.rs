@@ -43,6 +43,11 @@ fn remove(ctx: &mut Context, args: &[String]) -> Result<()> {
         )
     }
     doc.plans.retain(|plan| plan.id != p);
+    // A confirmation records Plan ids and plan add/insert can mint this id again, so the
+    // confirmation leaves with the Plan instead of passing to its successor (D-36).
+    for milestone in doc.milestones.iter_mut() {
+        milestone.confirmed.retain(|id| *id != p);
+    }
 
     let doc = target.write(doc)?;
     say!(ctx, "removed plan {p} (was {status})");
