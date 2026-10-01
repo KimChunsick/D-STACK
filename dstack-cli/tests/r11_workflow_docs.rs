@@ -1,8 +1,9 @@
 // tests/r11_workflow_docs.rs
 // R11: the main workflow skills point at the request steps of M1 — dstack-workflow names the
 // section writer, the design gate's skip verb, the merge path's background writer and the brief
-// regenerated before `request open`; dstack-quick names the quick body and its summary writer;
-// README.md lists the verbs; every skill file stays at or under 300 lines.
+// regenerated before `request open` and says the 60-line cap counts the `## 요구사항` section;
+// dstack-quick names the quick body and its summary writer; README.md lists the verbs; every
+// skill file stays at or under 300 lines.
 // R14 (skill half): the approval step regenerates the brief, shows the whole 한눈에 보기 and only
 // then asks its one three-option question (Q-04).
 #![allow(non_snake_case)]
@@ -65,6 +66,11 @@ fn R11_workflow_skill_points_at_the_request_design_steps() {
         position(approval, "dstack request brief") < position(approval, "dstack request open"),
         "the brief is regenerated before the request is opened"
     );
+}
+
+#[test]
+fn R11_workflow_skill_counts_the_60_line_cap_on_the_requirements_section() {
+    assert_names(WORKFLOW, &["60 lines in the `## 요구사항` section"]);
 }
 
 #[test]

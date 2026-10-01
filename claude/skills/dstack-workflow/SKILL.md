@@ -116,7 +116,7 @@ frozen R rows into downstream briefs verbatim in Korean.
    "401 응답 본문에 스택 추적이 포함되지 않아요", not "오류를 처리해요".
 5. `dstack check request` after every batch. It refuses unfilled sections and kept guidance,
    counts rows, pending, withdrawn, deferred, superseded and Q states, and warns above **12 rows
-   or 60 lines** (R43). On a warning, propose one of two splits and let the user pick:
+   or 60 lines in the `## 요구사항` section** (R43). On a warning, let the user pick one of two splits:
 
    > "R 행이 15개예요. 뒤쪽 6개를 두 번째 Milestone으로 미룰까요, 아니면 별도 Goal로 뺄까요?"
 
