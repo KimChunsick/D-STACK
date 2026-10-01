@@ -158,7 +158,7 @@ fn R13_request_design_skip_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request design-skip ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 73"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request design-skip"));
 }
 
@@ -169,8 +169,19 @@ fn R14_request_brief_is_on_the_help_roster() {
         help.lines().any(|line| line.starts_with("  request brief ")),
         "{help}"
     );
-    assert!(help.lines().any(|line| line == "verbs: 73"), "{help}");
+    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
     assert!(Registry::new(all_verbs()).has_handler("request brief"));
+}
+
+#[test]
+fn R09_request_background_is_on_the_help_roster() {
+    let help = stdout(&dstack(&["help"]));
+    assert!(
+        help.lines().any(|line| line.starts_with("  request background ")),
+        "{help}"
+    );
+    assert!(help.lines().any(|line| line == "verbs: 74"), "{help}");
+    assert!(Registry::new(all_verbs()).has_handler("request background"));
 }
 
 #[test]

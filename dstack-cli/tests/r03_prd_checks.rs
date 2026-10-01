@@ -440,6 +440,9 @@ fn R03_prd_checks_reapprove_a_filled_request_after_a_merged_row() {
         "--run",
         RUN,
     ]);
+    // R09: the merged row brings its background before it is approved.
+    t.write("added.md", "덧붙인 요구사항의 배경이에요.\n");
+    t.ok(&["request", "background", "--run", RUN, "--from", "added.md"]);
     // Changed since its stamp, it is judged again and passes because every section is filled.
     let approved = t.ok(&["request", "approve", "--run", RUN]);
     assert!(

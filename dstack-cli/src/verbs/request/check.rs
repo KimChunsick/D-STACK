@@ -87,6 +87,7 @@ pub fn core(ctx: &mut Context, target: &Target, mode: Mode) -> Result<usize> {
     }
     bad += grammar.len();
     bad += prd_check::sections(ctx, target, &doc);
+    bad += prd_check::background(ctx, target, &doc);
 
     let rows = doc.rows();
     let (mut pend, mut wdn, mut dfr, mut sup, mut asm, mut row_bad) = (0, 0, 0, 0, 0, 0);

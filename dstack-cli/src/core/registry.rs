@@ -10,7 +10,7 @@ use crate::core::verb::Verb;
 /// dstack help renders it and the doctor sweep reads it, so a roster entry no handler answers
 /// is a stated "not ported yet", never a silent gap.
 #[rustfmt::skip]
-pub const ROSTER: [(&str, &str); 73] = [
+pub const ROSTER: [(&str, &str); 74] = [
     ("init", "bootstrap the .dstack store in this repository (never expands cases)"),
     ("run new", "mint a run: .dstack/runs/<UTC>_<slug>, write CURRENT, check tools (--type, --worktree)"),
     ("run adopt", "take over a run (--force for a live owner; --refresh-mode to apply project mode)"),
@@ -34,6 +34,7 @@ pub const ROSTER: [(&str, &str); 73] = [
     ("request section", "replace one prose section before approval (<key> --from <file>; never the R rows)"),
     ("request design-skip", "record why design is skipped before approval (--why; a decision row approve prints)"),
     ("request brief", "generate the 한눈에 보기 section before approval: assumptions, design choices, non-goals, files"),
+    ("request background", "append a pending background block to an approved Goal request (--from <file>; approve clears it)"),
     ("req add", "mint the next R row (--id, --from-answer, --assumption --from Q-NN)"),
     ("req accept", "fill the pending accept criterion of a --from-answer row"),
     ("req split", "mark a row superseded by its children (--into R,R)"),
@@ -175,7 +176,7 @@ mod tests {
 
     #[test]
     fn r13__roster_has_seventy_one_entries() {
-        assert_eq!(ROSTER.len(), 73);
+        assert_eq!(ROSTER.len(), 74);
     }
 
     #[test]
@@ -192,7 +193,7 @@ mod tests {
     fn r13__verb_list_is_the_roster_order() {
         let registry = Registry::new(Vec::new());
         let list = registry.verb_list();
-        assert_eq!(list.len(), 73);
+        assert_eq!(list.len(), 74);
         assert_eq!(list[0], "init");
         assert_eq!(list[list.len() - 1], "help");
     }

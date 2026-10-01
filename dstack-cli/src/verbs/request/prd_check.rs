@@ -9,7 +9,7 @@ use crate::store::request::{approval_matches, RequestDoc};
 use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS, SECTION_KEYS};
 use crate::store::rows;
 
-use super::{is_approved, request_file};
+use super::{background as block, is_approved, request_file, target_flags};
 
 /// The part-1 sections a Goal request fills before approval (D-01). 요구사항 is filled by its
 /// rows instead, so its standing guidance is an instruction, never a gap; part 2 answers to
@@ -115,6 +115,38 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
         keys.len() + 1
     );
     failed
+}
+
+/// R09: a row merged into an approved Goal request carries the background it adds, and a block
+/// explains a merged row. Pending rows without a pending background block fail, as does a block
+/// with no pending row; `request approve` clears both kinds of marker together. Judged in both
+/// modes, apart from `sections`, which skips an unchanged approval. A quick request (which
+/// `request background` refuses) and one with none of the PRD layout headings, which has no
+/// background section to append to, are exempt, so their merged rows still approve (D-28).
+pub fn background(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
+    if target.kind != TargetKind::Run || !prd_layout(doc.text()) {
+        return 0;
+    }
+    let rows = doc.rows().iter().filter(|row| row.is_pending()).count();
+    let blocks = block::pending_blocks(doc.text());
+    match (rows, blocks) {
+        (0, 0) => 0,
+        (_, 0) => {
+            say!(ctx, "  background: {rows} pending row(s) and no pending background block (dstack request background {} --from <file>)", target_flags(target).join(" "));
+            1
+        }
+        (0, _) => {
+            say!(ctx, "  background: {blocks} pending background block(s) and no pending row (a block explains a merged row: dstack req add, or remove the block)");
+            1
+        }
+        _ => {
+            say!(
+                ctx,
+                "  background: pending rows {rows}, pending background blocks {blocks}"
+            );
+            0
+        }
+    }
 }
 
 /// Whether any column-0 ATX heading of the text is one of the PRD layout's, at its level. Unlike

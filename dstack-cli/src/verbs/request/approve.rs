@@ -1,6 +1,6 @@
 // verbs/request/approve.rs
 // dstack request approve: validate, gate design, lint, clear pending, stamp the sha256, diff, sync
-// cases (R46, R48, R94, R105, R13, R16).
+// cases (R46, R48, R94, R105, R13, R16, R09).
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
@@ -12,8 +12,8 @@ use crate::store::cases;
 use crate::store::request::write_approval;
 
 use super::{
-    check, counts, design_gate, draft_file, load, require_file, rowfile, stamp_file, target_flags,
-    udiff,
+    background, check, counts, design_gate, draft_file, load, require_file, rowfile, stamp_file,
+    target_flags, udiff,
 };
 
 pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
@@ -88,7 +88,9 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
         text = rowfile::set_line(&text, lineno, &rowfile::drop_segment(&line, "status"));
         cleared += 1;
     }
-    if cleared > 0 {
+    // R09: the background blocks a merged row brought lose their marker in the same write.
+    let (text, blocks) = background::clear(&text);
+    if cleared + blocks > 0 {
         rowfile::write(&file, &text)?;
     }
 
@@ -132,6 +134,9 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
         ctx,
         "  rows {rows}, pending cleared {cleared}, live rows {live}"
     );
+    if blocks > 0 {
+        say!(ctx, "  background blocks cleared {blocks}");
+    }
     Ok(())
 }
 
