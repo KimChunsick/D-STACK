@@ -11,3 +11,4 @@ pub mod review_index;
 pub mod rows;
 pub mod tables;
 pub mod tsv;
+pub mod visible;

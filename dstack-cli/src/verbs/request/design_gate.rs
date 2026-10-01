@@ -8,9 +8,10 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::sha256_file;
 use crate::core::target::{Target, TargetKind};
 use crate::store::request::{approval_matches, RequestDoc};
-use crate::store::request_sections::{body, is_blank, label, Place, SECTION_KEYS};
+use crate::store::request_sections::{body, is_blank, label, Place};
 use crate::store::tables::decisions;
 
+use super::prd_check::{keeps_guidance, prd_layout};
 use super::{is_approved, request_file};
 
 /// The decision text `request design-skip` writes and this gate looks for.
@@ -18,10 +19,6 @@ pub const SKIP_PREFIX: &str = "design skipped:";
 
 /// The part-2 keys of `SECTION_KEYS`, in template order.
 const PART_TWO: [&str; 5] = ["current", "proposed", "alternatives", "mapping", "risks"];
-
-/// The headings only the PRD layout has besides the ten prose sections; the same list as
-/// prd_check.rs `LAYOUT` (sharing the two is a follow-up).
-const LAYOUT: [(usize, &str); 3] = [(1, "1부 요청"), (1, "2부 설계"), (2, "한눈에 보기")];
 
 /// Whether the request may be stamped as far as design goes. required: all five part-2 sections
 /// filled. auto: all five filled, or a design-skip reason recorded. skip: nothing asked. A quick
@@ -112,30 +109,4 @@ pub fn recorded_skip(dir: &Path) -> Result<Option<(String, String)>> {
 
 pub fn dec_file(dir: &Path) -> PathBuf {
     dir.join("decisions.md")
-}
-
-/// prd_check.rs `prd_layout`: whether any column-0 ATX heading is one of the PRD layout's.
-fn prd_layout(text: &str) -> bool {
-    let sections = SECTION_KEYS.iter().map(|&(_, heading)| (2, heading));
-    let layout: Vec<(usize, &str)> = LAYOUT.into_iter().chain(sections).collect();
-    text.lines().any(|line| {
-        let level = line.bytes().take_while(|b| *b == b'#').count();
-        let rest = &line[level..];
-        (rest.is_empty() || rest.starts_with([' ', '\t']))
-            && layout.contains(&(level, rest.trim_matches([' ', '\t'])))
-    })
-}
-
-/// prd_check.rs `keeps_guidance`: an HTML comment in the body carrying the `(키: <key>)` marker.
-fn keeps_guidance(body: &str, key: &str) -> bool {
-    let marker = format!("(키: {key})");
-    let mut rest = body;
-    while let Some((_, after)) = rest.split_once("<!--") {
-        let (comment, next) = after.split_once("-->").unwrap_or((after, ""));
-        if comment.contains(&marker) {
-            return true;
-        }
-        rest = next;
-    }
-    false
 }

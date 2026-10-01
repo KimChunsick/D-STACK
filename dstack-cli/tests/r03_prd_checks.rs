@@ -793,6 +793,7 @@ fn R03_prd_checks_fixtures_cover_every_case() {
         "good-minimal.md",
         "good-no-requirements-heading.md",
         "good-quick-summary.md",
+        "good-self-closing-comment.md",
         "good-standing-guidance.md",
     ] {
         assert!(names.iter().any(|n| n == name), "{name} in {names:?}");

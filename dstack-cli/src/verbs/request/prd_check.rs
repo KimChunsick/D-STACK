@@ -8,6 +8,7 @@ use crate::core::target::{Target, TargetKind};
 use crate::store::request::{approval_matches, RequestDoc};
 use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS, SECTION_KEYS};
 use crate::store::rows;
+use crate::store::visible;
 
 use super::{background as block, is_approved, request_file, target_flags};
 
@@ -157,7 +158,7 @@ pub fn background(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize
 
 /// Whether any column-0 ATX heading of the text is one of the PRD layout's, at its level. Unlike
 /// the section reader this skips no fence or comment, so a doubt only ever means judging.
-fn prd_layout(text: &str) -> bool {
+pub(super) fn prd_layout(text: &str) -> bool {
     let sections = SECTION_KEYS.iter().map(|&(_, heading)| (2, heading));
     let layout: Vec<(usize, &str)> = LAYOUT.into_iter().chain(sections).collect();
     text.lines().any(|line| {
@@ -171,18 +172,9 @@ fn prd_layout(text: &str) -> bool {
 /// Whether a body still holds its template guidance: an HTML comment carrying the `(키: <key>)`
 /// marker every template guidance comment ends with. The marker names no template version, and
 /// a legacy template has none; `request section` replaces the whole body, so it drops the comment.
-fn keeps_guidance(body: &str, key: &str) -> bool {
+pub(super) fn keeps_guidance(body: &str, key: &str) -> bool {
     let marker = format!("(키: {key})");
-    let mut rest = body;
-    while let Some((_, after)) = rest.split_once("<!--") {
-        // An unclosed comment runs to the end of the body, as `is_blank` reads it.
-        let (comment, next) = after.split_once("-->").unwrap_or((after, ""));
-        if comment.contains(&marker) {
-            return true;
-        }
-        rest = next;
-    }
-    false
+    visible::comments(body).iter().any(|comment| comment.contains(&marker))
 }
 
 /// The requirements section (D-21): the heading and body of exactly one of `## 요구사항` and the
@@ -209,26 +201,10 @@ fn requirements(text: &str) -> Result<Option<(&'static str, &str)>, String> {
 /// Whether a text holds an R row a reader sees, read line by line as `RequestDoc::rows` reads the
 /// file, less a line that starts inside an HTML comment (D-24).
 fn holds_row(text: &str) -> bool {
-    let mut open = false;
-    text.split('\n').enumerate().any(|(index, line)| {
-        let hidden = open;
-        open = comment_open(line, open);
-        !hidden && rows::parse_line(index + 1, line).is_some()
-    })
-}
-
-/// Whether an HTML comment is still open at the end of `line`, given whether one was at its
-/// start. A comment runs from `<!--` to the next `-->`, as `is_blank` reads it, so an unclosed
-/// one hides the rest of the text.
-fn comment_open(line: &str, mut open: bool) -> bool {
-    let mut rest = line;
-    loop {
-        let mark = if open { "-->" } else { "<!--" };
-        let Some(at) = rest.find(mark) else {
-            return open;
-        };
-        (rest, open) = (&rest[at + mark.len()..], !open);
-    }
+    visible::lines(text)
+        .iter()
+        .enumerate()
+        .any(|(index, line)| !line.hidden && rows::parse_line(index + 1, line.raw).is_some())
 }
 
 /// The lines the R43 cap counts: the whole requirements section, comments and blank lines

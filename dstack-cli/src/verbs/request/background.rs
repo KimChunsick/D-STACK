@@ -9,6 +9,7 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::{read_text, utc_now};
 use crate::core::target::{resolve_target, TargetKind};
 use crate::store::request_sections::{check_prose, is_blank, locate, Place};
+use crate::store::visible;
 
 use super::{counts, is_approved, load, require_file, rowfile, take, target_flags};
 
@@ -21,9 +22,8 @@ const SECTION: Place = Place::Section(HEADING);
 const LABEL: &str = "### 추가 배경";
 const MARKER: &str = " — status: pending-approval";
 
-/// CommonMark's whitespace across lines, as the section writer trims new prose, and in a line.
+/// CommonMark's whitespace across lines, as the section writer trims new prose.
 const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
-const SPACE: [char; 2] = [' ', '\t'];
 
 pub fn background(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = resolve_target(ctx, args)?;
@@ -163,74 +163,13 @@ fn labels(text: &str) -> Vec<(usize, &str, bool)> {
 }
 
 /// Each raw line of a text (as `clear` strips the marker from it) with how the block reader
-/// sees it: None for a column-0 heading outside every comment and fence, else whether it shows
-/// text outside comments.
+/// sees it, as store::visible reads it: None for a column-0 heading outside every comment and
+/// fence, else whether it shows text outside comments.
 fn read(text: &str) -> impl Iterator<Item = (&str, Option<bool>)> {
-    let mut fence: Option<(u8, usize)> = None;
-    let mut comment = false;
-    text.split('\n').map(move |raw| {
-        let line = raw.trim_end_matches('\r');
-        let shown;
-        if let Some(open) = fence {
-            fence = fence.filter(|_| !closes(line, open));
-            shown = !line.trim_matches(SPACE).is_empty();
-        } else if comment {
-            (comment, shown) = outside(line, true);
-        } else if let Some(open) = fence_mark(line) {
-            fence = Some(open);
-            shown = true;
-        } else if heading(line) {
-            return (raw, None);
-        } else {
-            (comment, shown) = outside(line, false);
-        }
-        (raw, Some(shown))
+    visible::lines(text).into_iter().map(|line| {
+        let shown = !line.shown.trim_matches(BLANK).is_empty();
+        (line.raw, (!line.heading).then_some(shown))
     })
-}
-
-// The line reading below is the twin of store::request_sections (its `outline`, `comment_end`,
-// `heading`, `fence_mark` and `closes`), which `locate` has already applied to the whole text.
-
-/// Whether a comment is still open after the line, given whether one was open before it, and
-/// whether the line shows text outside comments. `<!-->` and `<!--->` close themselves.
-fn outside(line: &str, mut open: bool) -> (bool, bool) {
-    let mut shown = false;
-    let mut at = 0;
-    loop {
-        if open {
-            let Some(close) = line[at..].find("-->") else {
-                return (true, shown);
-            };
-            (at, open) = (at + close + 3, false);
-        } else {
-            let Some(begin) = line[at..].find("<!--") else {
-                return (false, shown || !line[at..].trim_matches(SPACE).is_empty());
-            };
-            shown |= !line[at..at + begin].trim_matches(SPACE).is_empty();
-            (at, open) = (at + begin + 2, true);
-        }
-    }
-}
-
-/// A column-0 ATX heading: one to six `#`, then a space, a tab or the end of the line.
-fn heading(line: &str) -> bool {
-    let level = line.bytes().take_while(|b| *b == b'#').count();
-    let after = &line[level..];
-    (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE))
-}
-
-/// A column-0 code fence marker: three or more backticks or tildes, no backtick after backticks.
-fn fence_mark(line: &str) -> Option<(u8, usize)> {
-    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
-    let run = line.bytes().take_while(|b| *b == mark).count();
-    (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
-}
-
-/// A closing fence: up to three spaces, the opening's mark at least as long, then spaces or tabs.
-fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
-    let rest = line.trim_start_matches(' ');
-    let length = rest.bytes().take_while(|b| *b == mark).count();
-    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim_matches(SPACE).is_empty()
 }
 
 /// The label line numbers of the blocks that count: a label with prose under it.

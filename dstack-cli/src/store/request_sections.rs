@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use crate::core::error::{Error, Result};
 use crate::store::rows;
+use crate::store::visible::{self, closes, fence_mark, heading, SPACE};
 
 /// The `##` heading that holds the R rows; only `req add` and the row verbs write under it.
 pub const REQUIREMENTS: &str = "요구사항";
@@ -23,8 +24,7 @@ pub const SECTION_KEYS: [(&str, &str); 10] = [
     ("risks", "위험"),
 ];
 
-/// CommonMark's whitespace in a line, and across lines; any other Unicode space (U+00A0) is text.
-const SPACE: [char; 2] = [' ', '\t'];
+/// CommonMark's whitespace across lines; any other Unicode space (U+00A0) is text.
 const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
 
 /// Where a body sits: the paragraph between the `# <title>` line and the first heading, or the
@@ -116,14 +116,10 @@ pub fn label(text: &str, place: &Place) -> String {
     }
 }
 
-/// Blank is what a template leaves behind: whitespace and HTML comments only. An unclosed
-/// comment runs to the end of the body, as a renderer shows it.
+/// Blank is what a template leaves behind: whitespace and HTML comments only, read as the
+/// outline reads them. An unclosed comment runs to the end of the body, as a renderer shows it.
 pub fn is_blank(body: &str) -> bool {
-    let Some((before, after)) = body.split_once("<!--") else {
-        return body.trim_matches(BLANK).is_empty();
-    };
-    let rest = after.split_once("-->").map_or("", |(_, rest)| rest);
-    before.trim_matches(BLANK).is_empty() && is_blank(rest)
+    visible::visible(body).trim_matches(BLANK).is_empty()
 }
 
 /// What new prose may hold: no row-shaped line (read back as an R row), no heading ending this
@@ -312,39 +308,8 @@ fn underline(line: &str) -> bool {
 
 /// The HTML comment still open at the end of line `n`, given the one open at its start: the line
 /// it opened on and whether it opened at column 0. `<!-->` and `<!--->` close themselves.
-fn comment_end(line: &str, n: usize, mut open: Option<(usize, bool)>) -> Option<(usize, bool)> {
-    let mut at = 0;
-    loop {
-        if open.is_some() {
-            let Some(close) = line[at..].find("-->") else {
-                return open;
-            };
-            (at, open) = (at + close + 3, None);
-        } else {
-            let begin = at + line[at..].find("<!--")?;
-            (at, open) = (begin + 2, Some((n, begin == 0)));
-        }
-    }
-}
-
-/// An ATX heading: one to six `#`, then a space, a tab or the end of the line.
-fn heading(line: &str) -> Option<(usize, &str)> {
-    let level = line.bytes().take_while(|b| *b == b'#').count();
-    let after = &line[level..];
-    let atx = (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE));
-    atx.then(|| (level, after.trim_matches(SPACE)))
-}
-
-/// A code fence marker: three or more backticks or tildes, and no backtick after a backtick run.
-fn fence_mark(line: &str) -> Option<(u8, usize)> {
-    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
-    let run = line.bytes().take_while(|b| *b == mark).count();
-    (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
-}
-
-/// A closing fence: up to three spaces, the opening's mark at least as long, then spaces or tabs.
-fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
-    let rest = line.trim_start_matches(' ');
-    let length = rest.bytes().take_while(|b| *b == mark).count();
-    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim_matches(SPACE).is_empty()
+fn comment_end(line: &str, n: usize, open: Option<(usize, bool)>) -> Option<(usize, bool)> {
+    let (spans, still) = visible::scan(line, open.is_some());
+    let last = spans.last().filter(|_| still)?;
+    Some(open.filter(|_| spans.len() == 1).unwrap_or((n, last.start == 0)))
 }

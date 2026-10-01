@@ -10,6 +10,7 @@ use crate::core::target::{resolve_target, TargetKind};
 use crate::store::request::RequestDoc;
 use crate::store::request_sections::{body, check_prose, replace, Place};
 use crate::store::tables::{decisions, Decision};
+use crate::store::visible::visible;
 
 use super::design_gate::{dec_file, SKIP_PREFIX};
 use super::{is_approved, load, require_file, rowfile};
@@ -145,20 +146,6 @@ fn section<'a>(text: &'a str, heading: &'static str) -> Result<&'a str> {
         true => body(text, &Place::Section(heading)),
         false => Ok(""),
     }
-}
-
-/// What a renderer shows of a body: its HTML comments left out as store::request_sections reads
-/// them (twin of its `comment_end`). A `<!--` runs to the next `-->` looked for from its own
-/// `--`, so `<!-->` and `<!--->` close themselves; an unclosed comment runs to the end.
-fn visible(body: &str) -> String {
-    let mut kept = String::new();
-    let mut rest = body;
-    while let Some(at) = rest.find("<!--") {
-        kept.push_str(&rest[..at]);
-        rest = rest[at + 2..].split_once("-->").map_or("", |(_, next)| next);
-    }
-    kept.push_str(rest);
-    kept
 }
 
 /// The lines of a body as written, comments included, less its leading and trailing blank lines.
