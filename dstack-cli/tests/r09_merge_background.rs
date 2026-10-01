@@ -109,6 +109,8 @@ fn R09_merge_background_lets_the_merged_row_approve_and_keeps_every_earlier_byte
     let before = t.read(REQUEST);
     let end = locate(&before, &BACKGROUND).expect("the background").end;
     merge_row(&t);
+    let out = t.run(&["check", "request", "--run", RUN]);
+    assert!(stdout(&out).contains(MISSING), "{}", stdout(&out));
     let out = background(&t, ADDED);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let pending = t.read(REQUEST);
@@ -118,9 +120,25 @@ fn R09_merge_background_lets_the_merged_row_approve_and_keeps_every_earlier_byte
         "every earlier byte is kept"
     );
     assert!(pending[end..].contains("pending-approval"), "{pending}");
-    // The rule holds now; the pending row and the stale hash are what approve clears.
+    // The background rule passes now (D-30): the pending row (R48) and the hash the block
+    // changed are the only failures left, and approve clears both.
     let out = t.run(&["check", "request", "--run", RUN]);
-    assert!(!stdout(&out).contains(MISSING), "{}", stdout(&out));
+    let shown = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{shown}");
+    assert!(!shown.contains(MISSING), "{shown}");
+    assert!(
+        shown.contains("\n  background: pending rows 1, pending background blocks 1\n"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("\n  hash mismatch (edited after approval): dstack request approve\n"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("\n  pending rows: 1 (dstack request approve clears them)\n"),
+        "{shown}"
+    );
+    assert!(shown.trim_end().ends_with(", failures 2"), "{shown}");
 
     t.ok(&["request", "approve", "--run", RUN]);
     t.ok(&["check", "request", "--run", RUN]);
@@ -157,6 +175,55 @@ fn R09_merge_background_a_block_without_a_pending_row_fails() {
     let out = t.run(&["request", "approve", "--run", RUN]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
     assert!(stdout(&out).contains("no pending row"), "{}", stdout(&out));
+}
+
+#[test]
+fn R09_merge_background_a_label_without_prose_does_not_count() {
+    for body in ["", "<!-- 본문은 지웠어요. -->\n"] {
+        let t = approved_goal();
+        merge_row(&t);
+        assert_eq!(background(&t, ADDED).status.code(), Some(0));
+        let emptied = t.read(REQUEST).replace(ADDED, body);
+        t.write(REQUEST, &emptied);
+        let out = t.run(&["check", "request", "--run", RUN]);
+        assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+        assert!(stdout(&out).contains(MISSING), "{body:?}: {}", stdout(&out));
+        let out = t.run(&["request", "approve", "--run", RUN]);
+        assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+        assert_eq!(t.read(REQUEST), emptied, "a refused approval writes nothing");
+    }
+}
+
+/// A label written as an example inside a comment and inside a fence of the approved background.
+const DECOYS: &str = "<!--\n### 추가 배경 (2026-01-01) — status: pending-approval\n\n\
+                      주석 속 예시예요.\n-->\n\n```text\n\
+                      ### 추가 배경 (2026-01-02) — status: pending-approval\n\n\
+                      울타리 속 예시예요.\n```\n\n";
+
+#[test]
+fn R09_merge_background_labels_in_comments_and_fences_neither_count_nor_change() {
+    let first = "처음 승인한 배경이에요.\n\n";
+    let text = goal().replace(first, &format!("{first}{DECOYS}"));
+    let t = scratch(&text);
+    t.ok(&["request", "approve", "--run", RUN]);
+    let before = t.read(REQUEST);
+    let end = locate(&before, &BACKGROUND).expect("the background").end;
+    merge_row(&t);
+    let out = t.run(&["check", "request", "--run", RUN]);
+    assert!(stdout(&out).contains(MISSING), "{}", stdout(&out));
+    assert_eq!(background(&t, ADDED).status.code(), Some(0));
+    let out = t.run(&["check", "request", "--run", RUN]);
+    assert!(
+        stdout(&out).contains("pending background blocks 1\n"),
+        "{}",
+        stdout(&out)
+    );
+    t.ok(&["request", "approve", "--run", RUN]);
+    t.ok(&["check", "request", "--run", RUN]);
+    let after = t.read(REQUEST);
+    assert_eq!(&after[..end], &before[..end], "the examples are unchanged");
+    assert_eq!(after.matches("pending-approval").count(), 2, "{after}");
+    assert!(after[end..].starts_with("### 추가 배경 ("), "{after}");
 }
 
 /// The refusal leaves request.md as it was and says why on stderr.

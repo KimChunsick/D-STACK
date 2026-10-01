@@ -21,8 +21,9 @@ const SECTION: Place = Place::Section(HEADING);
 const LABEL: &str = "### 추가 배경";
 const MARKER: &str = " — status: pending-approval";
 
-/// CommonMark's whitespace across lines, as the section writer trims new prose.
+/// CommonMark's whitespace across lines, as the section writer trims new prose, and in a line.
 const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
+const SPACE: [char; 2] = [' ', '\t'];
 
 pub fn background(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = resolve_target(ctx, args)?;
@@ -124,18 +125,95 @@ fn is_pending(line: &str) -> bool {
 }
 
 /// The line numbers of the pending block labels in the background body; none when the outline
-/// gives no single section.
+/// gives no single section. A label counts only as a real heading (column 0, outside every
+/// comment and fence) whose block shows text outside comments before the next heading or the
+/// end of the section, so an example in a comment or fence is neither counted nor cleared.
 fn pending_lines(text: &str) -> Vec<usize> {
     let Ok(range) = locate(text, &SECTION) else {
         return Vec::new();
     };
     let first = text[..range.start].matches('\n').count() + 1;
-    text[range]
-        .split('\n')
-        .enumerate()
-        .filter(|(_, line)| is_pending(line))
-        .map(|(index, _)| first + index)
-        .collect()
+    let mut found = Vec::new();
+    // The label line of the block being read, and whether it has shown text yet.
+    let mut label: Option<(usize, bool)> = None;
+    let mut fence: Option<(u8, usize)> = None;
+    let mut comment = false;
+    for (index, line) in text[range].split('\n').enumerate() {
+        let (raw, line) = (line, line.trim_end_matches('\r'));
+        let shown;
+        if let Some(open) = fence {
+            fence = fence.filter(|_| !closes(line, open));
+            shown = !line.trim_matches(SPACE).is_empty();
+        } else if comment {
+            (comment, shown) = outside(line, true);
+        } else if let Some(open) = fence_mark(line) {
+            fence = Some(open);
+            shown = true;
+        } else if heading(line) {
+            if let Some((lineno, true)) = label.take() {
+                found.push(lineno);
+            }
+            // The raw line, as `clear` strips the marker from it.
+            if is_pending(raw) {
+                label = Some((first + index, false));
+            }
+            continue;
+        } else {
+            (comment, shown) = outside(line, false);
+        }
+        if let Some((_, seen)) = label.as_mut() {
+            *seen |= shown;
+        }
+    }
+    if let Some((lineno, true)) = label {
+        found.push(lineno);
+    }
+    found
+}
+
+// The line reading below is the twin of store::request_sections (its `outline`, `comment_end`,
+// `heading`, `fence_mark` and `closes`), which `locate` has already applied to the whole text.
+
+/// Whether a comment is still open after the line, given whether one was open before it, and
+/// whether the line shows text outside comments. `<!-->` and `<!--->` close themselves.
+fn outside(line: &str, mut open: bool) -> (bool, bool) {
+    let mut shown = false;
+    let mut at = 0;
+    loop {
+        if open {
+            let Some(close) = line[at..].find("-->") else {
+                return (true, shown);
+            };
+            (at, open) = (at + close + 3, false);
+        } else {
+            let Some(begin) = line[at..].find("<!--") else {
+                return (false, shown || !line[at..].trim_matches(SPACE).is_empty());
+            };
+            shown |= !line[at..at + begin].trim_matches(SPACE).is_empty();
+            (at, open) = (at + begin + 2, true);
+        }
+    }
+}
+
+/// A column-0 ATX heading: one to six `#`, then a space, a tab or the end of the line.
+fn heading(line: &str) -> bool {
+    let level = line.bytes().take_while(|b| *b == b'#').count();
+    let after = &line[level..];
+    (1..=6).contains(&level) && (after.is_empty() || after.starts_with(SPACE))
+}
+
+/// A column-0 code fence marker: three or more backticks or tildes, no backtick after backticks.
+fn fence_mark(line: &str) -> Option<(u8, usize)> {
+    let mark = line.bytes().next().filter(|b| matches!(b, b'`' | b'~'))?;
+    let run = line.bytes().take_while(|b| *b == mark).count();
+    (run >= 3 && !(mark == b'`' && line[run..].contains('`'))).then_some((mark, run))
+}
+
+/// A closing fence: up to three spaces, the opening's mark at least as long, then spaces or tabs.
+fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
+    let rest = line.trim_start_matches(' ');
+    let length = rest.bytes().take_while(|b| *b == mark).count();
+    line.len() - rest.len() <= 3 && length >= run && rest[length..].trim_matches(SPACE).is_empty()
 }
 
 /// How many blocks still wait for `request approve`.
