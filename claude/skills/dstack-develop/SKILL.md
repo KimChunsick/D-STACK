@@ -42,8 +42,8 @@ unit is the **Milestone** and the fresh-context unit stays the Plan.
 | Stage | What the main session does | Ends when |
 |---|---|---|
 | Discuss | interview round for this Milestone only, budget from R51 (first Milestone 2 rounds × 5 questions, later 1 × 3); `dstack ask add` / `dstack ask answer` / `dstack ask assume`, `dstack decision add` | `dstack ask list` shows 0 open |
-| Plan | `dstack milestone add`, `dstack plan add`, `dstack task add`; then `dstack plan render` | render shows 3–6 Plans, every live R covered |
-| Execute | the wave loop of §5 | no Plan of this Milestone is `pending`/`in-progress` |
+| Plan | `dstack milestone add <slug> --goal <text>`, `dstack plan add … --purpose <text> --e2e-focus <text>`, `dstack task add … --purpose <text>`; then `dstack plan render`; then `dstack milestone brief M<n>`: show the user the whole brief with a judgment list (your splits, deps and E2E focus choices) and ask once; on yes `dstack milestone confirm M<n>`. No worker starts before that confirmation (R12) | render shows 3–6 Plans, every live R covered; the brief prints `confirmed: yes` |
+| Execute | the wave loop of §5; only confirmed Plans run — `dstack next` and `dstack plan start` exclude the rest with a reason | no Plan of this Milestone is `pending`/`in-progress` |
 | Verify | the milestone's e2e pass — one `e2e-runner` over every open case of every Plan, recorded per artifact (verify §4–§5, §7) — then `dstack check coverage`, `dstack check decisions`, `dstack verify` | all three exit 0 |
 | Wrap-up | `dstack review --scope milestone`, close finished quick items, report to the user | the ledger pass seals |
 
@@ -127,6 +127,10 @@ GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`
 5. per returned worker: run the checklist of §7, in order.
 6. dstack next --max 3   → next wave. Repeat until the Milestone has no pending plan.
 ```
+
+Fix a Plan that `next` excludes, never work around it: `dstack plan edit P<n> --purpose <text>` /
+`--e2e-focus <text>` or `dstack milestone edit M<n> --goal <text>`, then show
+`dstack milestone brief M<n>` and run `dstack milestone confirm M<n>` again, also for Plans added later.
 
 **Isolation ban (R36).** Never use Claude Code's own worktree isolation: no `--worktree` flag
 on the Agent tool, no `EnterWorktree`, no `isolation: worktree` in agent frontmatter, no
@@ -255,9 +259,9 @@ including quick tasks and the final sealing review; legacy request values do not
 
 ## 10. Closing a Milestone and the Goal
 
-1. The milestone's e2e pass (verify §7 step 3): one runner over every open case of every Plan in
-   the milestone, one `dstack evidence add` per artifact. A failed case becomes a decimal Plan
-   (`dstack plan insert --after P<n>`) with its own review round; the milestone waits.
+1. The milestone's e2e pass (verify §7 step 3): one runner over every open case of every Plan,
+   its case table pasted from `dstack e2e brief --milestone M<n>`, one `dstack evidence add` per
+   artifact. A failed case becomes a reviewed decimal Plan (`plan insert --after P<n>`); the milestone waits.
 2. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0.
 3. `dstack review --scope milestone --milestone M2` → ledger pass → seal.
 4. Goal close records no new evidence (every case ran at its milestone): `dstack verify` also

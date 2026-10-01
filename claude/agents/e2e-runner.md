@@ -14,6 +14,16 @@ start the system under test (or that it is already running), the artifact direct
 (`<artifact-dir>`, the only place you may write), and for web-ui the capture engine to use
 (ego-browser, with the exact skill instructions pasted in).
 
+The case list is the `dstack e2e brief --milestone M<n>` output pasted in the brief: run every
+open case of its `## Cases` table, and judge each against that Plan's E2E focus and the verbatim
+R rows the output carries. Never add, drop or reword a case.
+
+Scratch-directory guard: run each harness under `set -euo pipefail`, so an unset variable aborts
+instead of expanding to nothing. Create every scratch repository with `mktemp -d`, and abort
+unless that path exists and lies under the temp root (`${TMPDIR:-/tmp}`). Never `cd` to a variable
+that may be empty, and check `pwd` against the scratch path before any `git init` or `dstack init`
+— a harness without this guard once ran both in the user's home.
+
 Per-case contract:
 
 - `web-ui`: one capture per case (annotated screenshot or short video) named
