@@ -9,6 +9,9 @@ use crate::core::paths::parse_rid;
 use crate::store::rows::{self, Row, REQ_SEP};
 use crate::store::visible;
 
+/// The row readers stop at the part-3 marker, so they live with it.
+pub use crate::store::request_part3::{seen_lines, seen_rows};
+
 /// The frontmatter keys, in the order `request new` writes and `check request` reports them.
 pub const REQ_FIELDS: [&str; 11] = [
     "work_type",
@@ -288,24 +291,6 @@ pub fn approval_matches(dir: &Path, sha256: &str) -> Result<bool> {
         Some(text) => text.contains(sha256),
         None => false,
     })
-}
-
-/// The lines a reader sees, numbered from 1 with any carriage return kept: a line that starts
-/// inside an HTML comment is not there, so no row reader, row edit or marker clearing reaches a
-/// row on it (D-33). The empty piece after a final newline is a line here, which no row matches.
-pub fn seen_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
-    visible::lines(text)
-        .into_iter()
-        .enumerate()
-        .filter(|(_, line)| !line.hidden)
-        .map(|(index, line)| (index + 1, line.raw))
-}
-
-/// The R rows a reader sees in a text, as `RequestDoc::rows` reads them.
-pub fn seen_rows(text: &str) -> Vec<Row> {
-    seen_lines(text)
-        .filter_map(|(lineno, line)| rows::parse_line(lineno, line))
-        .collect()
 }
 
 /// The lines of a file, keeping a carriage return and knowing nothing about a trailing newline.

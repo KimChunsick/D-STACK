@@ -5,6 +5,8 @@
 // part 3 fails too, and a request without the marker keeps its whole-file hash (D-38, D-39).
 // R15 (T50): every plan verb regenerates part 3 from plan.json in hierarchy order, check request
 // names an empty Milestone goal or Plan purpose, and a legacy request is never touched.
+// R15 (T51): R rows exist only above the marker, so a row written below it is no row and fails
+// check request by its line; planning prose is escaped so it opens no comment and forms no row.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -292,8 +294,8 @@ fn scoped(text: &str) -> Scratch {
 }
 
 /// The planning steps of the fixture, each with a line its part 3 shows afterwards: two
-/// Milestones with goals; M1 holds P1 (task T1) and P2 (after P1, tasks T2 and T3, T3 without a
-/// purpose); M2 holds P3 without tasks.
+/// Milestones with goals; M1 holds P1 (task T1) and P2 (after P1, tasks T2 and T3, T3 after T2
+/// and without a purpose); M2 holds P3 without tasks.
 const PLANNING: [(&[&str], &str); 8] = [
     (&["milestone", "add", "core", "--goal", "설치를 한 번에 끝내요"], "## M1 core\n\n- 목표: 설치를 한 번에 끝내요\n"),
     (&["milestone", "add", "wrap", "--goal", "보고서를 정리해요"], "## M2 wrap\n\n- 목표: 보고서를 정리해요\n"),
@@ -317,7 +319,7 @@ const PLANNING: [(&[&str], &str); 8] = [
         &["task", "add", "wire", "--plan", "P2", "--covers", "R01,R02", "--files", "c/d.sh", "--purpose", "스크립트를 이어요"],
         "- Task T2 wire\n  - 목적: 스크립트를 이어요\n",
     ),
-    (&["task", "add", "docs", "--plan", "P2", "--covers", "R02", "--files", "c/e.sh"], "- Task T3 docs\n  - 목적: (비어 있어요)\n"),
+    (&["task", "add", "docs", "--plan", "P2", "--covers", "R02", "--files", "c/e.sh", "--deps", "T2"], "- Task T3 docs\n  - 목적: (비어 있어요)\n"),
 ];
 
 /// Part 3 once every planning step ran.
@@ -328,12 +330,15 @@ fn planned_part3() -> String {
          ### P1 first\n\n- 목적: 설치 스크립트를 정리해요\n- E2E 초점: 설치 출력이 그대로예요\n\
          - 다루는 R 행: R01\n- 선언 파일: `a/b.sh`\n- 선행 Plan: (비어 있어요)\n- 상태: `ready`\n\
          - Task T1 write-lib\n  - 목적: 라이브러리를 써요\n  - 다루는 R 행: R01\n\
+         \x20 - 선언 파일: `a/b.sh`\n  - 선행 Task: (비어 있어요)\n\
          \x20 - 상태: 아직 커밋하지 않았어요\n\n\
          ### P2 second\n\n- 목적: 설치를 연결해요\n- E2E 초점: 설치 기록을 봐요\n\
          - 다루는 R 행: R01, R02\n- 선언 파일: `c/d.sh`, `c/e.sh`\n- 선행 Plan: P1\n- 상태: `pending`\n\
          - Task T2 wire\n  - 목적: 스크립트를 이어요\n  - 다루는 R 행: R01, R02\n\
+         \x20 - 선언 파일: `c/d.sh`\n  - 선행 Task: (비어 있어요)\n\
          \x20 - 상태: 아직 커밋하지 않았어요\n\
          - Task T3 docs\n  - 목적: (비어 있어요)\n  - 다루는 R 행: R02\n\
+         \x20 - 선언 파일: `c/e.sh`\n  - 선행 Task: T2\n\
          \x20 - 상태: 아직 커밋하지 않았어요\n\n\
          ## M2 wrap\n\n- 목표: 보고서를 정리해요\n- 확인한 Plan: (비어 있어요)\n\n\
          ### P3 third\n\n- 목적: 보고서 틀을 만들어요\n- E2E 초점: 보고서 출력을 봐요\n\
@@ -466,4 +471,65 @@ fn R15_part3_render_passes_lint_ko_and_adds_no_rows() {
     }
     let out = t.ok(&["lint-ko", REQUEST]);
     assert!(out.contains("files 1, hits 0 (S1 0), unclassified 0"), "{out}");
+}
+
+#[test]
+fn R15_part3_rows_below_the_marker_fail_check_and_count_nothing() {
+    let text = request(true);
+    let t = approved(&text);
+    let row = "- [ ] **R03** 새 요구사항이에요. — accept: 새 검사를 통과해요.";
+    let added = format!("{text}{row}\n");
+    t.write(REQUEST, &added);
+    let lineno = added.lines().count();
+    let (code, stdout) = check(&t);
+    assert_eq!(code, 1, "{stdout}");
+    let named = format!(
+        "  line {lineno}: R rows belong in ## 요구사항 above part 3; part 3 is generated: {row}\n"
+    );
+    assert!(stdout.contains(&named), "{stdout}");
+    assert!(stdout.contains("  rows: 2 (live 2,"), "{stdout}");
+    assert!(!stdout.contains("hash mismatch") && stdout.contains(", failures 1\n"), "{stdout}");
+
+    // req add puts the next row right after R02, above part 3, and leaves part 3 as it was.
+    t.ok(&["req", "add", "넷째 요구사항이에요.", "--accept", "넷째 확인이에요."]);
+    let after = t.read(REQUEST);
+    assert_eq!(part3(&after), part3(&added));
+    let r02 = "- [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n";
+    let at = after.find(r02).expect("the R02 row") + r02.len();
+    let next = after[at..].lines().next().unwrap_or_default();
+    assert!(next.starts_with("- [ ] **R") && next.contains(" 넷째 요구사항이에요."), "{after}");
+}
+
+#[test]
+fn R15_part3_render_escapes_planning_prose() {
+    let t = scratch(&request(true));
+    let (code, stdout) = check(&t);
+    assert_eq!(code, 0, "unplanned: {stdout}");
+    t.ok(&["milestone", "add", "core", "--goal", "설치를 끝내요"]);
+    t.ok(&["plan", "add", "first", "--milestone", "M1", "--files", "a/b.sh", "--purpose", "**R01** 요구사항을 구현해요"]);
+    t.ok(&["plan", "add", "second", "--milestone", "M1", "--files", "c/d.sh", "--purpose", "<!-- 숨겨요"]);
+    let part = part3(&t.read(REQUEST)).to_string();
+    assert!(part.contains("### P1 first\n\n- 목적: **R01** 요구사항을 구현해요\n"), "{part}");
+    assert!(part.contains("### P2 second\n\n- 목적: &lt;!-- 숨겨요\n"), "{part}");
+    let generated = part.strip_prefix(GUIDANCE).expect("the guidance first");
+    assert!(!generated.contains('<'), "{part}");
+    let (code, stdout) = check(&t);
+    assert_eq!(code, 0, "planned: {stdout}");
+    assert!(stdout.contains("  rows: 2 (live 2,"), "{stdout}");
+
+    // The outline still reads: the risks section is rewritten and part 3 stays as rendered.
+    t.write("section.md", "계획 문장이 요청서 문법을 깨뜨릴 수 있어요.\n");
+    t.ok(&["request", "section", "risks", "--from", "section.md"]);
+    let after = t.read(REQUEST);
+    assert!(after.contains("## 위험\n\n계획 문장이 요청서 문법을 깨뜨릴 수 있어요.\n"), "{after}");
+    assert_eq!(part3(&after), part);
+}
+
+#[test]
+fn R15_part3_rows_of_a_legacy_request_are_read_to_the_end() {
+    let text = request(false);
+    let t = scratch(&format!("{text}- [ ] **R03** 셋째 요구사항이에요. — accept: 셋째 확인이에요.\n"));
+    let (_, stdout) = check(&t);
+    assert!(stdout.contains("  rows: 3 (live 3,"), "{stdout}");
+    assert!(!stdout.contains("part 3 is generated"), "{stdout}");
 }
