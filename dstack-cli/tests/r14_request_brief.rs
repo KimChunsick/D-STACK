@@ -43,7 +43,7 @@ fn request(non_goals: &str, mapping: &str) -> String {
 }
 
 const NON_GOALS: &str = "1. 이미 승인된 요청서는 다시 쓰지 않아요.\n\
-                         <!-- 안내문은 한눈에 보기에 옮기지 않아요. -->\n\n\
+                         <!-- 안내문도 한눈에 보기에 그대로 옮겨요. -->\n\n\
                          2. 화면 캡처는 추가하지 않아요.\n";
 
 const MAPPING: &str = "| R | 파일 |\n|---|---|\n\
@@ -63,13 +63,16 @@ const FULL: &str = "<!-- dstack request brief가 decisions.md, recon.md, 비목�
                     - D-DESIGN-01: design round 1: document layout — one request file\n\
                     - D-03 설계를 건너뛴 사유: 작은 변경이에요.\n\n\
                     **비목표**\n\n\
-                    1. 이미 승인된 요청서는 다시 쓰지 않아요.\n\n\
+                    1. 이미 승인된 요청서는 다시 쓰지 않아요.\n\
+                    <!-- 안내문도 한눈에 보기에 그대로 옮겨요. -->\n\n\
                     2. 화면 캡처는 추가하지 않아요.\n\n\
                     **영향 파일**\n\n\
                     - `claude/templates/request/cli.md`\n\
                     - `quick/new.rs:141-215`\n\
                     - `README.md`\n\
-                    - `dstack-cli/src/verbs/request/brief.rs`\n";
+                    - `dstack-cli/src/verbs/request/brief.rs`\n\
+                    - `--run`\n\
+                    - `R01`\n";
 
 const EMPTY: &str = "<!-- dstack request brief가 decisions.md, recon.md, 비목표 절, R 행과 모듈의 대응 절에서 모아 만든 절이에요. 고칠 때는 원본을 바꾼 뒤 다시 만들어요. -->\n\n\
                      **대신 정한 가정**\n\n없음\n\n\
@@ -202,33 +205,39 @@ fn group<'a>(section: &'a str, label: &str) -> &'a str {
 }
 
 #[test]
-fn R14_request_brief_lists_extensionless_files_that_exist() {
-    let t = scratch(&request(NON_GOALS, "| R | 파일 |\n|---|---|\n| R01 | `Makefile`, `Dockerfile` |\n"));
+fn R14_request_brief_lists_named_files_whether_or_not_they_exist() {
+    let t = scratch(&request(NON_GOALS, "| R | 파일 |\n|---|---|\n| R01 | `Makefile`, `Procfile` |\n"));
     t.write("Makefile", "all:\n");
-    t.write("Dockerfile", "FROM scratch\n");
     let out = brief(&t);
     assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
     let text = t.read(REQUEST);
-    assert_eq!(group(section(&text), "영향 파일"), "- `Makefile`\n- `Dockerfile`");
+    assert_eq!(group(section(&text), "영향 파일"), "- `Makefile`\n- `Procfile`");
 }
 
-#[test]
-fn R14_request_brief_ignores_a_bare_word_that_names_no_file() {
-    let t = scratch(&request(NON_GOALS, "| R | 파일 |\n|---|---|\n| R01 | `Procfile` |\n"));
-    let out = brief(&t);
-    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
-    let text = t.read(REQUEST);
-    assert_eq!(group(section(&text), "영향 파일"), "없음");
-}
-
-#[test]
-fn R14_request_brief_keeps_the_blank_lines_of_the_non_goals() {
+/// The 비목표 group of a brief made after `request section non-goals` wrote `body`.
+fn non_goals_brief(body: &str) -> String {
     let t = scratch(&request(NON_GOALS, MAPPING));
-    let body = "제외해요.\n\n---\n\n더 제외해요.";
     t.write("non-goals.md", &format!("{body}\n"));
     t.ok(&["request", "section", "non-goals", "--from", "non-goals.md", "--run", RUN]);
     let out = brief(&t);
     assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
-    let text = t.read(REQUEST);
-    assert_eq!(group(section(&text), "비목표"), body);
+    group(section(&t.read(REQUEST)), "비목표").to_string()
+}
+
+#[test]
+fn R14_request_brief_keeps_the_blank_lines_of_the_non_goals() {
+    let body = "제외해요.\n\n---\n\n더 제외해요.";
+    assert_eq!(non_goals_brief(body), body);
+}
+
+#[test]
+fn R14_request_brief_keeps_the_non_goals_after_a_self_closing_comment() {
+    let body = "1. A\n\n<!-->\n\n2. B";
+    assert_eq!(non_goals_brief(body), body);
+}
+
+#[test]
+fn R14_request_brief_shows_text_after_a_self_closing_comment() {
+    let body = "<!--> 보이는 글";
+    assert_eq!(non_goals_brief(body), body);
 }

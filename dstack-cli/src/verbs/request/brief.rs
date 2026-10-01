@@ -22,6 +22,9 @@ const NOTE: &str = "<!-- dstack request brief가 decisions.md, recon.md, 비목�
 /// What an empty group shows, so a reader tells "nothing to judge" from "not generated".
 const NONE: &str = "없음";
 
+/// Whitespace as store::request_sections counts it (twin of its `BLANK`); U+00A0 is text.
+const BLANK: [char; 4] = [' ', '\t', '\n', '\r'];
+
 pub fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = resolve_target(ctx, args)?;
     if let Some(arg) = rest.first() {
@@ -43,8 +46,7 @@ pub fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
         );
     }
     let doc = load(&target)?;
-    let root = ctx.roots()?.wt_root;
-    let content = render(&target.dir, &root, &doc)?;
+    let content = render(&target.dir, &doc)?;
     let failed = |e: Error| Error::failed(format!("{}: {}", file.display(), e.message()));
     check_prose(&content, &BRIEF).map_err(failed)?;
     let text = replace(doc.text(), &BRIEF, &content).map_err(failed)?;
@@ -57,9 +59,8 @@ pub fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The section body: the note, then the four groups in their fixed order. `root` is the checkout
-/// whose files a bare backticked name is looked up in.
-fn render(dir: &Path, root: &Path, doc: &RequestDoc) -> Result<String> {
+/// The section body: the note, then the four groups in their fixed order.
+fn render(dir: &Path, doc: &RequestDoc) -> Result<String> {
     let rows = decisions(&dec_file(dir))?;
     let assumed: Vec<String> = rows
         .iter()
@@ -78,15 +79,19 @@ fn render(dir: &Path, root: &Path, doc: &RequestDoc) -> Result<String> {
         })
         .map(|line| line.trim_end().to_string())
         .collect();
-    let non_goals: Vec<String> = prose_lines(section(doc.text(), "비목표")?);
+    let non_goals = section(doc.text(), "비목표")?;
+    let non_goals: Vec<String> = match visible(non_goals).trim_matches(BLANK).is_empty() {
+        true => Vec::new(),
+        false => as_written(non_goals),
+    };
     let mut files = Vec::new();
     if let Some(recon) = read_text(&dir.join("recon.md"))? {
         for line in blast_radius(&recon) {
-            add_paths(&mut files, line, root);
+            add_spans(&mut files, line);
         }
     }
-    for line in prose_lines(section(doc.text(), "R 행과 모듈의 대응")?) {
-        add_paths(&mut files, &line, root);
+    for line in visible(section(doc.text(), "R 행과 모듈의 대응")?).lines() {
+        add_spans(&mut files, line);
     }
     let files: Vec<String> = files.iter().map(|path| format!("- `{path}`")).collect();
     let mut out = format!("{NOTE}\n");
@@ -142,31 +147,27 @@ fn section<'a>(text: &'a str, heading: &'static str) -> Result<&'a str> {
     }
 }
 
-/// The lines of a body with its HTML comments removed (an unclosed comment runs to the end of the
-/// body, as a renderer shows it), without leading or trailing blank lines and with each run of
-/// blank lines kept as one empty line: a blank line between two lines can be what keeps a `---`
-/// a thematic break rather than the underline of a setext heading.
-fn prose_lines(body: &str) -> Vec<String> {
+/// What a renderer shows of a body: its HTML comments left out as store::request_sections reads
+/// them (twin of its `comment_end`). A `<!--` runs to the next `-->` looked for from its own
+/// `--`, so `<!-->` and `<!--->` close themselves; an unclosed comment runs to the end.
+fn visible(body: &str) -> String {
     let mut kept = String::new();
     let mut rest = body;
-    while let Some((before, after)) = rest.split_once("<!--") {
-        kept.push_str(before);
-        rest = after.split_once("-->").map_or("", |(_, next)| next);
+    while let Some(at) = rest.find("<!--") {
+        kept.push_str(&rest[..at]);
+        rest = rest[at + 2..].split_once("-->").map_or("", |(_, next)| next);
     }
     kept.push_str(rest);
-    let mut lines: Vec<String> = Vec::new();
-    let mut gap = false;
-    for line in kept.lines() {
-        if line.trim_matches([' ', '\t', '\r']).is_empty() {
-            gap = !lines.is_empty();
-            continue;
-        }
-        if std::mem::take(&mut gap) {
-            lines.push(String::new());
-        }
-        lines.push(line.to_string());
-    }
-    lines
+    kept
+}
+
+/// The lines of a body as written, comments included, less its leading and trailing blank lines.
+fn as_written(body: &str) -> Vec<String> {
+    let lines: Vec<&str> = body.lines().collect();
+    let blank = |line: &&str| line.trim_matches(BLANK).is_empty();
+    let start = lines.iter().position(|line| !blank(line)).unwrap_or(lines.len());
+    let end = lines.iter().rposition(|line| !blank(line)).map_or(start, |at| at + 1);
+    lines[start..end].iter().map(|line| line.to_string()).collect()
 }
 
 /// The table lines of recon.md's `## Blast radius` section. recon.md is English working notes,
@@ -187,39 +188,15 @@ fn blast_radius(recon: &str) -> Vec<&str> {
     lines
 }
 
-/// Every backticked repository path of one line not yet in `files`, in the order found.
-fn add_paths(files: &mut Vec<String>, line: &str, root: &Path) {
+/// Every backticked span of one line, exactly as written, that holds no whitespace and is not yet
+/// in `files`, in the order found. Nothing is guessed: an identifier is listed as a path is.
+fn add_spans(files: &mut Vec<String>, line: &str) {
     let spans: Vec<&str> = line.split('`').collect();
     for span in spans.iter().skip(1).take(spans.len().saturating_sub(2)).step_by(2) {
-        let span = span.trim_matches(' ');
-        if is_path(span, root) && !files.iter().any(|seen| seen == span) {
+        let named = !span.is_empty() && !span.contains(char::is_whitespace);
+        if named && !files.iter().any(|seen| seen == span) {
             files.push(span.to_string());
         }
-    }
-}
-
-/// A span that names a repository path: no whitespace, and a `/`, a file extension (letters
-/// and digits after the last dot of the name, before any `:<line>` suffix) or a name that exists
-/// under `root` once its line suffix is stripped, as `Makefile` or `LICENSE` does.
-fn is_path(span: &str, root: &Path) -> bool {
-    if span.is_empty() || span.contains(char::is_whitespace) {
-        return false;
-    }
-    let name = span.split(':').next().unwrap_or(span);
-    let extension = name.rsplit_once('.').map_or("", |(_, ext)| ext);
-    let file = without_lines(span);
-    span.contains('/')
-        || (extension.starts_with(|c: char| c.is_ascii_alphabetic())
-            && extension.bytes().all(|b| b.is_ascii_alphanumeric()))
-        || (!matches!(file, "" | "." | "..") && root.join(file).exists())
-}
-
-/// A span less a trailing `:<line>` or `:<line>-<line>` suffix; any other span as it is.
-fn without_lines(span: &str) -> &str {
-    let number = |text: &str| !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
-    match span.rsplit_once(':') {
-        Some((file, lines)) if lines.split('-').count() <= 2 && lines.split('-').all(number) => file,
-        _ => span,
     }
 }
 
@@ -229,21 +206,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn R14_paths_are_backticked_spans_with_a_slash_or_an_extension() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    fn R14_spans_are_listed_as_written_without_guessing() {
         let mut files = Vec::new();
-        add_paths(&mut files, "| R01 | `a/b.rs:3-9`; `README.md`; `cargo test`; `R01`; `--run`; `0.5` | `open", root);
-        add_paths(&mut files, "`README.md` and `c/d`", root);
-        assert_eq!(files, ["a/b.rs:3-9", "README.md", "c/d"]);
-    }
-
-    #[test]
-    fn R14_line_suffixes_are_stripped_before_the_name_is_looked_up() {
-        assert_eq!(without_lines("Makefile:12"), "Makefile");
-        assert_eq!(without_lines("Makefile:3-9"), "Makefile");
-        for kept in ["Makefile", "Makefile:", "Makefile:x", "Makefile:3-", "Makefile:3-9-12", "a:b:c"] {
-            assert_eq!(without_lines(kept), kept);
-        }
+        add_spans(&mut files, "| R01 | `a/b.rs:3-9`; `Procfile`; `cargo test`; ` x `; ``; `R01`; `--run` | `open");
+        add_spans(&mut files, "`Procfile` and `c/d`");
+        assert_eq!(files, ["a/b.rs:3-9", "Procfile", "R01", "--run", "c/d"]);
     }
 
     #[test]
@@ -254,8 +221,17 @@ mod tests {
     }
 
     #[test]
-    fn R14_prose_lines_drop_comments_and_collapse_blank_lines() {
-        let body = "\n \n1. one\n<!-- a\nb -->\n\n2. two <!-- c --> end\n\t\n---\n\n<!-- open";
-        assert_eq!(prose_lines(body), ["1. one", "", "2. two  end", "", "---"]);
+    fn R14_visible_text_reads_comments_as_the_section_reader_does() {
+        assert_eq!(visible("1. A\n\n<!-->\n\n2. B"), "1. A\n\n\n\n2. B");
+        assert_eq!(visible("<!---> a <!-- b\nc --> d"), " a  d");
+        assert_eq!(visible("<!-- 안내예요. -->\n<!--> \n").trim_matches(BLANK), "");
+        assert_eq!(visible("e <!-- open"), "e ");
+    }
+
+    #[test]
+    fn R14_as_written_trims_only_the_outer_blank_lines() {
+        let body = "\n \n1. one\n<!-- a -->\n\n\n---\t\n\t\n";
+        assert_eq!(as_written(body), ["1. one", "<!-- a -->", "", "", "---\t"]);
+        assert!(as_written("\n \n").is_empty());
     }
 }
