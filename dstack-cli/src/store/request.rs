@@ -220,11 +220,17 @@ impl RequestDoc {
     }
 }
 
-/// req_text_ok(): a segment carrying the separator would grow a marker nobody wrote.
+/// req_text_ok(): a segment carrying the separator would grow a marker nobody wrote, and one
+/// carrying a comment delimiter would change what an HTML comment hides (D-33).
 pub fn req_text_ok(what: &str, text: &str) -> Result<()> {
     if text.contains(REQ_SEP) {
         return Err(Error::failed(format!(
             "{what} must not contain '{REQ_SEP}' (it separates row segments): {text}"
+        )));
+    }
+    if text.contains("<!--") || text.contains("-->") {
+        return Err(Error::failed(format!(
+            "{what} must not contain an HTML comment delimiter (<!-- or -->): {text}"
         )));
     }
     if text.is_empty() {

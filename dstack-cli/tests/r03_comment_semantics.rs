@@ -6,7 +6,8 @@
 // beside such prose is still caught. R01 and R03 also read a row inside a comment as no row
 // (D-33): `req add` puts the next row after the last visible one and never reuses the hidden id,
 // and check request, request approve and the row verbs pass it by. A write never changes what a
-// comment hides: `req add` and `request approve` refuse where it would, and write nothing.
+// comment hides: `req add` and `request approve` refuse where it would, and write nothing; the
+// text `req add`, `req accept` and `req withdraw` take may not hold a comment delimiter at all.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -289,4 +290,41 @@ fn R03_comment_semantics_row_verbs_find_no_commented_row() {
         assert!(stderr(&out).contains("no row R02 in "), "{args:?}: {}", stderr(&out));
         assert_eq!(t.read(REQUEST), before, "{args:?}");
     }
+}
+
+/// `args` on `before` exits 1 saying `what` holds a comment delimiter, and writes nothing.
+fn refuses_delimiter(before: &str, args: &[&str], what: &str, text: &str) {
+    let t = scratch(before);
+    let out = t.run(&[args, &["--run", RUN]].concat());
+    assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stdout(&out));
+    let said = format!("{what} must not contain an HTML comment delimiter (<!-- or -->): {text}");
+    assert!(stderr(&out).contains(&said), "{args:?}: {}", stderr(&out));
+    assert_eq!(t.read(REQUEST), before, "{args:?}");
+}
+
+#[test]
+fn R03_comment_semantics_accept_refuses_a_criterion_that_opens_a_comment() {
+    let before = goal("skip").replacen("첫 확인이에요.", "pending: agent to propose", 1);
+    let criterion = "확인해요 <!--";
+    refuses_delimiter(&before, &["req", "accept", "R01", criterion], "criterion", criterion);
+}
+
+#[test]
+fn R03_comment_semantics_withdraw_refuses_a_why_that_closes_a_comment() {
+    let why = "필요 없어졌어요 -->";
+    refuses_delimiter(&goal("skip"), &["req", "withdraw", "R01", "--why", why], "--why", why);
+}
+
+#[test]
+fn R01_comment_semantics_add_refuses_row_text_that_opens_a_comment() {
+    let text = "새 행 <!-- 열어요";
+    let args = ["req", "add", text, "--accept", "새 확인이에요."];
+    refuses_delimiter(&goal("skip"), &args, "row text", text);
+}
+
+#[test]
+fn R01_comment_semantics_add_refuses_an_accept_that_closes_a_comment() {
+    let accept = "새 확인이에요 -->";
+    let args = ["req", "add", "새 요구사항이에요.", "--accept", accept];
+    refuses_delimiter(&goal("skip"), &args, "--accept", accept);
 }
