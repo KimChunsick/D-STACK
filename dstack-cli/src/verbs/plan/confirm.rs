@@ -49,6 +49,15 @@ pub(super) fn request_e2e(dir: &Path) -> Result<String> {
     Ok(RequestDoc::load(&file)?.field("e2e").unwrap_or_default())
 }
 
+/// The e2e value plan start and next judge by: a run without request.md (a legacy run) has no
+/// e2e value set, so its Plans need a focus; only milestone brief and confirm require the file.
+pub(super) fn gate_e2e(dir: &Path) -> Result<String> {
+    match dir.join("request.md").is_file() {
+        true => request_e2e(dir),
+        false => Ok(String::new()),
+    }
+}
+
 /// The line that says which rule the run's e2e value sets for the E2E focus.
 pub(super) fn e2e_line(e2e: &str) -> String {
     match e2e {

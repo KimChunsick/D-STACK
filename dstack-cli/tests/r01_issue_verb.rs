@@ -116,18 +116,34 @@ fn ok(home: &Path, cwd: &Path, args: &[&str]) {
     assert_eq!(code, 0, "dstack {args:?} in {}: {err}", cwd.display());
 }
 
-/// A run with a milestone and `plans` plans added, all still ready.
+/// A run with a request and a confirmed milestone, and `plans` plans added, all still ready.
+/// plan start refuses a Plan its milestone has not confirmed (R12), and milestone confirm reads
+/// request.md, so both are in place before any test starts a plan.
 fn run_with_plans(home: &Path, work: &Path, slug: &str, plans: &[&str]) -> String {
     ok(home, work, &["run", "new", slug, "--type", "cli"]);
+    ok(home, work, &["request", "new", "--type", "cli"]);
     ok(home, work, &["milestone", "add", "core"]);
     for (n, plan) in plans.iter().enumerate() {
         let files = format!("src/{n}.rs");
         ok(
             home,
             work,
-            &["plan", "add", plan, "--milestone", "M1", "--files", &files],
+            &[
+                "plan",
+                "add",
+                plan,
+                "--milestone",
+                "M1",
+                "--files",
+                &files,
+                "--purpose",
+                "file an issue from this plan",
+                "--e2e-focus",
+                "the plan the issue names",
+            ],
         );
     }
+    ok(home, work, &["milestone", "confirm", "M1"]);
     current_run(work)
 }
 

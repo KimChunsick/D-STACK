@@ -10,6 +10,8 @@ use crate::core::fsx::utc_now;
 use crate::core::roots::git_out;
 use crate::store::plan_graph::{counts_line, render_table};
 
+use super::confirm::{e2e_line, gate_e2e, gate_reason};
+
 plan_verb!(PlanRender, "plan render", render);
 plan_verb!(PlanStart, "plan start", start);
 plan_verb!(PlanDone, "plan done", done);
@@ -81,6 +83,12 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
             unmet.join(", ")
         )
     }
+    // R12/R07: a Plan its Milestone has not confirmed, or one without the E2E focus the run
+    // checks, is refused here, before any worktree or branch exists.
+    let e2e = gate_e2e(&target.dir)?;
+    if let Some(reason) = gate_reason(&doc, &e2e, &p) {
+        fail!("refused: {reason}")
+    }
 
     let mut created = String::new();
     if !worktree.is_empty() {
@@ -117,6 +125,9 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     say!(ctx, "plan {p}: {status} → in-progress at {now}");
     if !worktree.is_empty() {
         say!(ctx, "  worktree: {worktree}{created}");
+    }
+    if e2e == "none" {
+        say!(ctx, "  {}", e2e_line(&e2e));
     }
     say!(ctx, "  {}", counts_line(&doc));
     Ok(())

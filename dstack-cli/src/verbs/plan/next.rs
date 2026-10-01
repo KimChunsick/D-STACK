@@ -11,6 +11,8 @@ use crate::core::paths::{base_name, paths_overlap, shell_int};
 use crate::core::tools::policy_get;
 use crate::store::plan::{self, Plan, PlanDoc};
 
+use super::confirm::{e2e_line, gate_e2e, gate_reason};
+
 plan_verb!(Next, "next", next);
 
 fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
@@ -56,6 +58,20 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
     let doc = target.load()?;
     let ready = ids_with(&doc, "ready");
     let in_progress = ids_with(&doc, "in-progress");
+    // R12/R07: a ready Plan its Milestone has not confirmed, or one without the E2E focus the
+    // run checks, is never schedulable. The run's e2e is read only when a ready Plan needs it,
+    // and before anything is printed, so a request.md that cannot be read leaves no half output.
+    let e2e = match ready.is_empty() {
+        true => None,
+        false => Some(gate_e2e(&target.dir)?),
+    };
+    let excluded: Vec<(&str, String)> = ready
+        .iter()
+        .filter_map(|plan| {
+            let why = gate_reason(&doc, e2e.as_deref()?, &plan.id)?;
+            Some((plan.id.as_str(), why))
+        })
+        .collect();
     say!(ctx, "ready:       {}", or_none(&ready));
     say!(ctx, "in-progress: {}", or_none(&in_progress));
 
@@ -98,6 +114,9 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
         if picked.len() as i64 >= free {
             break;
         }
+        if excluded.iter().any(|(id, _)| *id == plan.id) {
+            continue;
+        }
         let clash = in_progress
             .iter()
             .chain(picked.iter())
@@ -105,6 +124,14 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
         if !clash {
             picked.push(plan);
         }
+    }
+    // Printed only when there is something to say, so a run with nothing excluded and e2e on
+    // reads exactly as it did before the gate.
+    if e2e.as_deref() == Some("none") {
+        say!(ctx, "{}", e2e_line("none"));
+    }
+    for (id, why) in &excluded {
+        say!(ctx, "excluded: {id} — {why}");
     }
     say!(
         ctx,
