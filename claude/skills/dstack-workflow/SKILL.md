@@ -59,13 +59,16 @@ must respect the busy-subtree refusal; stop affected workers and leave pending/b
 no supported transition exists. Never reset JSON or mark unfinished Plans done to bypass it.
 
 **Merge route, in order.** `dstack req add --run <id> "<line>" --accept "<criterion>"` appends
-rows as `status: pending-approval`; existing rows are never edited. `dstack check request` fails
-while any row is pending and prints the count. `dstack request approve --run <id>` is the only
-writer of the new hash, and its own `cases sync` step appends ledger rows for the new R ids while
-keeping recorded evidence. Then size the follow-up work: small → `dstack plan insert --after
-P<n>` (decimal id), large → `dstack milestone add <slug> --after M<n>`. Sealed reviews and
-finished Plans are never reopened. If the target run lives in another worktree, stop after
-`req add`: that session sees `pending` in its next `status --oneline` and approves it itself.
+rows as `status: pending-approval`; existing rows are never edited. Say why they arrived with
+`dstack request background --run <id> --from <file>`, the only prose writer on an approved
+request (a pending block appended to `## 배경과 문제`). `dstack check request` fails while any row
+is pending, and names that command while the block is missing.
+`dstack request approve --run <id>` is the only writer of the new hash; its `cases sync` step
+appends ledger rows for the new R ids and keeps recorded evidence. Then size the follow-up work:
+small → `dstack plan insert --after P<n>` (decimal id), large → `dstack milestone add <slug>
+--after M<n>`. Sealed reviews and finished Plans are never reopened. If the target run lives in
+another worktree, stop after those two writes: that session sees `pending` in its next
+`status --oneline` and approves it itself.
 
 ## 3. Open the run (R30, R37, R52, R105)
 
@@ -96,22 +99,24 @@ dstack run new <slug> --type <work_type>
 ## 4. Draft the request (R40–R44)
 
 Always write the request in Korean 해요체: title, headings, description, R-row text and acceptance
-criteria. This applies to every work type, route and `korean_polish` setting, including new rows,
-splits and rows created by `ask assume`. Use Korean for the requirement and `--accept` arguments
-from the start; polishing never translates R rows. Keep frontmatter keys/enum values, R ids,
-`accept:` and status markers, commands, paths and code identifiers unchanged. Read the draft before
-approval and correct English prose through the request workflow. Never rewrite an approved request
-just to translate it. Copy its frozen R rows into downstream briefs verbatim in Korean.
+criteria, for every work type, route and `korean_polish` setting, including new, split and
+`ask assume` rows. Use Korean for the requirement and `--accept` arguments from the start;
+polishing never translates R rows. Keep frontmatter keys/enum values, R ids, `accept:` and status
+markers, commands, paths and code identifiers unchanged. Correct English prose before approval
+through the request workflow; never rewrite an approved request just to translate it. Copy its
+frozen R rows into downstream briefs verbatim in Korean.
 
 1. `dstack request new --type <work_type> --title "<한국어 제목>"` copies the template for that type.
 2. Fill the frontmatter with the §11 defaults, then narrow anything the user actually asked for.
    The repository policy block in PROJECT.md is the ceiling; a request may only narrow (R75).
-3. One row per requirement: `dstack req add "<한국어 요구사항>" --accept "<한국어 완료 기준>"`.
+3. Write each `# 1부 요청` section with `dstack request section <key> --from <file>`; the key ends
+   each guidance comment `(키: <key>)`. It never writes R rows; part 2 is §7.
+4. One row per requirement: `dstack req add "<한국어 요구사항>" --accept "<한국어 완료 기준>"`.
    The CLI mints the number. An accept criterion names what is *observed*, not what is done —
    "401 응답 본문에 스택 추적이 포함되지 않아요", not "오류를 처리해요".
-4. `dstack check request` after every batch. It counts rows, pending, withdrawn, deferred,
-   superseded and Q states, and warns above **12 rows or 60 lines** (R43). On a warning, propose
-   one of two splits and let the user pick:
+5. `dstack check request` after every batch. It refuses unfilled sections and kept guidance,
+   counts rows, pending, withdrawn, deferred, superseded and Q states, and warns above **12 rows
+   or 60 lines** (R43). On a warning, propose one of two splits and let the user pick:
 
    > "R 행이 15개예요. 뒤쪽 6개를 두 번째 Milestone으로 미룰까요, 아니면 별도 Goal로 뺄까요?"
 
@@ -123,9 +128,8 @@ just to translate it. Copy its frozen R rows into downstream briefs verbatim in 
 Delegate to the **recon** native worker (read-only; model mapping in `runtime.md`). The brief carries: the R rows so far,
 `work_type`, `risk_axes` and the style line from §3 verbatim. It returns the text of `recon.md` and writes nothing.
 
-**You write the file with Write, not with a CLI verb** — `recon.md` has no writer verb
-(design.md §3 lists it in the run directory but no verb produces it), and R36 forbids workers
-from writing under `.dstack/`. Path: `.dstack/runs/<run>/recon.md`.
+**You write the file with Write, not with a CLI verb** — `recon.md` has no writer verb, and R36
+forbids workers from writing under `.dstack/`. Path: `.dstack/runs/<run>/recon.md`.
 
 - First line is the style resolution; `## Risks` covers only the axes in `risk_axes`, at most 5
   rows, each with a `file:line` or URL. With `risk_axes: none` the section is the single line
@@ -164,9 +168,11 @@ is the real terminator of the interview, not your judgment.
 
 | `design_review` | Behaviour |
 |---|---|
-| `skip` | No round. Write the skip line in the `## Phases` block. |
-| `auto` | Runs **only** when the work hits a trigger below; otherwise skipped, with the reason. |
-| `required` | Always one round. |
+| `skip` | No round. Write the skip line in the `## Phases` block; approve prints the skip. |
+| `auto` | Runs **only** when the work hits a trigger below; otherwise `dstack request design-skip --why "<reason>"`. |
+| `required` | Always one round; approve refuses until all five part-2 sections are filled. |
+
+Write `# 2부 설계` with `dstack request section <key> --from <file>`; approve enforces this table.
 
 Auto triggers — any one is enough: **a new module boundary**, **an API contract**, **persistence
 or idempotency semantics**, **sanitization across a trust boundary**.
@@ -200,8 +206,9 @@ assumption rows (§6) must be on the page the user approves.
    or code spans; over 15,000 characters it returns `skipped: too-long`. Record the diff and the
    call count in the run folder. After `request approve` the file is frozen by its hash — never
    polish an approved request.
-2. `dstack request open` — snapshots `request.agent-draft.md` and opens `code -g <abs>:1`. With
-   no `code` on PATH it prints the path and exits 0; say the path out loud.
+2. `dstack request brief` regenerates `## 한눈에 보기`, then `dstack request open` snapshots
+   `request.agent-draft.md` and opens `code -g <abs>:1`. With no `code` on PATH it prints the path
+   and exits 0; say the path out loud.
 3. Ask, in Korean, with exactly these three options plus the tool's built-in **Other**:
 
    | Option label | Meaning | Your next move |
@@ -214,8 +221,8 @@ assumption rows (§6) must be on the page the user approves.
 4. **After any answer, your first action is a fresh read: `dstack request show`.** The user may
    have edited the file in VSCode while the question was on screen; answering from memory is how
    a pipeline approves a document nobody wrote.
-5. `dstack request approve` — validates, clears pending markers, writes the sha256, diffs against
-   the agent draft, and syncs the case ledger. A hand edit after this point makes
+5. `dstack request approve` — validates (sections, design gate, `lint-ko` on the whole file),
+   clears pending markers, writes the sha256, diffs against the agent draft, and syncs the cases. A hand edit after this point makes
    `dstack check request` fail on the hash until it is approved again (R46).
 
 ## 9. Hand-off

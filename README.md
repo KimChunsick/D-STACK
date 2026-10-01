@@ -169,12 +169,20 @@ dstack status
 | 단계 | 하는 일 | 쓰는 것 |
 |---|---|---|
 | 갈래 정하기 | 열린 Goal에 합칠지, 새 Goal을 열지, 빠른 작업으로 갈지 | `dstack status`, 스킬 `dstack-workflow` |
-| 요청서 | R 행(한 줄 + 관찰 가능한 기준)을 번호 붙여 적고 승인해요 | `dstack req add`, `dstack request approve` |
+| 요청서 | 1부 요청과 2부 설계를 절마다 채우고, R 행(한 줄 + 관찰 가능한 기준)을 번호 붙여 적은 뒤 승인해요 | `dstack request section`, `dstack req add`, `dstack request brief`, `dstack request approve` |
 | 조사와 인터뷰 | 메인 환경의 recon 에이전트가 코드를 읽고, 질문은 대장으로 관리해요 | `dstack ask add|answer|assume` |
 | 계획 | Milestone → Plan → Task를 등록하고 파도 단위로 돌려요 | `dstack plan add`, `dstack next`, 스킬 `dstack-develop` |
 | 구현 | Plan마다 메인 환경의 워커가 빈 맥락으로 dstack이 만든 worktree에서 일해요 | `dstack plan start --worktree`, `dstack worker report` |
 | 리뷰 | Plan이 끝날 때마다 선택한 서브가 요청서 원문과 diff를 함께 봐요 | `dstack review --scope plan`, `dstack mode exec`, 스킬 `codex-review` |
 | 검증과 보고 | 증거를 대장에 기록하고 R별 상태를 계산해요 | `dstack evidence add`, `dstack verify`, `dstack report`, 스킬 `dstack-verify` |
+
+요청서는 한 파일이에요. 각 절은 `dstack request section <키> --from <파일>`로 하나씩 채우고, 빈
+절이나 안내 주석이 남은 절이 있으면 `dstack check request`도 승인도 통과하지 못해요.
+`design_review: auto`에서 설계 라운드를 건너뛸 때는 `dstack request design-skip --why "<이유>"`로
+이유를 남겨요. 승인을 묻기 전에는 `dstack request brief`가 맨 위 `## 한눈에 보기`를 다시 만들어요.
+메인이 대신 정한 가정, 설계 선택지와 버린 대안, 비목표, 영향받는 파일이 여기에 묶음별로 모여요.
+승인된 Goal에 R 행을 합칠 때는 `dstack request background --run <id> --from <파일>`로 배경 설명을
+덧붙여야 다시 승인할 수 있어요.
 
 빠른 작업은 Goal 밖의 별도 트랙이에요: `dstack quick new <slug>`가 같은 요청서·대장·검사기를
 쓰되 선택 단계를 전부 끈 채 시작해요(스킬 `dstack-quick`).

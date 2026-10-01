@@ -72,6 +72,10 @@ from the start. Keep frontmatter keys/enum values, R ids, `accept:` and status m
 paths and code identifiers unchanged. Check the draft's language before approval; never translate
 an already approved request. Preserve its Korean R rows verbatim in downstream briefs.
 
+A quick request body is one summary paragraph plus `## 요구사항`, nothing else. Write the paragraph
+with `dstack request section summary --from <file> --quick <slug>`; `check request` refuses it
+while it is empty or still holds its guidance comment.
+
 ```
 dstack req add "<한국어 요구사항>" --accept "<한국어 완료 기준>" --quick <slug>
 ```
