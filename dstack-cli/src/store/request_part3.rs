@@ -9,6 +9,7 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, read_text, sha256_bytes};
 use crate::store::plan::{self, Milestone, Plan, PlanDoc};
 use crate::store::plan_graph::plan_covers;
+use crate::store::qa::{self, QaEntry};
 use crate::store::request_part3_qa;
 use crate::store::rows::{self, Row};
 use crate::store::visible::{heading, lines, Line};
@@ -87,30 +88,37 @@ pub fn sha256_approved(path: &Path) -> Result<String> {
 /// Rewrite part 3 of the request in the run directory `dir` from `doc` and the run's QA ledger,
 /// written only when it changes. The bytes through the marker never change, so the approval stays
 /// valid. A run without request.md or without the marker (a legacy request) is left alone, and so
-/// is a marker on the last line without a line break, since appending would change the line.
+/// is a marker on the last line without a line break, since appending would change the line. A QA
+/// text that cannot be read shows a placeholder, so one bad file never stops a plan write.
 pub fn regenerate(dir: &Path, run: &str, doc: &PlanDoc) -> Result<()> {
-    let file = dir.join("request.md");
-    let Some(text) = read_text(&file)? else {
-        return Ok(());
-    };
-    let Some(head) = marker_end(&text).map(|end| &text[..end]) else {
-        return Ok(());
-    };
-    if !head.ends_with('\n') {
-        return Ok(());
+    match rendered(dir, run, doc, &qa::entries(dir)?)? {
+        Some(text) => publish(dir, &text),
+        None => Ok(()),
     }
-    let qa = request_part3_qa::render(dir)?;
-    let fresh = format!("{head}{}{qa}", render(&title(&text), run, doc));
-    if fresh == text {
-        return Ok(());
-    }
-    atomic_write(&file, fresh.as_bytes())
-        .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", file.display())))
 }
 
-/// Part 3 rewritten for a writer that changes no plan (the QA ledger): from plan.json, or from no
-/// plan yet when the run has none, so a QA scenario recorded before planning shows too.
-pub fn refresh(dir: &Path, run: &str) -> Result<()> {
+/// The request text with part 3 rendered from `doc` and the QA ledger `qa` (each row with its
+/// text), None when regenerate leaves the request alone or part 3 already reads so. It writes
+/// nothing, so a writer renders before its first write and refuses with the run as it was.
+pub fn rendered(dir: &Path, run: &str, doc: &PlanDoc, qa: &[QaEntry]) -> Result<Option<String>> {
+    let Some(text) = read_text(&dir.join("request.md"))? else {
+        return Ok(None);
+    };
+    let Some(head) = marker_end(&text).map(|end| &text[..end]) else {
+        return Ok(None);
+    };
+    if !head.ends_with('\n') {
+        return Ok(None);
+    }
+    let qa = request_part3_qa::render(qa);
+    let fresh = format!("{head}{}{qa}", render(&title(&text), run, doc));
+    Ok((fresh != text).then_some(fresh))
+}
+
+/// Part 3 for a writer that changes no plan (the QA ledger), rendered with the ledger it is about
+/// to write: from plan.json, or from no plan yet when the run has none, so a QA scenario recorded
+/// before planning shows too.
+pub fn preview(dir: &Path, run: &str, qa: &[QaEntry]) -> Result<Option<String>> {
     let doc = match plan::exists(dir) {
         true => plan::load(dir)?,
         false => PlanDoc {
@@ -119,7 +127,14 @@ pub fn refresh(dir: &Path, run: &str) -> Result<()> {
             plans: Vec::new(),
         },
     };
-    regenerate(dir, run, &doc)
+    rendered(dir, run, &doc, qa)
+}
+
+/// Write the request text `rendered` built.
+pub fn publish(dir: &Path, text: &str) -> Result<()> {
+    let file = dir.join("request.md");
+    atomic_write(&file, text.as_bytes())
+        .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", file.display())))
 }
 
 /// What check request holds a marker-bearing request to (D-38): a row below the marker is no row

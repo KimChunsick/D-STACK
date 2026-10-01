@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, read_text, sha256_bytes, utc_now};
+use crate::store::plan;
 use crate::store::request_part3;
 use crate::store::request_sections::{body, Place};
 use crate::store::tsv;
@@ -75,6 +76,9 @@ impl QaRow {
     }
 }
 
+/// A ledger row with its text, None when the text is gone or cannot be read.
+pub type QaEntry = (QaRow, Option<String>);
+
 /// What a result records about one open QA scenario. The artifact checks belong to the caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QaResult {
@@ -107,6 +111,16 @@ pub fn body_text(dir: &Path, row: &QaRow) -> Result<Option<String>> {
     read_text(&dir.join(&row.body))
 }
 
+/// Every row with its text as part 3 shows it: a text that is gone or cannot be read is None, so
+/// one bad file never stops part 3, or any plan write that renders it.
+pub fn entries(dir: &Path) -> Result<Vec<QaEntry>> {
+    let entry = |row: QaRow| {
+        let text = body_text(dir, &row).ok().flatten();
+        (row, text)
+    };
+    Ok(rows(dir)?.into_iter().map(entry).collect())
+}
+
 /// The usage scenarios of a request: the `S<n>` that starts each `### S<n> <title>` heading in
 /// `## 사용 시나리오` with the title after it, in order and once each. A heading a comment or a
 /// code fence holds shows no heading, so it names none; a request whose outline cannot be read
@@ -133,24 +147,21 @@ pub fn scenario_ids(request: &str) -> Result<Vec<String>> {
     Ok(scenarios(request)?.into_iter().map(|(id, _)| id).collect())
 }
 
-/// Record a new open QA scenario of the run `run` in `dir`: the next QA<n>, its text written as
-/// given, then its index row, so no row names a missing text, then part 3 of the request. The
-/// caller holds the store lock and has checked the scenario and the text.
+/// Record a new open QA scenario of the run `run` in `dir` as the next QA<n>: part 3 rendered with
+/// it first, so a refusal writes nothing; then its text written as given, then its index row, so
+/// no row names a missing text, then part 3 of the request. The caller holds the store lock and
+/// has checked the scenario and the text.
 pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
-    let held = rows(dir)?;
-    let next = held
+    let mut ledger = entries(dir)?;
+    let next = ledger
         .iter()
-        .filter_map(|row| row.qa.strip_prefix("QA")?.parse::<u64>().ok())
+        .filter_map(|(row, _)| row.qa.strip_prefix("QA")?.parse::<u64>().ok())
         .max()
         .unwrap_or(0)
         + 1;
     let qa = format!("QA{next}");
     let rel = body_rel(&qa);
     let file = dir.join(&rel);
-    let parent = file.parent().unwrap_or(dir);
-    std::fs::create_dir_all(parent)
-        .map_err(|e| Error::cannot_decide(format!("cannot create {}: {e}", parent.display())))?;
-    write(&file, text)?;
     let row = QaRow {
         qa,
         scenario: scenario.to_string(),
@@ -163,17 +174,24 @@ pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
         recorded_at: "-".to_string(),
         note: "-".to_string(),
     };
+    ledger.push((row.clone(), Some(text.to_string())));
+    let part3 = request_part3::preview(dir, run, &ledger)?;
+    let parent = file.parent().unwrap_or(dir);
+    std::fs::create_dir_all(parent)
+        .map_err(|e| Error::cannot_decide(format!("cannot create {}: {e}", parent.display())))?;
+    write(&file, text)?;
     if !index(dir).is_file() {
         write(&index(dir), &format!("{QA_HEADER}\n"))?;
     }
     tsv::append_line(&index(dir), &row.cells())?;
-    request_part3::refresh(dir, run)?;
+    publish(dir, &row.qa, part3)?;
     Ok(row)
 }
 
-/// Record the result of the open QA scenario `qa` in place, then part 3. A recorded result is
-/// never overwritten; a status that is no result and a failed, skipped or blocked one without a
-/// reason refuse. Every other line is copied verbatim. The caller holds the store lock.
+/// Record the result of the open QA scenario `qa` in place, then part 3, which is rendered before
+/// the first write so a refusal writes nothing. A recorded result is never overwritten; a status
+/// that is no result and a failed, skipped or blocked one without a reason refuse. Every other
+/// line is copied verbatim. The caller holds the store lock.
 pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRow> {
     if !QA_RESULTS.contains(&result.status.as_str()) {
         return Err(Error::failed(format!(
@@ -188,10 +206,11 @@ pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRo
             result.status
         )));
     }
-    let held = match rows(dir)?.into_iter().find(|row| row.qa == qa) {
-        Some(row) => row,
-        None => return Err(Error::failed(format!("QA scenario not found: {qa}"))),
+    let mut ledger = entries(dir)?;
+    let Some(at) = ledger.iter().position(|(row, _)| row.qa == qa) else {
+        return Err(Error::failed(format!("QA scenario not found: {qa}")));
     };
+    let held = ledger[at].0.clone();
     if held.status != "open" {
         return Err(Error::failed(format!(
             "{qa} is already recorded (status {}); a recorded QA result is never overwritten",
@@ -216,9 +235,29 @@ pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRo
         }
         out.push('\n');
     }
+    ledger[at].0 = row.clone();
+    let part3 = request_part3::preview(dir, run, &ledger)?;
     write(&index(dir), &out)?;
-    request_part3::refresh(dir, run)?;
+    publish(dir, qa, part3)?;
     Ok(row)
+}
+
+/// Part 3 written after the ledger. The QA write stands even when this one fails, so the refusal
+/// says so and names what writes part 3 again; recording the scenario again would not.
+fn publish(dir: &Path, qa: &str, part3: Option<String>) -> Result<()> {
+    let Some(text) = part3 else {
+        return Ok(());
+    };
+    request_part3::publish(dir, &text).map_err(|e| {
+        let again = match plan::exists(dir) {
+            true => "dstack plan render writes it again",
+            false => "the next plan or QA write (dstack milestone add) writes it again",
+        };
+        Error::cannot_decide(format!(
+            "{qa} is recorded in qa.tsv, but part 3 of request.md is not refreshed ({}); {again} — do not record {qa} again",
+            e.message()
+        ))
+    })
 }
 
 fn write(file: &Path, text: &str) -> Result<()> {
@@ -254,8 +293,8 @@ mod tests {
             produced_by: "dstack qa".into(),
             note: note.into(),
         };
-        add(&dir, "run", "S1", "준비해요.\n").expect("added");
-        add(&dir, "run", NO_SCENARIO, "확인해요.\n").expect("added");
+        add(&dir, "run", "S1", "준비: 저장소예요.\n단계: 실행해요.\n기대 결과: 0이에요.\n").expect("added");
+        add(&dir, "run", NO_SCENARIO, "준비: 없어요.\n단계: 확인해요.\n기대 결과: 0이에요.\n").expect("added");
         assert!(record(&dir, "run", "QA1", &result("failed", " ")).is_err());
         assert!(record(&dir, "run", "QA1", &result("open", "")).is_err());
         assert!(record(&dir, "run", "QA9", &result("met", "")).is_err());

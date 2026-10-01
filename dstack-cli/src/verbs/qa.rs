@@ -1,6 +1,7 @@
 // verbs/qa.rs
 // dstack qa add: record a Goal QA scenario for one usage scenario of the request, or for none,
-// in the run-local QA ledger, and regenerate part 3 (R08, D-40).
+// in the run-local QA ledger, and regenerate part 3 (R08, D-40). The text holds its preparation,
+// steps and expected result under three labels.
 
 use std::path::Path;
 
@@ -14,6 +15,7 @@ use crate::core::verb::Verb;
 use crate::store::qa::{self, NO_SCENARIO};
 use crate::store::request::RequestDoc;
 use crate::store::request_sections::is_blank;
+use crate::store::visible::visible;
 
 /// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }
@@ -21,7 +23,11 @@ macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)
 /// fail(): the checked condition that did not hold, on stderr, exit 1.
 macro_rules! fail { ($($m:tt)*) => { return Err(Error::failed(format!($($m)*))) }; }
 
-const USAGE: &str = "usage: dstack qa add --scenario S<n>|none --from <file> [--run <id>]";
+const USAGE: &str =
+    "usage: dstack qa add --scenario S<n>|none --from <file with 준비:, 단계:, 기대 결과: lines> [--run <id>]";
+
+/// The labels that start the three parts of a QA text, in the order a refusal names them.
+const PARTS: [&str; 3] = ["준비:", "단계:", "기대 결과:"];
 
 struct QaAdd;
 
@@ -80,6 +86,13 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     if is_blank(&text) {
         fail!("--from file {from} is empty (or comments only); a QA scenario holds its preparation, steps and expected result");
     }
+    let missing = missing_parts(&text);
+    if !missing.is_empty() {
+        fail!(
+            "--from file {from} is missing QA parts: {} — a QA scenario holds lines starting 준비:, 단계: and 기대 결과:, each with its text",
+            missing.join(", ")
+        );
+    }
     if scenario != NO_SCENARIO {
         let request = RequestDoc::load(&file)?;
         let known = qa::scenario_ids(request.text())
@@ -110,4 +123,36 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     );
     say!(ctx, "  qa.tsv: {} scenario(s), open {open}", rows.len());
     Ok(())
+}
+
+/// Every part of a QA text a reader does not see with text, as `<label> (no line)` or
+/// `<label> (no text)`. A part starts at a shown line whose text begins with its label and runs to
+/// the next label, so its text may follow on the same line or below; a comment shows nothing, so a
+/// label inside one starts no part.
+fn missing_parts(text: &str) -> Vec<String> {
+    let mut found: [Option<bool>; 3] = [None; 3];
+    let mut open = None;
+    for line in visible(text).lines() {
+        let line = line.trim_start();
+        let rest = match PARTS.iter().position(|label| line.starts_with(label)) {
+            Some(at) => {
+                open = Some(at);
+                found[at].get_or_insert(false);
+                &line[PARTS[at].len()..]
+            }
+            None => line,
+        };
+        if let (Some(at), false) = (open, rest.trim().is_empty()) {
+            found[at] = Some(true);
+        }
+    }
+    PARTS
+        .iter()
+        .zip(found)
+        .filter_map(|(label, found)| match found {
+            None => Some(format!("{label} (no line)")),
+            Some(false) => Some(format!("{label} (no text)")),
+            Some(true) => None,
+        })
+        .collect()
 }

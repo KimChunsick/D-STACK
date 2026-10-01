@@ -117,7 +117,7 @@ fn R08_qa_record_refusals_write_nothing() {
     t.write("empty.md", "");
     t.write("comment.md", "<!-- 준비, 단계, 기대 결과를 적어요. -->\n\n");
     t.write(".dstack/quick/fix/meta.tsv", "status\topen\n");
-    let usage = "dstack: usage: dstack qa add --scenario S<n>|none --from <file> [--run <id>]\n";
+    let usage = "dstack: usage: dstack qa add --scenario S<n>|none --from <file with 준비:, 단계:, 기대 결과: lines> [--run <id>]\n";
     let empty = |file: &str| {
         format!("dstack: --from file {file} is empty (or comments only); a QA scenario holds its preparation, steps and expected result\n")
     };
@@ -360,4 +360,105 @@ fn R08_qa_record_e2e_brief_goal_prints_every_body_and_lists_the_open_ones() {
         BODIES[0], BODIES[1], BODIES[2]
     );
     assert_eq!(out, expected);
+}
+
+// T53: a QA text holds its three labelled parts, a note value never switches evidence add into
+// the QA mode, and a QA write refuses before its first write when part 3 cannot be rendered.
+
+/// The refusal of a QA text whose parts `missing` lists as `label (no line|no text)`.
+fn lacks(file: &str, missing: &str) -> String {
+    format!("dstack: --from file {file} is missing QA parts: {missing} — a QA scenario holds lines starting 준비:, 단계: and 기대 결과:, each with its text\n")
+}
+
+#[test]
+fn R08_qa_record_a_qa_text_needs_preparation_steps_and_expected_result() {
+    let t = scratch();
+    let cases = [
+        ("no-prep.md", "단계: 요청서를 만들어요.\n기대 결과: 종료 코드 0이에요.\n", "준비: (no line)"),
+        ("no-steps.md", "준비: 빈 저장소예요.\n기대 결과: 종료 코드 0이에요.\n", "단계: (no line)"),
+        ("no-expected.md", "준비: 빈 저장소예요.\n단계: 요청서를 만들어요.\n", "기대 결과: (no line)"),
+        ("prep-only.md", "준비: 빈 저장소예요.\n", "단계: (no line), 기대 결과: (no line)"),
+        (
+            "commented.md",
+            "준비: 빈 저장소예요.\n<!--\n단계: 주석 안에만 있어요.\n-->\n기대 결과: 종료 코드 0이에요.\n",
+            "단계: (no line)",
+        ),
+        (
+            "blank-parts.md",
+            "준비:\n<!-- 나중에 채워요. -->\n단계: 요청서를 만들어요.\n기대 결과:   \n",
+            "준비: (no text), 기대 결과: (no text)",
+        ),
+    ];
+    for (file, text, missing) in cases {
+        t.write(file, text);
+        let before = tree(&t.0.join(DIR));
+        let out = t.run(&["qa", "add", "--scenario", "S1", "--from", file]);
+        assert_eq!(out.status.code(), Some(1), "{file}: {}", stderr(&out));
+        assert_eq!(stderr(&out), lacks(file, missing), "{file}");
+        assert_eq!(tree(&t.0.join(DIR)), before, "{file} wrote into the run");
+    }
+    // A part runs to the next label, so its text may sit on the lines below; a label may be indented.
+    let whole = "# 승인 확인\n준비:\n빈 저장소에서 시작해요.\n  단계:\n1. 요청서를 만들어요.\n2. 승인해요.\n기대 결과: 종료 코드 0이에요.\n";
+    t.write("whole.md", whole);
+    add(&t, "S1", "whole.md");
+    assert_eq!(t.read(&format!("{DIR}/qa/QA1.md")), whole);
+}
+
+#[test]
+fn R08_qa_record_a_note_reading_qa_is_no_qa_option() {
+    let t = recording();
+    let index = t.read(&format!("{DIR}/qa.tsv"));
+    t.write("r01.txt", "$ cargo test R01\nR01 통과했어요.\nexit: 0\n");
+    let args = ["evidence", "add", "--r", "R01", "--case", "c1", "--kind", "cli", "--artifact", "r01.txt"];
+    let out = t.run(&[&args[..], &["--produced-by", "cargo test R01", "--note", "--qa=QA1"]].concat());
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let cases = t.read(&format!("{DIR}/cases.tsv"));
+    let row = cases.lines().find(|line| line.starts_with("R01\tc1\t")).expect("the R01 row");
+    assert!(row.ends_with("\t--qa=QA1"), "{row}");
+    assert_eq!(t.read(&format!("{DIR}/qa.tsv")), index, "R evidence wrote into the QA ledger");
+
+    // --qa after other options still chooses the QA mode.
+    t.write("named.txt", "$ dstack status\nQA1 확인했어요.\nexit: 0\n");
+    let out = t.run(&["evidence", "add", "--artifact", "named.txt", "--produced-by", "dstack status", "--qa", "QA1"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(qa_row(&t, "QA1")[2], "met");
+}
+
+#[test]
+fn R08_qa_record_an_unreadable_plan_refuses_before_the_ledger_changes() {
+    let t = recording();
+    t.ok(&["milestone", "add", "core", "--goal", "QA를 기록해요"]);
+    let plan = t.read(&format!("{DIR}/plan.json"));
+    t.write(&format!("{DIR}/plan.json"), "{ 읽을 수 없어요");
+    t.write("named.txt", "$ dstack status\nQA1 확인했어요.\nexit: 0\n");
+    let before = tree(&t.0.join(DIR));
+    let out = record(&t, "QA1", "named.txt", &[]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert!(stderr(&out).contains("plan.json"), "{}", stderr(&out));
+    assert_eq!(tree(&t.0.join(DIR)), before, "a refused result wrote into the run");
+    let out = t.run(&["qa", "add", "--scenario", "S1", "--from", "qa-1.md"]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+    assert_eq!(tree(&t.0.join(DIR)), before, "a refused qa add wrote into the run");
+
+    t.write(&format!("{DIR}/plan.json"), &plan);
+    let out = record(&t, "QA1", "named.txt", &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(qa_row(&t, "QA1")[2], "met");
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "{}", part3(&t));
+}
+
+#[test]
+fn R08_qa_record_a_missing_qa_body_renders_a_placeholder() {
+    let t = recording();
+    std::fs::remove_file(t.0.join(DIR).join("qa/QA1.md")).expect("QA1's text");
+    // A directory where the text should be cannot be read as one.
+    std::fs::remove_file(t.0.join(DIR).join("qa/QA2.md")).expect("QA2's text");
+    std::fs::create_dir(t.0.join(DIR).join("qa/QA2.md")).expect("a directory in its place");
+    t.ok(&["milestone", "add", "core", "--goal", "QA를 기록해요"]);
+    let after = part3(&t);
+    assert!(after.contains("## M1 core\n"), "{after}");
+    let placeholder = "  - 내용 첫 줄: (내용 파일을 읽을 수 없어요)\n";
+    assert!(after.contains(&format!("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n{placeholder}")), "{after}");
+    assert!(after.contains(&format!("- QA2: 사용 시나리오 S2\n  - 상태: `open`\n{placeholder}")), "{after}");
+    assert!(after.ends_with("  - 내용 첫 줄: 준비: 열린 run이 있어요.\n"), "{after}");
 }

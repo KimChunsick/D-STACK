@@ -33,9 +33,6 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
     let (target, rest) = resolve_target(ctx, args)?;
-    if rest.iter().any(|arg| arg == "--qa" || arg.starts_with("--qa=")) {
-        return super::evidence_qa::add(ctx, &roots, &target, &rest);
-    }
     let (mut r, mut case_id, mut kind) = (String::new(), String::new(), String::new());
     let (mut artifact, mut produced, mut shared) = (String::new(), String::new(), String::new());
     let (mut status, mut note) = ("met".to_string(), String::new());
@@ -71,6 +68,10 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         } else if let Some((value, eaten)) = opt(arg, next, "note")? {
             note = value;
             i += eaten;
+        } else if arg == "--qa" || arg.starts_with("--qa=") {
+            // Only an option position chooses the QA mode, so a value reading `--qa=QA1` (a note,
+            // say) never does; the QA loop reads every argument again.
+            return super::evidence_qa::add(ctx, &roots, &target, &rest);
         } else {
             fail!("unknown argument: {arg} — {USAGE}")
         }
