@@ -45,7 +45,7 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
     vec![Box::new(QaAdd)]
 }
 
-/// Every check runs before the lock and the first write, so a refusal leaves the run as it was.
+/// Every check runs before the locks and the first write, so a refusal leaves the run as it was.
 fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
@@ -108,7 +108,8 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
 
     let run = base_name(&target.dir);
     let row = {
-        let _lock = with_lock(&roots.local)?;
+        let _local = with_lock(&roots.local)?;
+        let _run = qa::lock(&target.dir)?;
         qa::add(&target.dir, &run, &scenario, &text)?
     };
     let rows = qa::rows(&target.dir)?;

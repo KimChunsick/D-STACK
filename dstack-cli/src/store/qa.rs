@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::core::error::{Error, Result};
-use crate::core::fsx::{atomic_write, read_text, sha256_bytes, utc_now};
+use crate::core::fsx::{atomic_write, read_text, sha256_bytes, utc_now, with_lock, LockGuard};
 use crate::store::plan;
 use crate::store::request_part3;
 use crate::store::request_sections::{body, Place};
@@ -98,6 +98,13 @@ fn body_rel(qa: &str) -> String {
     format!("qa/{qa}.md")
 }
 
+/// The run's lock, `<run>/lock`: every worktree reaches the same run directory, so both QA writers
+/// hold it, after their worktree lock, from the ledger read to the last write. Nothing lists a run
+/// directory, so the lock directory is never read as a run file.
+pub fn lock(dir: &Path) -> Result<LockGuard> {
+    with_lock(dir)
+}
+
 /// Every index row after the header; an absent ledger has none, an unreadable one cannot decide.
 pub fn rows(dir: &Path) -> Result<Vec<QaRow>> {
     Ok(tsv::read_rows(&index(dir), 3, true)?
@@ -149,8 +156,8 @@ pub fn scenario_ids(request: &str) -> Result<Vec<String>> {
 
 /// Record a new open QA scenario of the run `run` in `dir` as the next QA<n>: part 3 rendered with
 /// it first, so a refusal writes nothing; then its text written as given, then its index row, so
-/// no row names a missing text, then part 3 of the request. The caller holds the store lock and
-/// has checked the scenario and the text.
+/// no row names a missing text, then part 3 of the request. The caller holds its worktree lock and
+/// then the run lock (`lock`), and has checked the scenario and the text.
 pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
     let mut ledger = entries(dir)?;
     let next = ledger
@@ -191,7 +198,7 @@ pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
 /// Record the result of the open QA scenario `qa` in place, then part 3, which is rendered before
 /// the first write so a refusal writes nothing. A recorded result is never overwritten; a status
 /// that is no result and a failed, skipped or blocked one without a reason refuse. Every other
-/// line is copied verbatim. The caller holds the store lock.
+/// line is copied verbatim. The caller holds its worktree lock and then the run lock (`lock`).
 pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRow> {
     if !QA_RESULTS.contains(&result.status.as_str()) {
         return Err(Error::failed(format!(

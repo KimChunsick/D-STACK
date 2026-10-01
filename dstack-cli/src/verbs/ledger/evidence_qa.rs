@@ -16,9 +16,9 @@ use super::evidence::{checked_artifact, Artifact, USAGE};
 /// The options of an R case; a QA result has no R row, no case id and no kind.
 const R_OPTIONS: [&str; 4] = ["r", "R", "case", "kind"];
 
-/// Every check but the store's own runs before the lock and the first write, so a refusal leaves
+/// Every check but the store's own runs before the locks and the first write, so a refusal leaves
 /// the run as it was. The status, its reason and the never-overwrite rule belong to qa::record,
-/// which checks them again under the lock.
+/// which checks them again under the run lock.
 pub(super) fn add(ctx: &mut Context, roots: &Roots, target: &Target, rest: &[String]) -> Result<()> {
     let (mut id, mut artifact, mut produced) = (String::new(), String::new(), String::new());
     let (mut status, mut note) = ("met".to_string(), String::new());
@@ -80,7 +80,8 @@ pub(super) fn add(ctx: &mut Context, roots: &Roots, target: &Target, rest: &[Str
     };
     let run = base_name(dir);
     let row = {
-        let _lock = with_lock(&roots.local)?;
+        let _local = with_lock(&roots.local)?;
+        let _run = qa::lock(dir)?;
         qa::record(dir, &run, &id, &result)?
     };
     let rows = qa::rows(dir)?;

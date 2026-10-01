@@ -11,7 +11,8 @@
 mod support;
 
 use std::path::PathBuf;
-use std::process::Output;
+use std::process::{Child, Command, Output, Stdio};
+use std::time::Duration;
 
 use dstack_cli::core::fsx::sha256_bytes;
 use support::{tree, Scratch};
@@ -461,4 +462,51 @@ fn R08_qa_record_a_missing_qa_body_renders_a_placeholder() {
     assert!(after.contains(&format!("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n{placeholder}")), "{after}");
     assert!(after.contains(&format!("- QA2: 사용 시나리오 S2\n  - 상태: `open`\n{placeholder}")), "{after}");
     assert!(after.ends_with("  - 내용 첫 줄: 준비: 열린 run이 있어요.\n"), "{after}");
+}
+
+// T54: both QA writers hold the run's lock directory, which every worktree shares, for their whole
+// read, check and write; the worktree lock alone let two worktrees replace each other's ledger.
+
+/// `args` started in the background with the environment `Scratch::run` gives, as another
+/// worktree's writer would run beside this one.
+fn spawn(t: &Scratch, args: &[&str]) -> Child {
+    Command::new(env!("CARGO_BIN_EXE_dstack"))
+        .current_dir(&t.0)
+        .env("DSTACK_ROOT", &t.0)
+        .env("DSTACK_HOME", PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../claude"))
+        .env("DSTACK_DEPS", t.0.join("deps.tsv"))
+        .env("CLAUDE_CODE_SESSION_ID", "mode-settings-test")
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawned")
+}
+
+#[test]
+fn R08_qa_record_both_writers_wait_for_the_run_lock() {
+    let t = recording();
+    t.write("named.txt", "$ dstack status\nQA1 확인했어요.\nexit: 0\n");
+    let lock = t.0.join(DIR).join("lock");
+    let index = format!("{DIR}/qa.tsv");
+    let writers: [&[&str]; 2] = [
+        &["evidence", "add", "--qa", "QA1", "--artifact", "named.txt", "--produced-by", "dstack status"],
+        &["qa", "add", "--scenario", "S2", "--from", "qa-2.md"],
+    ];
+    for args in writers {
+        // Another worktree's writer holds the run lock; this worktree's own lock is free.
+        std::fs::create_dir(&lock).expect("the run lock");
+        let before = t.read(&index);
+        let mut child = spawn(&t, args);
+        std::thread::sleep(Duration::from_millis(500));
+        let waiting = child.try_wait().expect("polled").is_none();
+        assert!(waiting, "{args:?} finished while the run lock was held");
+        assert_eq!(t.read(&index), before, "{args:?} wrote while the run lock was held");
+        std::fs::remove_dir(&lock).expect("the run lock released");
+        let out = child.wait_with_output().expect("finished");
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {}", stderr(&out));
+        assert!(!lock.exists(), "{args:?} left the run lock behind");
+    }
+    assert_eq!(qa_row(&t, "QA1")[2], "met");
+    assert_eq!(qa_row(&t, "QA4")[..3], ["QA4", "S2", "open"]);
 }
