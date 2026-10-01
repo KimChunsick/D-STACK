@@ -8,8 +8,8 @@ use crate::core::fsx::{sha256_file, utc_now};
 use crate::core::mode::Mode;
 use crate::core::target::{resolve_target, TargetKind};
 use crate::core::tools::tool_check_for_mode;
-use crate::store::cases;
-use crate::store::request::{seen_lines, write_approval};
+use crate::store::request::{seen_lines, seen_rows, write_approval};
+use crate::store::{cases, rows, visible};
 
 use super::{
     background, check, counts, design_gate, draft_file, load, require_file, rowfile, stamp_file,
@@ -80,15 +80,23 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
     // refusing afterwards (D-12), and the run would be approved with no ledger behind it.
     let _ledger = cases::rows(&target.dir)?;
 
-    // Clearing pending is a write, so it happens before the hash is taken.
+    // Clearing pending is a write, so it happens before the hash is taken. It never changes what
+    // an HTML comment hides or which rows a reader sees (D-33): a marker that carries a comment's
+    // opening refuses before anything is written or stamped.
     let mut text = doc.text().to_string();
     let mut cleared = 0;
     while let Some(lineno) = pending_lineno(&text) {
         let line = rowfile::lines(&text)[lineno - 1].to_string();
-        text = rowfile::set_line(&text, lineno, &rowfile::drop_segment(&line, "status"));
+        let next = rowfile::set_line(&text, lineno, &rowfile::drop_segment(&line, "status"));
+        if !same_reading(&text, &next) {
+            let id = rows::parse_line(lineno, &line).map(|row| row.id).unwrap_or_default();
+            fail!("{id}: clearing its pending-approval marker would change what an HTML comment hides; close the comment on its own line and approve again (nothing written, not stamped)");
+        }
+        text = next;
         cleared += 1;
     }
-    // R09: the background blocks a merged row brought lose their marker in the same write.
+    // R09: the background blocks a merged row brought lose their marker in the same write. That
+    // marker is a fixed suffix with no comment in it, so clearing it keeps what a reader sees.
     let (text, blocks) = background::clear(&text);
     if cleared + blocks > 0 {
         rowfile::write(&file, &text)?;
@@ -147,4 +155,11 @@ fn pending_lineno(text: &str) -> Option<usize> {
     seen_lines(text)
         .find(|(_, line)| rowfile::is_row_line(line) && line.contains(" — status: pending-approval"))
         .map(|(lineno, _)| lineno)
+}
+
+/// Whether `after`, `before` with lines rewritten in place, hides the same lines and shows a
+/// reader the same rows (D-33).
+fn same_reading(before: &str, after: &str) -> bool {
+    let ids = |text: &str| seen_rows(text).into_iter().map(|row| row.id).collect::<Vec<_>>();
+    visible::hidden(before) == visible::hidden(after) && ids(before) == ids(after)
 }

@@ -22,10 +22,15 @@ pub struct Line<'a> {
 /// Every line of a text with how it reads.
 pub fn lines(text: &str) -> Vec<Line<'_>> {
     let (spans, lines) = read(text);
-    let mut start = 0;
+    let (mut start, mut first) = (0, 0);
     let mut out = Vec::new();
     for (raw, (hidden, heading)) in text.split('\n').zip(lines) {
-        let shown = without(text, &spans, start..start + raw.len());
+        // The spans are in order and apart: one that ends before this line ends before every
+        // later line too, so the cursor only moves forward and the whole text costs one pass.
+        while spans.get(first).is_some_and(|span| span.end <= start) {
+            first += 1;
+        }
+        let shown = without(text, &spans[first..], start..start + raw.len());
         out.push(Line {
             raw,
             hidden,
@@ -47,11 +52,18 @@ pub fn visible(text: &str) -> String {
     without(text, &read(text).0, 0..text.len())
 }
 
-/// The bytes of `range` that no span covers.
+/// Whether each line of a text starts inside an HTML comment, as `lines` reads it.
+pub fn hidden(text: &str) -> Vec<bool> {
+    read(text).1.into_iter().map(|(hidden, _)| hidden).collect()
+}
+
+/// The bytes of `range` that no span covers. The spans are in order and apart, so the ones that
+/// cover part of the range are a run, and the scan stops at the first span past it.
 fn without(text: &str, spans: &[Range<usize>], range: Range<usize>) -> String {
     let mut kept = String::new();
     let mut at = range.start;
-    for span in spans.iter().filter(|s| s.end > range.start && s.start < range.end) {
+    let touching = spans.iter().skip_while(|s| s.end <= range.start);
+    for span in touching.take_while(|s| s.start < range.end) {
         kept.push_str(&text[at..span.start.max(at)]);
         at = span.end.min(range.end);
     }

@@ -1,6 +1,6 @@
 // verbs/request/rowfile.rs
 // The line primitives request.md is edited with: the record split, head/tail slicing, row lines
-// and the line the next row goes after.
+// and where the next row goes.
 //
 // _line_set and _line_insert_after are `head`/`tail` in the shell, chosen there so a row holding
 // a backslash or an `&` is copied byte for byte. The same is done here on the document text,
@@ -12,7 +12,8 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::atomic_write;
 use crate::store::request::seen_lines;
 use crate::store::request_sections::{locate, Place, REQUIREMENTS};
-use crate::store::rows::REQ_SEP;
+use crate::store::rows::{parse_line, REQ_SEP};
+use crate::store::visible::hidden;
 
 /// The whitespace a blank line may hold.
 const SPACE: [char; 2] = [' ', '\t'];
@@ -111,6 +112,34 @@ pub fn last_row_lineno(text: &str) -> usize {
         Some((lineno, _)) => lineno,
         None => requirements_end(text).unwrap_or(0),
     }
+}
+
+/// The text with `row`, minted as `id`, after the line the next row goes after. A write keeps
+/// every line an HTML comment hides hidden and every other line shown, and the new row is seen
+/// (D-33); where that would not hold, nothing is written and no other place is tried.
+pub fn with_row(text: &str, id: &str, row: &str) -> Result<String> {
+    let lineno = last_row_lineno(text);
+    // Line 0 appends, so the row takes the place of the piece after the last newline.
+    let at = match lineno {
+        0 => lines(text).len(),
+        lineno => lineno,
+    };
+    let with = insert_after(text, lineno, row);
+    let (mut want, got) = (hidden(text), hidden(&with));
+    if got[at] {
+        let anchor = lineno.checked_sub(1).and_then(|index| lines(text).get(index).copied());
+        let place = match anchor.and_then(|line| parse_line(lineno, line)) {
+            Some(anchor) => format!("opens on {}", anchor.id),
+            None if lineno == 0 => "is still open at the end of the file".to_string(),
+            None => format!("is still open after line {lineno}"),
+        };
+        fail!("{id} would land inside an HTML comment that {place}; close the comment on its own line and add again (nothing written)");
+    }
+    want.insert(at, false);
+    if want != got {
+        fail!("{id}: its text opens or closes an HTML comment, which would change what the comment hides (nothing written)");
+    }
+    Ok(with)
 }
 
 /// The last non-blank line of the `## 요구사항` section, its heading included, when a heading

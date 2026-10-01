@@ -127,9 +127,7 @@ impl RequestDoc {
 
     /// The R rows a reader sees: a row on a line an HTML comment hides is none (D-33).
     pub fn rows(&self) -> Vec<Row> {
-        seen_lines(&self.text)
-            .filter_map(|(lineno, line)| rows::parse_line(lineno, line))
-            .collect()
+        seen_rows(&self.text)
     }
 
     pub fn row(&self, id: &str) -> Option<Row> {
@@ -291,6 +289,13 @@ pub fn seen_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
         .enumerate()
         .filter(|(_, line)| !line.hidden)
         .map(|(index, line)| (index + 1, line.raw))
+}
+
+/// The R rows a reader sees in a text, as `RequestDoc::rows` reads them.
+pub fn seen_rows(text: &str) -> Vec<Row> {
+    seen_lines(text)
+        .filter_map(|(lineno, line)| rows::parse_line(lineno, line))
+        .collect()
 }
 
 /// The lines of a file, keeping a carriage return and knowing nothing about a trailing newline.

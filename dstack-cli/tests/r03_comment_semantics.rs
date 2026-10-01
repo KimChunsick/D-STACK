@@ -5,7 +5,8 @@
 // one counts; a section holding only template guidance still fails as empty, and guidance kept
 // beside such prose is still caught. R01 and R03 also read a row inside a comment as no row
 // (D-33): `req add` puts the next row after the last visible one and never reuses the hidden id,
-// and check request, request approve and the row verbs pass it by.
+// and check request, request approve and the row verbs pass it by. A write never changes what a
+// comment hides: `req add` and `request approve` refuse where it would, and write nothing.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -15,6 +16,7 @@ mod support;
 
 use std::process::Output;
 
+use dstack_cli::store::visible;
 use support::Scratch;
 
 const RUN: &str = "20261001T000000Z_comment";
@@ -175,6 +177,65 @@ fn R01_comment_semantics_add_lands_after_the_visible_row_outside_the_comment() {
         t.read(REQUEST),
         before.replacen(ROW, &format!("{ROW}\n{added}"), 1)
     );
+}
+
+#[test]
+fn R01_comment_semantics_add_refuses_where_a_comment_opens_on_the_last_row() {
+    // R01 opens a comment its next line closes: after R01 is inside it, so nothing is written.
+    let before = goal("skip").replacen(ROW, &format!("{ROW} <!--\n-->"), 1);
+    let t = scratch(&before);
+    let out = t.run(&["req", "add", "새 요구사항이에요.", "--accept", "새 확인이에요.", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stderr(&out).contains("an HTML comment that opens on R01"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(t.read(REQUEST), before);
+}
+
+#[test]
+fn R03_comment_semantics_approve_refuses_a_marker_that_opens_a_comment() {
+    // Clearing R01's marker would drop the `<!--` with it and bring the unchecked draft out.
+    let t = scratch(&goal("skip"));
+    t.ok(&["request", "approve", "--run", RUN]);
+    let stamp = t.read(STAMP);
+    let marked = format!("{ROW} — status: pending-approval <!--\n{HIDDEN}\n-->");
+    let before = goal("skip").replacen(ROW, &marked, 1);
+    t.write(REQUEST, &before);
+    let out = t.run(&["request", "approve", "--run", RUN]);
+    assert_ne!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(stderr(&out).contains("R01: clearing"), "{}", stderr(&out));
+    assert_eq!(t.read(REQUEST), before);
+    assert_eq!(t.read(STAMP), stamp);
+}
+
+#[test]
+fn R03_comment_semantics_many_comments_read_line_by_line() {
+    // 2,000 one-line comments, then 2,000 that close on the next line: every line still reads
+    // as it did when each line was cut against every comment of the text.
+    let mut text = String::new();
+    for n in 0..2000 {
+        text.push_str(&format!("앞 {n} <!-- 주석 {n} --> 뒤\n"));
+    }
+    let one_line = text.len();
+    for n in 0..2000 {
+        text.push_str(&format!("앞 {n} <!-- 열어요\n닫아요 --> 뒤 {n}\n"));
+    }
+    let lines = visible::lines(&text);
+    assert_eq!(lines.len(), 6001);
+    for (n, line) in lines[..2000].iter().enumerate() {
+        assert!(!line.hidden && !line.heading, "line {n}");
+        assert_eq!(line.shown, format!("앞 {n}  뒤"));
+    }
+    for (n, pair) in lines[2000..6000].chunks(2).enumerate() {
+        assert!(!pair[0].hidden && pair[1].hidden, "pair {n}");
+        assert_eq!(pair[0].shown, format!("앞 {n} "));
+        assert_eq!(pair[1].shown, format!(" 뒤 {n}"));
+    }
+    assert!(!lines[6000].hidden && lines[6000].shown.is_empty());
+    let shown: Vec<&str> = lines[..2000].iter().map(|line| line.shown.as_str()).collect();
+    assert_eq!(visible::visible(&text[..one_line]), format!("{}\n", shown.join("\n")));
 }
 
 #[test]

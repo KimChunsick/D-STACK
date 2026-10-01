@@ -92,11 +92,14 @@ pub fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         markers.push_str(&format!("{REQ_SEP}status: pending-approval"));
     }
     let row = format!("- [ ] **{id}** {text}{REQ_SEP}accept: {accept}{markers}");
+    // D-33: the row goes where it stays seen and every HTML comment keeps what it hides, or the
+    // verb refuses here, before the first write of any of the three files.
+    let with_row = rowfile::with_row(doc.text(), &id, &row)?;
 
     // The undo is planned before the first write, so every file it may put back has been read
     // while it was still whole.
     let undo = Undo::plan(&target, &doc, &question)?;
-    let written = write_all(&target, &doc, &row, &question, &text, &id);
+    let written = write_all(&target, &doc, &with_row, &question, &text, &id);
     let (note, (rows, live, pend)) = match written {
         Ok(written) => written,
         Err(error) => {
@@ -170,7 +173,7 @@ fn read_question(target: &Target, qid: &str) -> Result<Question> {
 fn write_all(
     target: &Target,
     doc: &RequestDoc,
-    row: &str,
+    with_row: &str,
     question: &Option<Question>,
     text: &str,
     id: &str,
@@ -186,8 +189,7 @@ fn write_all(
             })?;
         }
     }
-    let with_row = rowfile::insert_after(doc.text(), rowfile::last_row_lineno(doc.text()), row);
-    rowfile::write(&doc.path, &with_row)?;
+    rowfile::write(&doc.path, with_row)?;
 
     let note = match question {
         Some(question) => decision_note(target, question, text, id)?,
