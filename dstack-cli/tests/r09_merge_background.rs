@@ -2,8 +2,9 @@
 // R09: a row merged into an approved Goal request (`req add --run`) needs a background block from
 // `request background`: without one `check request` and `request approve` fail naming the verb,
 // with one the approval succeeds; every byte before the block is kept, approval leaves the block
-// as plain prose, a block without a pending row fails, as does a pending label with no prose
-// beside a valid block, a legacy-layout request still approves a merged row without one, the verb
+// as plain prose, a label ending in CRLF counts and keeps its ending, a block without a pending
+// row fails, as does a pending label with no prose beside a valid block, a legacy-layout request
+// still approves a merged row without one, the verb
 // refuses what it may not write (a heading among them), and the fixtures prove the rule.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
@@ -163,6 +164,46 @@ fn R09_merge_background_lets_the_merged_row_approve_and_keeps_every_earlier_byte
     );
     t.ok(&["request", "approve", "--run", RUN]);
     assert_eq!(&t.read(REQUEST)[..end], &first[..end]);
+}
+
+#[test]
+fn R09_merge_background_a_label_ending_in_crlf_counts_and_keeps_its_ending() {
+    let t = approved_goal();
+    merge_row(&t);
+    assert_eq!(background(&t, ADDED).status.code(), Some(0));
+    let text = t.read(REQUEST);
+    let at = text.find("### 추가 배경 (").expect("the block");
+    let eol = at + text[at..].find('\n').expect("the label's end");
+    let crlf = format!("{}\r{}", &text[..eol], &text[eol..]);
+    assert_eq!(crlf.len(), text.len() + 1, "only the label's ending changes");
+    t.write(REQUEST, &crlf);
+    // The block counts, so the pending row and the changed hash are the only failures (D-30).
+    let out = t.run(&["check", "request", "--run", RUN]);
+    let shown = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{shown}");
+    assert!(!shown.contains(MISSING), "{shown}");
+    assert!(
+        shown.contains("\n  background: pending rows 1, pending background blocks 1\n"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("\n  hash mismatch (edited after approval): dstack request approve\n"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("\n  pending rows: 1 (dstack request approve clears them)\n"),
+        "{shown}"
+    );
+    assert!(shown.trim_end().ends_with(", failures 2"), "{shown}");
+
+    t.ok(&["request", "approve", "--run", RUN]);
+    t.ok(&["check", "request", "--run", RUN]);
+    // Approve takes the marker off the label and the status off the merged row, nothing else.
+    let after = t.read(REQUEST);
+    let label = &after[at..at + after[at..].find('\n').expect("the label's end") + 1];
+    assert!(label.ends_with("\r\n"), "{label:?}");
+    assert!(!label.contains("pending-approval"), "{label:?}");
+    assert_eq!(after, crlf.replace(" — status: pending-approval", ""));
 }
 
 #[test]

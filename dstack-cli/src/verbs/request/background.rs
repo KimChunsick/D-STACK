@@ -129,7 +129,9 @@ fn append(text: &str, content: &str, date: &str) -> Result<String> {
     Ok(out)
 }
 
+/// Whether a line is a pending label, read as the heading reader reads it: without its CRs.
 fn is_pending(line: &str) -> bool {
+    let line = line.trim_end_matches('\r');
     line.starts_with(LABEL) && line.ends_with(MARKER)
 }
 
@@ -250,14 +252,17 @@ pub fn bare_labels(text: &str) -> Vec<(usize, &str)> {
 }
 
 /// The text with every block's marker removed, and how many there were: what `request approve`
-/// writes before it re-stamps, so the block stays as plain prose.
+/// writes before it re-stamps, so the block stays as plain prose. A label keeps its own line
+/// ending, so a CRLF label stays CRLF.
 pub fn clear(text: &str) -> (String, usize) {
     let lines = blocks(text);
     let mut out = text.to_string();
     for &lineno in &lines {
         let line = rowfile::lines(&out)[lineno - 1].to_string();
-        let plain = line.strip_suffix(MARKER).unwrap_or(&line);
-        out = rowfile::set_line(&out, lineno, plain);
+        let body = line.trim_end_matches('\r');
+        let ending = &line[body.len()..];
+        let plain = body.strip_suffix(MARKER).unwrap_or(body);
+        out = rowfile::set_line(&out, lineno, &format!("{plain}{ending}"));
     }
     (out, lines.len())
 }
