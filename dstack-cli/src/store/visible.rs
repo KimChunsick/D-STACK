@@ -57,6 +57,20 @@ pub fn hidden(text: &str) -> Vec<bool> {
     read(text).1.into_iter().map(|(hidden, _)| hidden).collect()
 }
 
+/// Whether `after`, `before` with lines rewritten in place, hides what `before` hides (D-33):
+/// every line starts inside or outside a comment as it did and the comments are the same text,
+/// so nothing hidden shows, nothing shown is hidden and no comment is taken away. A final '\n'
+/// starts no line, so a write that adds or keeps one changes nothing here.
+pub fn same_hiding(before: &str, after: &str) -> bool {
+    fn reading(text: &str) -> (Vec<bool>, Vec<&str>) {
+        let text = text.strip_suffix('\n').unwrap_or(text);
+        let (spans, lines) = read(text);
+        let hidden = lines.into_iter().map(|(hidden, _)| hidden).collect();
+        (hidden, spans.into_iter().map(|span| &text[span]).collect())
+    }
+    reading(before) == reading(after)
+}
+
 /// The bytes of `range` that no span covers. The spans are in order and apart, so the ones that
 /// cover part of the range are a run, and the scan stops at the first span past it.
 fn without(text: &str, spans: &[Range<usize>], range: Range<usize>) -> String {

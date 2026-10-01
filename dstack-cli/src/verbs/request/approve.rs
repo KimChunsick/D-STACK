@@ -157,9 +157,9 @@ fn pending_lineno(text: &str) -> Option<usize> {
         .map(|(lineno, _)| lineno)
 }
 
-/// Whether `after`, `before` with lines rewritten in place, hides the same lines and shows a
-/// reader the same rows (D-33).
+/// Whether `after`, `before` with lines rewritten in place, hides what it hid and shows a reader
+/// the same rows (D-33); the final newline `set_line` gives a last line is no change.
 fn same_reading(before: &str, after: &str) -> bool {
     let ids = |text: &str| seen_rows(text).into_iter().map(|row| row.id).collect::<Vec<_>>();
-    visible::hidden(before) == visible::hidden(after) && ids(before) == ids(after)
+    visible::same_hiding(before, after) && ids(before) == ids(after)
 }

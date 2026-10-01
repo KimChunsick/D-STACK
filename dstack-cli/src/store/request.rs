@@ -197,6 +197,7 @@ impl RequestDoc {
         })
     }
 
+    /// The one row edit; one that would change what an HTML comment hides changes nothing (D-33).
     fn edit_row<F: Fn(&str) -> String>(&mut self, id: &str, edit: F) -> Result<()> {
         let lineno = self
             .row_lineno(id)
@@ -209,6 +210,9 @@ impl RequestDoc {
         let mut text = lines.join("\n");
         if self.text.ends_with('\n') {
             text.push('\n');
+        }
+        if !visible::same_hiding(&self.text, &text) {
+            return Err(Error::failed(format!("{id}: this edit would change what an HTML comment hides; close the comment on its own line and run it again (nothing written)")));
         }
         self.text = text;
         Ok(())

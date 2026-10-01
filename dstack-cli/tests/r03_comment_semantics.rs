@@ -6,8 +6,10 @@
 // beside such prose is still caught. R01 and R03 also read a row inside a comment as no row
 // (D-33): `req add` puts the next row after the last visible one and never reuses the hidden id,
 // and check request, request approve and the row verbs pass it by. A write never changes what a
-// comment hides: `req add` and `request approve` refuse where it would, and write nothing; the
-// text `req add`, `req accept` and `req withdraw` take may not hold a comment delimiter at all.
+// comment hides: `req add`, `request approve` and the row edits of `req accept`, `req withdraw`
+// and `req defer` refuse where it would, and write nothing, while the final newline approve gives
+// a last row is no such change; the text `req add`, `req accept` and `req withdraw` take may not
+// hold a comment delimiter at all.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -327,4 +329,50 @@ fn R01_comment_semantics_add_refuses_an_accept_that_closes_a_comment() {
     let accept = "새 확인이에요 -->";
     let args = ["req", "add", "새 요구사항이에요.", "--accept", accept];
     refuses_delimiter(&goal("skip"), &args, "--accept", accept);
+}
+
+#[test]
+fn R03_comment_semantics_approve_clears_a_last_row_without_a_final_newline() {
+    // No comment anywhere: clearing the marker ends the file with a newline, which hides nothing.
+    let t = scratch(&goal("skip"));
+    t.ok(&["request", "approve", "--run", RUN]);
+    let stamp = t.read(STAMP);
+    let prd = goal("skip");
+    let front = &prd[..prd.find("# 주석 읽기 시험").expect("the title")];
+    let added = "- [ ] **R02** 덧붙인 요구사항이에요. — accept: 덧붙인 확인이에요.";
+    let legacy = format!("{front}# 옛 요청서예요\n\n한 문단으로 적은 요청이에요.\n\n## 요구사항\n\n{ROW}\n{added}");
+    t.write(REQUEST, &format!("{legacy} — status: pending-approval"));
+    let out = t.run(&["request", "approve", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(0), "{}{}", stdout(&out), stderr(&out));
+    assert!(stdout(&out).contains(", pending cleared 1, "), "{}", stdout(&out));
+    assert_eq!(t.read(REQUEST), format!("{legacy}\n"));
+    assert_ne!(t.read(STAMP), stamp);
+}
+
+/// `args` on `before` exits 1 saying the edit of R01 would change what a comment hides, and
+/// writes nothing.
+fn refuses_hiding(before: &str, args: &[&str]) {
+    let t = scratch(before);
+    let out = t.run(&[args, &["--run", RUN]].concat());
+    assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stdout(&out));
+    let said = "R01: this edit would change what an HTML comment hides";
+    assert!(stderr(&out).contains(said), "{args:?}: {}", stderr(&out));
+    assert_eq!(t.read(REQUEST), before, "{args:?}");
+}
+
+#[test]
+fn R03_comment_semantics_accept_refuses_to_drop_the_opener_of_a_comment() {
+    // The pending criterion opens the comment that hides R02: replacing it would bring R02 out.
+    let opened = "- [ ] **R01** 첫 요구사항이에요. — accept: pending: agent to propose <!--";
+    let before = goal("skip").replacen(ROW, &format!("{opened}\n{HIDDEN}\n-->"), 1);
+    refuses_hiding(&before, &["req", "accept", "R01", "새 확인이에요."]);
+}
+
+#[test]
+fn R03_comment_semantics_a_marker_refuses_to_land_inside_a_comment() {
+    // R01's last segment opens a comment: a marker appended to the row would be hidden in it.
+    let before = goal("skip").replacen(ROW, &format!("{ROW} <!--\n{HIDDEN}\n-->"), 1);
+    for verb in ["withdraw", "defer"] {
+        refuses_hiding(&before, &["req", verb, "R01", "--why", "필요 없어졌어요."]);
+    }
 }
