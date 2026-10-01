@@ -118,14 +118,10 @@ pub fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
 }
 
 /// D-08: an explicit id is allowed so a request can carry an external numbering, but only
-/// forwards; gaps are fine, renumbering never is.
+/// forwards; gaps are fine, renumbering never is. The highest id counts rows inside comments, so
+/// an id a hidden row carries is refused here too (D-33).
 fn mint(doc: &RequestDoc, want_id: &str) -> Result<String> {
-    let highest = doc
-        .rows()
-        .iter()
-        .filter_map(|row| parse_rid(&row.id))
-        .max()
-        .unwrap_or(0);
+    let highest = doc.max_id();
     if want_id.is_empty() {
         return Ok(fmt_rid(highest + 1));
     }

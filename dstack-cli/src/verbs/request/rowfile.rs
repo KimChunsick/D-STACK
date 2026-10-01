@@ -10,6 +10,7 @@ use std::path::Path;
 
 use crate::core::error::{Error, Result};
 use crate::core::fsx::atomic_write;
+use crate::store::request::seen_lines;
 use crate::store::request_sections::{locate, Place, REQUIREMENTS};
 use crate::store::rows::REQ_SEP;
 
@@ -100,19 +101,15 @@ pub fn insert_after(text: &str, lineno: usize, line: &str) -> String {
     )
 }
 
-/// req_last_row_lineno(): the line the next row goes after. That is the last R row; with no row
+/// req_last_row_lineno(): the line the next row goes after. That is the last R row a reader
+/// sees, so a comment after it keeps its rows and the new row stays outside (D-33); with no row
 /// yet, the end of a `## 요구사항` section another heading follows (R01), so the first row does
 /// not land in the section after it; 0 (the end of the file) otherwise.
 pub fn last_row_lineno(text: &str) -> usize {
-    let mut last = 0;
-    for (index, line) in lines(text).iter().enumerate() {
-        if is_row_line(line) {
-            last = index + 1;
-        }
-    }
+    let last = seen_lines(text).filter(|(_, line)| is_row_line(line)).last();
     match last {
-        0 => requirements_end(text).unwrap_or(0),
-        _ => last,
+        Some((lineno, _)) => lineno,
+        None => requirements_end(text).unwrap_or(0),
     }
 }
 
@@ -132,7 +129,8 @@ fn requirements_end(text: &str) -> Option<usize> {
     Some(heading + last.map_or(0, |index| index + 1))
 }
 
-/// The awk match `/^- \[[ xX]\] \*\*R[0-9]+\*\* /` every row reader starts from.
+/// The awk match `/^- \[[ xX]\] \*\*R[0-9]+\*\* /` every row reader starts from. The readers
+/// ask it only of the lines `seen_lines` gives, so a row an HTML comment hides is none (D-33).
 pub fn is_row_line(line: &str) -> bool {
     let rest = match line.strip_prefix("- [") {
         Some(rest) => rest,

@@ -7,6 +7,7 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, read_text};
 use crate::core::paths::parse_rid;
 use crate::store::rows::{self, Row, REQ_SEP};
+use crate::store::visible;
 
 /// The frontmatter keys, in the order `request new` writes and `check request` reports them.
 pub const REQ_FIELDS: [&str; 11] = [
@@ -124,11 +125,10 @@ impl RequestDoc {
         keys
     }
 
+    /// The R rows a reader sees: a row on a line an HTML comment hides is none (D-33).
     pub fn rows(&self) -> Vec<Row> {
-        lines_of(&self.text)
-            .iter()
-            .enumerate()
-            .filter_map(|(index, line)| rows::parse_line(index + 1, line))
+        seen_lines(&self.text)
+            .filter_map(|(lineno, line)| rows::parse_line(lineno, line))
             .collect()
     }
 
@@ -136,14 +136,15 @@ impl RequestDoc {
         self.rows().into_iter().find(|row| row.id == id)
     }
 
-    /// req_max_id(): the highest id in the file, or 0 when there is none. The shell's awk holds
-    /// `substr($1,2)+0` in a double, so an id past 2^53 loses digits there and one past 2^63
-    /// still prints positive; the number kept here is the one `$((10#$n))` mints, which is what
-    /// `request add` compares a `--id` against.
+    /// req_max_id(): the highest id in the file, or 0 when there is none. It alone reads rows
+    /// inside HTML comments too, so `request add` never mints an id a hidden row spent (D-33).
+    /// The shell's awk holds `substr($1,2)+0` in a double, so an id past 2^53 loses digits there
+    /// and one past 2^63 still prints positive; the number kept here is the one `$((10#$n))`
+    /// mints, which is what `request add` compares a `--id` against.
     pub fn max_id(&self) -> i64 {
-        self.rows()
+        lines_of(&self.text)
             .iter()
-            .filter_map(|row| parse_rid(&row.id))
+            .filter_map(|line| parse_rid(&rows::parse_line(0, line)?.id))
             .max()
             .unwrap_or(0)
     }
@@ -156,14 +157,14 @@ impl RequestDoc {
             .collect()
     }
 
-    /// req_row_lineno(): the first line holding `] **R<NN>** `, which is a substring search and
-    /// not a regex — `**R01**` is all metacharacters, and the `] ` keeps a prose mention out.
+    /// req_row_lineno(): the first line a reader sees holding `] **R<NN>** `, which is a substring
+    /// search and not a regex — `**R01**` is all metacharacters, and the `] ` keeps a prose
+    /// mention out. Every row edit finds its line here, so none reaches a hidden row.
     pub fn row_lineno(&self, id: &str) -> Option<usize> {
         let needle = format!("] **{id}** ");
-        lines_of(&self.text)
-            .iter()
-            .position(|line| line.contains(&needle))
-            .map(|index| index + 1)
+        seen_lines(&self.text)
+            .find(|(_, line)| line.contains(&needle))
+            .map(|(lineno, _)| lineno)
     }
 
     /// req_row_replace_accept(): the criterion of a row born incomplete.
@@ -279,6 +280,17 @@ pub fn approval_matches(dir: &Path, sha256: &str) -> Result<bool> {
         Some(text) => text.contains(sha256),
         None => false,
     })
+}
+
+/// The lines a reader sees, numbered from 1 with any carriage return kept: a line that starts
+/// inside an HTML comment is not there, so no row reader, row edit or marker clearing reaches a
+/// row on it (D-33). The empty piece after a final newline is a line here, which no row matches.
+pub fn seen_lines(text: &str) -> impl Iterator<Item = (usize, &str)> {
+    visible::lines(text)
+        .into_iter()
+        .enumerate()
+        .filter(|(_, line)| !line.hidden)
+        .map(|(index, line)| (index + 1, line.raw))
 }
 
 /// The lines of a file, keeping a carriage return and knowing nothing about a trailing newline.

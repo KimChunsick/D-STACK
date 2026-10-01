@@ -3,7 +3,9 @@
 // themselves, so prose after one fills a part-1 section (check request), a part-2 section (the
 // design gate of request approve) and a background block (request background), and a row after
 // one counts; a section holding only template guidance still fails as empty, and guidance kept
-// beside such prose is still caught.
+// beside such prose is still caught. R01 and R03 also read a row inside a comment as no row
+// (D-33): `req add` puts the next row after the last visible one and never reuses the hidden id,
+// and check request, request approve and the row verbs pass it by.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -23,6 +25,8 @@ const STAMP: &str = ".dstack/runs/20261001T000000Z_comment/request.approved";
 const BACKGROUND: &str = "처음 승인한 배경이에요.";
 const PROPOSED: &str = "바꿀 구조를 적었어요.";
 const ROW: &str = "- [ ] **R01** 첫 요구사항이에요. — accept: 첫 확인이에요.";
+/// A draft row kept back in a comment: read, it would fail check request for its pending accept.
+const HIDDEN: &str = "- [ ] **R02** 아직 다듬지 않은 행이에요. — accept: pending: agent to propose";
 
 /// A filled Goal request in the PRD layout, part 2 included.
 fn goal(design_review: &str) -> String {
@@ -44,6 +48,11 @@ fn goal(design_review: &str) -> String {
          ## R 행과 모듈의 대응\n\n대응을 적었어요.\n\n\
          ## 위험\n\n위험을 적었어요.\n"
     )
+}
+
+/// The filled Goal request with `hidden` in a multiline comment right after the visible R01.
+fn commented(hidden: &str) -> String {
+    goal("skip").replacen(ROW, &format!("{ROW}\n<!--\n{hidden}\n-->"), 1)
 }
 
 /// A store whose one run holds `text` as its request.
@@ -149,4 +158,74 @@ fn R09_comment_semantics_request_background_takes_prose_after_a_self_closing_com
     );
     t.ok(&["request", "approve", "--run", RUN]);
     assert!(t.read(REQUEST).contains("<!--> 추가 배경이에요."));
+}
+
+#[test]
+fn R01_comment_semantics_add_lands_after_the_visible_row_outside_the_comment() {
+    let before = commented(HIDDEN);
+    let t = scratch(&before);
+    let add = ["req", "add", "새 요구사항이에요.", "--accept", "새 확인이에요."];
+    // The commented R02 is spent: an explicit --id R02 is refused and nothing is written.
+    let out = t.run(&[&add[..], &["--id", "R02", "--run", RUN]].concat());
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert_eq!(t.read(REQUEST), before);
+    t.ok(&[&add[..], &["--run", RUN]].concat());
+    let added = "- [ ] **R03** 새 요구사항이에요. — accept: 새 확인이에요.";
+    assert_eq!(
+        t.read(REQUEST),
+        before.replacen(ROW, &format!("{ROW}\n{added}"), 1)
+    );
+}
+
+#[test]
+fn R03_comment_semantics_check_counts_only_the_visible_row() {
+    let out = scratch(&commented(HIDDEN)).run(&["check", "request", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("\n  rows: 1 (live 1, pending 0, "),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn R03_comment_semantics_approve_leaves_a_commented_pending_row_alone() {
+    let hidden = "- [ ] **R02** 보류한 행이에요. — accept: 보류한 확인이에요. — status: pending-approval";
+    let t = scratch(&commented(hidden));
+    t.ok(&["request", "approve", "--run", RUN]);
+    t.ok(&[
+        "req",
+        "add",
+        "덧붙인 요구사항이에요.",
+        "--accept",
+        "덧붙인 확인이에요.",
+        "--run",
+        RUN,
+    ]);
+    t.write("added.md", "추가 배경이에요.\n");
+    t.ok(&["request", "background", "--run", RUN, "--from", "added.md"]);
+    let out = t.ok(&["request", "approve", "--run", RUN]);
+    assert!(out.contains(", pending cleared 1, "), "{out}");
+    let added = "- [ ] **R03** 덧붙인 요구사항이에요. — accept: 덧붙인 확인이에요.";
+    let text = t.read(REQUEST);
+    assert!(
+        text.contains(&format!("{ROW}\n{added}\n<!--\n{hidden}\n-->\n")),
+        "{text}"
+    );
+}
+
+#[test]
+fn R03_comment_semantics_row_verbs_find_no_commented_row() {
+    let before = commented(HIDDEN);
+    let t = scratch(&before);
+    for args in [
+        &["req", "accept", "R02", "새 확인이에요.", "--run", RUN][..],
+        &["req", "withdraw", "R02", "--why", "필요 없어졌어요.", "--run", RUN],
+        &["req", "split", "R02", "--into", "R03,R04", "--run", RUN],
+    ] {
+        let out = t.run(args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {}", stdout(&out));
+        assert!(stderr(&out).contains("no row R02 in "), "{args:?}: {}", stderr(&out));
+        assert_eq!(t.read(REQUEST), before, "{args:?}");
+    }
 }

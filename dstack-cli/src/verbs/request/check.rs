@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::core::paths::{fmt_rid, is_plain_name, parse_rid};
 use crate::core::target::{resolve_target, Target};
-use crate::store::request::{approval_matches, req_enum, RequestDoc, REQ_FIELDS};
+use crate::store::request::{approval_matches, req_enum, seen_lines, RequestDoc, REQ_FIELDS};
 use crate::store::tables::{q_count, questions};
 
 use super::{is_approved, load, prd_check, request_file, rowfile};
@@ -285,11 +285,11 @@ fn enum_value(ctx: &mut Context, key: &str, value: &str) -> usize {
 }
 
 /// Row grammar (R42). Only list items are checked: design.md §4.2 leaves other prose free, but a
-/// line that looks like a row and is not one is the failure mode this catches.
+/// line that looks like a row and is not one is the failure mode this catches. A line an HTML
+/// comment hides is not read: a row on it is none, a malformed one no failure (D-33).
 fn grammar(doc: &RequestDoc) -> Vec<String> {
     let mut found = Vec::new();
-    for (index, line) in rowfile::lines(doc.text()).iter().enumerate() {
-        let number = index + 1;
+    for (number, line) in seen_lines(doc.text()) {
         if !line.starts_with("- ") {
             continue;
         }

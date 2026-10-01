@@ -788,6 +788,7 @@ fn R03_prd_checks_fixtures_cover_every_case() {
         "bad-row-inside-comment.md",
         "bad-row-outside-section.md",
         "bad-zero-rows.md",
+        "good-commented-row-beside-visible.md",
         "good-legacy-approved.md",
         "good-long-prose.md",
         "good-minimal.md",

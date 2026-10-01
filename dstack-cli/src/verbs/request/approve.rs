@@ -9,7 +9,7 @@ use crate::core::mode::Mode;
 use crate::core::target::{resolve_target, TargetKind};
 use crate::core::tools::tool_check_for_mode;
 use crate::store::cases;
-use crate::store::request::write_approval;
+use crate::store::request::{seen_lines, write_approval};
 
 use super::{
     background, check, counts, design_gate, draft_file, load, require_file, rowfile, stamp_file,
@@ -141,10 +141,10 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
 }
 
 /// The first row line still carrying the marker `request approve` wrote itself, by line number:
-/// the shell searches the raw line, not the parsed markers, and rewrites it in place.
+/// the shell searches the raw line, not the parsed markers, and rewrites it in place. A row an
+/// HTML comment hides is no row, so its marker stays as written (D-33).
 fn pending_lineno(text: &str) -> Option<usize> {
-    rowfile::lines(text)
-        .iter()
-        .position(|line| rowfile::is_row_line(line) && line.contains(" — status: pending-approval"))
-        .map(|index| index + 1)
+    seen_lines(text)
+        .find(|(_, line)| rowfile::is_row_line(line) && line.contains(" — status: pending-approval"))
+        .map(|(lineno, _)| lineno)
 }
