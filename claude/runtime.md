@@ -156,7 +156,8 @@ the main session runs `dstack check request` before planning; workers execute th
 repository tests and `dstack lint-ko --changed` and return commands/exits/artifact metadata.
 Main checks that compact receipt, records evidence, then runs
 `dstack check coverage`, `dstack check decisions`, `dstack verify` and `dstack gate` before
-reporting completion. The same checks also apply when Claude hooks are absent. Run
+reporting completion; `dstack verify` also checks Goal QA results for a run with usage scenarios.
+The same checks also apply when Claude hooks are absent. Run
 `dstack gate` before ending a work turn; a nonzero result reports the outstanding work rather
 than claiming completion. Checks for a quick target carry `--quick <slug>` where supported;
 `dstack gate` checks CURRENT and every open quick task in the current worktree.

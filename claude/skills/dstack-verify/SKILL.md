@@ -5,8 +5,9 @@ description: >-
   work_type verification profile (R72) through the e2e-runner subagent, records every artifact with
   `dstack evidence add`, then runs `dstack verify`, `dstack report` and the milestone / Goal close
   checklist. Use it when a worker returns with test artifacts, when a milestone is closing (the e2e
-  cases of every Plan in it run once, in one pass), when the Goal is closing, when a case must be
-  marked blocked or abstained, or when a completion report is asked for. Korean triggers the user may type: "검증해줘", "증거 남겨줘", "케이스 돌려줘",
+  cases of every Plan in it run once, in one pass), when the Goal is closing (its Goal QA scenarios
+  are recorded, run and checked), when a case must be marked blocked or abstained, or when a
+  completion report is asked for. Korean triggers the user may type: "검증해줘", "증거 남겨줘", "케이스 돌려줘",
   "마일스톤 닫자", "Goal 닫아줘", "완료 보고 만들어줘", "리포트 뽑아줘".
 ---
 
@@ -28,16 +29,17 @@ in the codebase — SUMMARY.md claims are not evidence."* Here a worker's report
 | Moment | What runs |
 |---|---|
 | A worker returns | the `test` rows its Tasks produced (Red/Green artifacts) → `dstack evidence add` at once: the Red output exists only at that moment |
-| A milestone closes | ONE e2e-runner pass over the cases of every Plan in the milestone → evidence → `dstack check coverage` → the §7 checklist |
-| The Goal closes | §7 checklist + `dstack report --metrics` + `dstack run close` |
+| A milestone closes | ONE e2e-runner pass over the cases of every Plan in the milestone, its cases pasted from `dstack e2e brief --milestone M<n>` → evidence → `dstack check coverage` → the §7 checklist |
+| The Goal closes | the Goal QA (request with usage scenarios, §6): `dstack qa add` per usage scenario, ONE e2e-runner pass over `dstack e2e brief --goal`, `dstack evidence add --qa` per QA → §7 checklist + `dstack report --metrics` + `dstack run close` |
 | A case cannot be observed | record `blocked` / `abstain` (§5), then continue with the next case |
 
-Evidence has two rhythms. Test evidence is per Task and recorded the moment the worker's report
+Evidence has three rhythms. Test evidence is per Task and recorded the moment the worker's report
 arrives (develop §7). E2E evidence is per milestone, not per Plan: the Plans of a wave are
 independent, so one runner at milestone close covers them all, and the runner is the expensive
 part of verification. The price is that a failed case reopens a Plan that is already done and
 reviewed — the fix is a decimal Plan (`dstack plan insert --after P<n>`) with its own review
-round, and the milestone stays open until its case is re-run and recorded.
+round, and the milestone stays open until its case is re-run and recorded. Goal QA is the third:
+at Goal close one runner pass checks the request's usage scenarios end to end, whatever `e2e` says.
 
 Phases are switched on by request fields only — never by a guess about the task's size. Read them
 with `dstack request show` and obey the table:
@@ -54,7 +56,7 @@ with `dstack request show` and obey the table:
 A phase that does not run is written down, never silently dropped (§3-3): put
 `e2e-runner: skipped — e2e=none` (or the real reason) in the message that reports the milestone,
 and record the ledger row that carries the same note. There is no unconditional LLM round trip in
-this skill: the runner is delegated to only when at least one open case needs execution.
+this skill: the runner is delegated to only when at least one open case or QA scenario needs execution.
 
 ## 2. The cases ledger (R73)
 
@@ -116,9 +118,9 @@ mkdir -p "$(git rev-parse --show-toplevel)/.dstack/local/artifacts/<scope>"
 ```
 
 `<main-root>/.dstack/local/artifacts/<scope>/` (mode 700, never committed). `<scope>` is the
-milestone id for a milestone pass (`M2`) or the quick slug. The runner writes only there; the main
-session records the artifacts afterwards. The worker's own test artifacts live elsewhere
-(`.dstack/runs/<id>/artifacts/P<n>/`, develop §6) and are recorded when the worker returns.
+milestone id for a milestone pass (`M2`), `goal-qa` for the Goal QA pass, or the quick slug. The
+runner writes only there; the main session records the artifacts afterwards. The worker's own test
+artifacts live elsewhere (`.dstack/runs/<id>/artifacts/P<n>/`, develop §6), recorded on its return.
 
 Delegation follows `runtime.md` (R25): `e2e-runner` executes cases, `ko-polish` handles Korean
 prose, and `general-dev` / `frontend-dev` fix failed cases. Each is a native worker of the main
@@ -133,9 +135,9 @@ Location: <absolute cwd>, common-dir: <git common dir>, branch: <branch>, base H
 Artifact directory (the ONLY place you may write): <abs path>/.dstack/local/artifacts/<scope>/
 How to start the system under test: <command, or "already running at <url>">
 Capture engine: ego-browser — instructions: <paste the §3.1 rows>
-Cases (every open case of every Plan in the milestone, in one table):
-| R | case | acceptance criterion (verbatim from the request) | steps |
-| R03 | c1 | <accept: …> | <steps> |
+Cases: <paste the `dstack e2e brief --milestone M<n>` output verbatim: Plan E2E focus, R rows, cases>
+Harness: `set -euo pipefail`; scratch dirs from `mktemp -d`, checked before use; never `cd` to a
+possibly empty variable; check `pwd` before any `git init` or `dstack init`.
 Naming: <artifact-dir>/R<NN>-<case>.<ext>, plus R<NN>-<case>.txt naming the R id.
 A "user is controlling" error is a hard stop for that case: write `blocked: user-controlling`
 into the text file and move on.
@@ -143,11 +145,13 @@ Return the table | R | case | artifact | outcome (met|blocked|skipped) | note | 
 Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.
 ```
 
-A run longer than the foreground cap uses the host completion mechanism in `runtime.md` (R98):
+The Goal QA pass sends the same block for `Goal QA` instead of a milestone, `<scope>` `goal-qa`,
+and the `dstack e2e brief --goal` output pasted verbatim instead of the cases. The runner follows
+each QA scenario's `준비:` / `단계:` / `기대 결과:` text as written, writes `QA<n>.txt` naming its QA id,
+and returns `| QA | artifact | outcome (met|failed|skipped|blocked) | note |`, a reason per non-met.
 
-```bash
-dstack exec <label> -- <the long command>     # label: e2e-M2, e2e-<quick slug>, …
-```
+A run longer than the foreground cap uses the host completion mechanism in `runtime.md` (R98):
+`dstack exec <label> -- <the long command>`, label `e2e-M2`, `e2e-goal-qa`, `e2e-<quick slug>`, ….
 
 ## 5. Recording evidence (R104)
 
@@ -157,15 +161,22 @@ One command per artifact, run by the main session after the runner reports:
 dstack evidence add --r R03 --case c1 --kind capture \
   --artifact .dstack/local/artifacts/M2/R03-c1.png \
   --produced-by "ego-browser nodejs … captureScreenshot → R03-c1.png"
-```
-
-```bash
 dstack evidence add --r R05 --case c1 --kind cli \
   --artifact .dstack/local/artifacts/M2/R05-c1.txt --produced-by "make test"
 dstack evidence add --r R07 --case c1 --kind transcript \
   --artifact .dstack/local/artifacts/M2/R07-c1.txt --produced-by "curl -i -X POST …"
 dstack evidence add --r R09 --case c1 --kind review \
   --artifact .dstack/local/artifacts/M2/R09-claims.md --produced-by "claim→source checklist"
+```
+
+Goal QA (§7) has two forms of its own. A QA text needs `준비:`, `단계:` and `기대 결과:` lines with
+visible text. A QA result takes no `--r`/`--case`/`--kind`, needs `--note` unless `met`, must name
+its QA id as a whole word, and is never overwritten: a `failed` one keeps refusing close (§6).
+
+```bash
+dstack qa add --scenario S<n>|none --from <file>    # none: a check tied to no usage scenario
+dstack evidence add --qa QA<n> --artifact .dstack/local/artifacts/goal-qa/QA<n>.txt \
+  --produced-by "<cmd>" --status met|failed|skipped|blocked --note "<reason>"
 ```
 
 ### 5.1 Why a row is rejected, and what fixes it
@@ -206,14 +217,20 @@ A blocked case closes the Goal only the way an ABSTAIN does: the user accepts it
 ## 6. verify, accept-abstain, report, metrics
 
 ```bash
-dstack verify        # policy ceiling, per-field evidence, sha256 recheck, branch containment
-dstack report        # the R table: id, text, covering tasks, evidence path, status
+dstack verify        # policy ceiling, per-field evidence, sha256 recheck, branch containment, Goal QA
+dstack report        # the R table: id, text, covering tasks, evidence path, status; the QA table
 ```
 
 - **Policy ceiling (R75).** `.dstack/project/PROJECT.md`'s `## Verification policy` block is the
   ceiling; the request may only narrow it. When `verify` rejects a request that widens it, it prints
   the policy's `why` line — quote that line to the user and change the *request*. Never edit
   PROJECT.md to make a run pass.
+- **Goal QA.** Only a Goal run whose request has a `### S<n>` heading under
+  `## 사용 시나리오` is checked; legacy requests and quick tasks are untouched. `verify` then refuses
+  (exit 1, so `run close` refuses) a usage scenario with no QA scenario, an open or failed QA
+  result, and a QA text or artifact missing or changed after recording. `skipped` and `blocked`
+  pass; `report` prints their reasons in `| QA | scenario | status | reason | artifact |` and exits 1
+  whenever verify's QA check refuses.
 - **Exit codes.** `0` pass; `1` something failed (the reason is printed); `2` only unaccepted
   ABSTAIN/BLOCKED remain. `report`: `1` on any UNMET, `2` when only ABSTAIN/BLOCKED remain,
   and `--metrics` exits `1` if any metric is `unavailable`.
@@ -249,16 +266,12 @@ Run in order. Every step prints counts; paste the counts, do not summarise them 
 | 4 | Ledger check for the milestone (R70): open findings and integration behaviour only, no new scope | `dstack review --scope milestone --milestone M2`, then the `codex-review` skill seals the round |
 | 5 | Coverage | `dstack check coverage` |
 | 6 | Interview decisions covered | `dstack check decisions` |
-| 7 | Evidence and policy | `dstack verify` |
-| 8 | Report | `dstack report` |
-| 9 | Finished quick items tidied (R99) | `dstack quick list`, `dstack quick close <slug>` |
-
-Goal close records no new evidence: every case was run at its milestone. It adds, in this order:
-
-```bash
-dstack report --metrics    # R01: wall clock, tokens, review rounds, concurrent runs, R met rate
-dstack run close           # runs verify, stamps closed_at, clears CURRENT
-```
+| 7 | Goal close only, request with usage scenarios (§6): the Goal QA (§4, §5) — a QA scenario for every usage scenario still uncovered, one runner pass, one result per QA | `dstack qa add --scenario S<n>`, `dstack e2e brief --goal`, then `dstack evidence add --qa QA<n>` |
+| 8 | Evidence, policy and Goal QA | `dstack verify` |
+| 9 | Report | `dstack report` |
+| 10 | Finished quick items tidied (R99) | `dstack quick list`, `dstack quick close <slug>` |
+| 11 | Goal close only: R01 metrics (wall clock, tokens, review rounds, concurrent runs, R met rate) | `dstack report --metrics` |
+| 12 | Goal close only: runs verify, stamps closed_at, clears CURRENT | `dstack run close` |
 
 **Rebase rule (R38).** `dstack verify` refuses to close a Goal whose branch does not contain the base
 branch HEAD, and says "rebase first". Then: rebase onto the base branch; for every file that

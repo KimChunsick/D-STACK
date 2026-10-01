@@ -1,0 +1,146 @@
+// tests/r11_verify_docs.rs
+// R11 (P14 share): dstack-verify builds the milestone runner's cases from `dstack e2e brief
+// --milestone`, runs the Goal QA at Goal close (qa add with its three labels, `dstack e2e brief
+// --goal`, evidence add --qa), names verify's Goal QA refusals and when they apply, drops the old
+// "Goal close records no new evidence" sentence and stays within the 300-line skill cap;
+// runtime.md says verify also checks Goal QA.
+#![allow(non_snake_case)]
+
+use std::path::PathBuf;
+
+const VERIFY: &str = "claude/skills/dstack-verify/SKILL.md";
+const RUNTIME: &str = "claude/runtime.md";
+const OLD_CLOSE: &str = "records no new evidence";
+
+fn repo() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
+}
+
+fn read(path: &str) -> String {
+    std::fs::read_to_string(repo().join(path)).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// Every phrase `text` must carry, reported together so one run names every gap.
+fn assert_names(what: &str, text: &str, phrases: &[&str]) {
+    let missing: Vec<&str> = phrases
+        .iter()
+        .copied()
+        .filter(|phrase| !text.contains(phrase))
+        .collect();
+    assert!(missing.is_empty(), "{what} does not name {missing:?}");
+}
+
+/// The body of the `## <title>` section: up to the next `## ` heading or the end.
+fn section<'a>(text: &'a str, title: &str) -> &'a str {
+    let start = text
+        .find(&format!("\n## {title}\n"))
+        .unwrap_or_else(|| panic!("no '## {title}' section"));
+    let body = &text[start + 1..];
+    match body[3..].find("\n## ") {
+        Some(end) => &body[..end + 3],
+        None => body,
+    }
+}
+
+fn position(text: &str, phrase: &str) -> usize {
+    text.find(phrase)
+        .unwrap_or_else(|| panic!("missing {phrase:?}"))
+}
+
+#[test]
+fn R11_verify_docs_milestone_and_goal_briefs_come_from_e2e_brief() {
+    let text = read(VERIFY);
+    let rhythm = section(&text, "1. When this runs");
+    assert_names(
+        "verify §1",
+        rhythm,
+        &["dstack e2e brief --milestone M<n>", "Goal QA", "dstack e2e brief --goal"],
+    );
+    let brief = section(&text, "4. Running the cases — delegate to the native e2e-runner");
+    assert_names(
+        "verify §4",
+        brief,
+        &[
+            "dstack e2e brief --milestone M<n>",
+            "dstack e2e brief --goal",
+            "set -euo pipefail",
+            "mktemp -d",
+            "Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.",
+        ],
+    );
+    assert!(
+        !brief.contains("| R03 | c1 |"),
+        "verify §4 still carries a hand-written case table"
+    );
+}
+
+#[test]
+fn R11_verify_docs_records_goal_qa_scenarios_and_results() {
+    let text = read(VERIFY);
+    let record = section(&text, "5. Recording evidence (R104)");
+    assert_names(
+        "verify §5",
+        record,
+        &[
+            "dstack qa add --scenario S<n>|none --from <file>",
+            "준비:",
+            "단계:",
+            "기대 결과:",
+            "dstack evidence add --qa QA<n>",
+            "--status",
+            "--note",
+            "never overwritten",
+        ],
+    );
+}
+
+#[test]
+fn R11_verify_docs_verify_refuses_goal_close_without_qa_results() {
+    let text = read(VERIFY);
+    let verify = section(&text, "6. verify, accept-abstain, report, metrics");
+    assert_names(
+        "verify §6",
+        verify,
+        &[
+            "Goal QA",
+            "### S<n>",
+            "## 사용 시나리오",
+            "| QA | scenario | status | reason | artifact |",
+            "skipped",
+            "blocked",
+        ],
+    );
+}
+
+#[test]
+fn R11_verify_docs_goal_close_runs_the_goal_qa_in_order() {
+    let text = read(VERIFY);
+    assert!(!text.contains(OLD_CLOSE), "{VERIFY} still says Goal close {OLD_CLOSE}");
+    let close = section(&text, "7. Milestone and Goal close checklist");
+    let steps = [
+        "dstack qa add",
+        "dstack e2e brief --goal",
+        "dstack evidence add --qa",
+        "dstack run close",
+    ];
+    assert_names("verify §7", close, &steps);
+    for pair in steps.windows(2) {
+        assert!(
+            position(close, pair[0]) < position(close, pair[1]),
+            "verify §7 names {} before {}",
+            pair[0],
+            pair[1]
+        );
+    }
+}
+
+#[test]
+fn R11_verify_docs_runtime_names_the_goal_qa_check() {
+    assert_names(RUNTIME, &read(RUNTIME), &["`dstack verify` also checks Goal QA"]);
+}
+
+#[test]
+fn R11_verify_docs_skill_stays_within_the_cap() {
+    let lines = read(VERIFY).lines().count();
+    assert!(lines <= 300, "{VERIFY}: {lines} lines, over 300");
+}
