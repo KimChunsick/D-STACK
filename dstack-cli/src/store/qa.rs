@@ -107,23 +107,30 @@ pub fn body_text(dir: &Path, row: &QaRow) -> Result<Option<String>> {
     read_text(&dir.join(&row.body))
 }
 
-/// The usage scenario ids of a request: the `S<n>` that starts each `### S<n> <title>` heading in
-/// `## 사용 시나리오`, in order and once each. A heading a comment or a code fence holds shows
-/// no heading, so it names none; a request whose outline cannot be read refuses.
-pub fn scenario_ids(request: &str) -> Result<Vec<String>> {
-    let mut ids: Vec<String> = Vec::new();
+/// The usage scenarios of a request: the `S<n>` that starts each `### S<n> <title>` heading in
+/// `## 사용 시나리오` with the title after it, in order and once each. A heading a comment or a
+/// code fence holds shows no heading, so it names none; a request whose outline cannot be read
+/// refuses.
+pub fn scenarios(request: &str) -> Result<Vec<(String, String)>> {
+    let mut found: Vec<(String, String)> = Vec::new();
     for line in lines(body(request, &SCENARIOS)?) {
-        let id = match heading(line.raw.trim_end_matches('\r')) {
-            Some((3, title)) if line.heading => title.split_whitespace().next().unwrap_or(""),
+        let text = match heading(line.raw.trim_end_matches('\r')) {
+            Some((3, text)) if line.heading => text.trim_start(),
             _ => continue,
         };
+        let (id, title) = text.split_once(char::is_whitespace).unwrap_or((text, ""));
         let digits = id.strip_prefix('S').unwrap_or("");
         let numbered = !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit());
-        if numbered && !ids.iter().any(|held| held == id) {
-            ids.push(id.to_string());
+        if numbered && !found.iter().any(|(held, _)| held == id) {
+            found.push((id.to_string(), title.trim().to_string()));
         }
     }
-    Ok(ids)
+    Ok(found)
+}
+
+/// The usage scenario ids alone, as `scenarios` finds them.
+pub fn scenario_ids(request: &str) -> Result<Vec<String>> {
+    Ok(scenarios(request)?.into_iter().map(|(id, _)| id).collect())
 }
 
 /// Record a new open QA scenario of the run `run` in `dir`: the next QA<n>, its text written as
@@ -230,6 +237,8 @@ mod tests {
                     <!--\n### S2 숨겨요\n-->\n~~~\n### S3 코드예요\n~~~\n### S4\n### S1 다시\n\
                     ### Sx 아니에요\n\n## 요구사항\n\n### S6 밖이에요\n";
         assert_eq!(scenario_ids(text).expect("reads"), ["S1", "S4"]);
+        let titles = scenarios(text).expect("reads");
+        assert_eq!(titles, [("S1".into(), "하나".into()), ("S4".into(), String::new())]);
         assert!(scenario_ids("# 제목\n\n## 목표\n").is_err());
     }
 

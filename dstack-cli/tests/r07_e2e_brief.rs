@@ -20,7 +20,7 @@ const R02: &str = "- [ ] **R02** 보고서를 만들어요. — accept: `dstack 
 const R03: &str = "- [ ] **R03** 아무 Plan도 맡지 않아요. — accept: 아무도 확인하지 않아요.";
 const FOCUS1: &str = "status 첫 줄을 그대로 봐요";
 const FOCUS2: &str = "report 표의 두 번째 행을 봐요";
-const USAGE: &str = "usage: dstack e2e brief --milestone M<n>";
+const USAGE: &str = "usage: dstack e2e brief --milestone M<n> | --goal";
 
 fn request(e2e: &str) -> String {
     format!(
@@ -131,10 +131,10 @@ fn R07_e2e_brief_refusals_exit_one_and_write_nothing() {
     let t = scratch("cli");
     t.run_fixture("20261001T000001Z_bare", None, false);
     let cases: [(&[&str], &str); 6] = [
-        (&["e2e", "brief"], "dstack: usage: dstack e2e brief --milestone M<n>\n"),
+        (&["e2e", "brief"], "dstack: usage: dstack e2e brief --milestone M<n> | --goal\n"),
         (&["e2e", "brief", "--milestone", "M9"], "milestone not found: M9 (known: M1 M2)"),
         (&["e2e", "brief", "--milestone", "M2"], "milestone M2 has no plans"),
-        (&["e2e", "brief", "--milestone", "M1", "--goal", "G1"], "unknown option: --goal"),
+        (&["e2e", "brief", "--milestone", "M1", "--goal"], "--milestone and --goal are mutually exclusive"),
         (&["e2e", "brief", "--milestone", "M1", "M2"], "unexpected argument: M2"),
         (&["e2e", "brief", "--milestone", "M1", "--run", "20261001T000001Z_bare"], "no plan.json in "),
     ];
@@ -149,4 +149,13 @@ fn R07_e2e_brief_refusals_exit_one_and_write_nothing() {
         }
         assert_eq!(tree(&t.0.join(".dstack")), before, "{args:?} wrote to the store");
     }
+}
+
+/// --goal is no longer refused: a run with no QA scenario yet says so and points at qa add.
+#[test]
+fn R07_e2e_brief_goal_says_when_no_qa_scenario_is_recorded() {
+    let t = scratch("cli");
+    let out = t.ok(&["e2e", "brief", "--goal"]);
+    let expected = format!("e2e brief: run {RUN} — Goal QA — e2e: cli\n(no QA scenarios — run dstack qa add)\n");
+    assert_eq!(out, expected);
 }

@@ -227,3 +227,137 @@ fn R08_qa_record_lint_ko_reports_no_hits_on_the_rendered_request() {
     let out = t.ok(&["lint-ko", REQUEST]);
     assert!(out.contains("files 1, hits 0 (S1 0), unclassified 0"), "{out}");
 }
+
+// T52: evidence add --qa records the result of one QA scenario, and e2e brief --goal hands every
+// QA scenario to the runner.
+
+/// The scratch store with a run start, so evidence add can date an artifact against it.
+fn started() -> Scratch {
+    let t = scratch();
+    let meta = "status\topen\nowner_session\tfixture\nstarted_at\t2026-01-01T00:00:00Z\n";
+    t.write(&format!("{DIR}/meta.tsv"), meta);
+    t
+}
+
+/// The started store with QA1 (S1), QA2 (S2) and QA3 (no usage scenario).
+fn recording() -> Scratch {
+    let t = started();
+    for (n, scenario) in ["S1", "S2", "none"].into_iter().enumerate() {
+        add(&t, scenario, &format!("qa-{}.md", n + 1));
+    }
+    t
+}
+
+/// evidence add --qa with the artifact, the command that produced it and any further options.
+fn record(t: &Scratch, qa: &str, artifact: &str, more: &[&str]) -> Output {
+    let args = ["evidence", "add", "--qa", qa, "--artifact", artifact, "--produced-by", "dstack status"];
+    t.run(&[&args[..], more].concat())
+}
+
+/// The qa.tsv cells of one QA scenario.
+fn qa_row(t: &Scratch, qa: &str) -> Vec<String> {
+    let index = t.read(&format!("{DIR}/qa.tsv"));
+    let line = index.lines().skip(1).find(|line| line.split('\t').next() == Some(qa));
+    line.expect("the QA row").split('\t').map(String::from).collect()
+}
+
+fn stdout(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+#[test]
+fn R08_qa_record_evidence_add_qa_records_met_and_a_failure_with_its_reason() {
+    let t = recording();
+    let capture = "$ dstack request approve\nQA1 승인이 종료 코드 0으로 끝났어요.\nexit: 0\n";
+    t.write("qa1-run.txt", capture);
+    let out = record(&t, "QA1", "qa1-run.txt", &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let printed = stdout(&out);
+    let sha = sha256_bytes(capture.as_bytes());
+    assert_eq!(printed.lines().next(), Some(format!("evidence add: run {RUN} — QA1 met").as_str()), "{printed}");
+    let summary = format!("  artifact qa1-run.txt ({} bytes, sha256 {}…)", capture.len(), &sha[..8]);
+    assert!(printed.contains(&summary), "{printed}");
+    let row = qa_row(&t, "QA1");
+    assert_eq!((row[2].as_str(), row[5].as_str(), row[6].as_str()), ("met", "qa1-run.txt", sha.as_str()));
+    assert_eq!((row[7].as_str(), row[9].as_str()), ("dstack status", "-"));
+    assert_ne!(row[8], "-", "recorded_at is stamped");
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "{}", part3(&t));
+
+    let capture = "$ dstack milestone brief M1\nQA2 목록에 QA 시나리오가 없어요.\nexit: 0\n";
+    t.write("qa2-run.txt", capture);
+    let out = record(&t, "QA2", "qa2-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(stdout(&out).lines().next(), Some(format!("evidence add: run {RUN} — QA2 failed").as_str()));
+    let row = qa_row(&t, "QA2");
+    assert_eq!((row[2].as_str(), row[9].as_str()), ("failed", "목록이 비어 있어요"));
+    let after = part3(&t);
+    assert!(after.contains("- QA2: 사용 시나리오 S2\n  - 상태: `failed`\n"), "{after}");
+    assert!(after.contains("- QA3: 사용 시나리오 없음\n  - 상태: `open`\n"), "{after}");
+    assert_eq!(qa_row(&t, "QA3")[2], "open");
+}
+
+#[test]
+fn R08_qa_record_evidence_add_qa_refusals_leave_the_ledger_as_it_was() {
+    let t = recording();
+    t.write("named.txt", "$ dstack status\nQA1 확인했어요.\nexit: 0\n");
+    t.write("other.txt", "$ dstack status\nQA10 QA1_ok 확인했어요.\nexit: 0\n");
+    let combined = "dstack: --qa does not combine with --r, --case or --kind — usage: dstack evidence add ";
+    let cases: [(&str, &str, &[&str], &str); 7] = [
+        ("QA1", "named.txt", &["--status", "skipped"], "dstack: a skipped QA result needs a reason (--note)\n"),
+        ("QA1", "named.txt", &["--status", "blocked", "--note", " "], "dstack: a blocked QA result needs a reason (--note)\n"),
+        ("QA1", "other.txt", &[], "dstack: the artifact must name QA1 as a whole word; other.txt does not — record the run that mentions it\n"),
+        ("QA1", "named.txt", &["--r", "R01"], combined),
+        ("QA1", "named.txt", &["--case", "c1"], combined),
+        ("QA1", "named.txt", &["--kind", "cli"], combined),
+        ("QA9", "named.txt", &[], "dstack: unknown QA scenario: QA9 (known: QA1 QA2 QA3)\n"),
+    ];
+    for (qa, artifact, more, message) in cases {
+        let before = tree(&t.0.join(DIR));
+        let out = record(&t, qa, artifact, more);
+        assert_eq!(out.status.code(), Some(1), "{more:?}: {}", stderr(&out));
+        assert!(stderr(&out).starts_with(message), "{more:?}: {}", stderr(&out));
+        assert_eq!(tree(&t.0.join(DIR)), before, "{more:?} wrote into the run");
+    }
+    assert_eq!(qa_row(&t, "QA1")[2], "open");
+
+    let out = record(&t, "QA1", "named.txt", &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let before = tree(&t.0.join(DIR));
+    let out = record(&t, "QA1", "named.txt", &["--status", "skipped", "--note", "다시 기록해요"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    let message = "dstack: QA1 is already recorded (status met); a recorded QA result is never overwritten\n";
+    assert_eq!(stderr(&out), message);
+    assert_eq!(tree(&t.0.join(DIR)), before, "a second record wrote into the run");
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "{}", part3(&t));
+}
+
+#[test]
+fn R08_qa_record_e2e_brief_goal_prints_every_body_and_lists_the_open_ones() {
+    let t = started();
+    let header = format!("e2e brief: run {RUN} — Goal QA — e2e: cli\n");
+    let before = tree(&t.0.join(".dstack"));
+    let out = t.ok(&["e2e", "brief", "--goal"]);
+    assert_eq!(out, format!("{header}(no QA scenarios — run dstack qa add)\n"));
+    assert_eq!(tree(&t.0.join(".dstack")), before, "e2e brief wrote to the store");
+
+    for (n, scenario) in ["S1", "S2", "none"].into_iter().enumerate() {
+        add(&t, scenario, &format!("qa-{}.md", n + 1));
+    }
+    t.write("qa2-run.txt", "$ dstack milestone brief M1\nQA2 목록에 나와요.\nexit: 0\n");
+    let out = record(&t, "QA2", "qa2-run.txt", &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+
+    let before = tree(&t.0.join(".dstack"));
+    let out = t.ok(&["e2e", "brief", "--goal"]);
+    assert_eq!(tree(&t.0.join(".dstack")), before, "e2e brief wrote to the store");
+    let expected = format!(
+        "{header}\n## QA scenarios\n\
+         \n### QA1 — usage scenario: S1 요청서를 써요 — status: open\n{}\
+         \n### QA2 — usage scenario: S2 계획을 확인해요 — status: met\n{}\
+         \n### QA3 — usage scenario: (none) — status: open\n{}\
+         \n## Open QA scenarios\n| QA | usage scenario |\n|---|---|\n\
+         | QA1 | S1 요청서를 써요 |\n| QA3 | (none) |\n",
+        BODIES[0], BODIES[1], BODIES[2]
+    );
+    assert_eq!(out, expected);
+}

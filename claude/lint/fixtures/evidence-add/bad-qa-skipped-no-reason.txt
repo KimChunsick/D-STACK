@@ -1,0 +1,4 @@
+<!-- selftest-status: skipped -->
+$ dstack check request
+QA1 S1: not run
+exit 0

@@ -1,7 +1,7 @@
 // verbs/ledger/evidence.rs
 // dstack evidence add: the only writer of recorded ledger rows, with its eight checks (R104).
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use time::format_description::BorrowedFormatItem;
 use time::macros::format_description;
@@ -21,7 +21,7 @@ use crate::store::tsv;
 use super::artifact::{names_word, resolve_artifact};
 use super::kind_word;
 
-const USAGE: &str = "usage: dstack evidence add --r R<NN> --case <id> --kind test|capture|transcript|cli|visual|review --artifact <path> --produced-by \"<cmd>\" [--shared <why>] [--status met|abstain|blocked|skipped] [--note <n>] [--run <id>|--quick <slug>]";
+pub(super) const USAGE: &str = "usage: dstack evidence add --r R<NN> --case <id> --kind test|capture|transcript|cli|visual|review --artifact <path> --produced-by \"<cmd>\" [--shared <why>] [--status met|abstain|blocked|skipped] [--note <n>] [--run <id>|--quick <slug>] | dstack evidence add --qa QA<n> --artifact <path> --produced-by \"<cmd>\" [--status met|failed|skipped|blocked] [--note <reason>] [--run <id>]";
 
 /// `date -u -r <mtime> +%Y-%m-%dT%H:%M:%SZ`: the only place an mtime is printed.
 const STAMP: &[BorrowedFormatItem<'static>] =
@@ -33,6 +33,9 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
     let (target, rest) = resolve_target(ctx, args)?;
+    if rest.iter().any(|arg| arg == "--qa" || arg.starts_with("--qa=")) {
+        return super::evidence_qa::add(ctx, &roots, &target, &rest);
+    }
     let (mut r, mut case_id, mut kind) = (String::new(), String::new(), String::new());
     let (mut artifact, mut produced, mut shared) = (String::new(), String::new(), String::new());
     let (mut status, mut note) = ("met".to_string(), String::new());
@@ -81,12 +84,6 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         fail!("missing required option — {USAGE}")
     }
 
-    // A tab or a newline in the path would invent a column or a whole row in cases.tsv, which
-    // the shell writes raw; D-09 refuses the input instead of corrupting the ledger, so this
-    // line has no shell wording to match and is checked before anything reads the path.
-    if artifact.contains('\t') || artifact.contains('\n') {
-        fail!("artifact path must not contain tabs or newlines")
-    }
     let dir = &target.dir;
     let request = dir.join("request.md");
     if !request.is_file() {
@@ -108,41 +105,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         )
     }
 
-    let abs = resolve_artifact(&artifact)?;
-    let base = abs
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-    let size = file_size(&abs).unwrap_or(0);
-    if size == 0 {
-        fail!(
-            "artifact is zero bytes: {} — an empty file proves nothing",
-            abs.display()
-        )
-    }
-
-    // (5) an artifact older than the target cannot be evidence produced by it.
-    let (start, source) = start_epoch(&roots, &target)?.ok_or_else(|| {
-        Error::cannot_decide(format!(
-            "cannot read when this {} started (no started_at / no state row)",
-            kind_word(target.kind)
-        ))
-    })?;
-    let mtime = file_mtime(&abs).unwrap_or(0);
-    if mtime < start {
-        fail!(
-            "artifact mtime {} is earlier than this {} started ({source}) — re-run the command that produces {base}",
-            stamp(mtime),
-            kind_word(target.kind)
-        )
-    }
-
-    // Store paths relative to the store's repository so a ledger stays readable from any worktree.
-    let rel = match abs.strip_prefix(&roots.main_root) {
-        Ok(rel) => rel.to_string_lossy().into_owned(),
-        Err(_) => abs.to_string_lossy().into_owned(),
-    };
+    let Artifact { abs, rel, size } = checked_artifact(&roots, &target, &artifact)?;
 
     // (6) one artifact, one R — unless the owner says why it covers two.
     let other = cases::rows(dir)?
@@ -215,6 +178,62 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         rows.iter().filter(|row| row.status == "met").count()
     );
     Ok(())
+}
+
+/// What the artifact checks establish about the file an evidence row points at: its physical
+/// path, the path the ledger stores and its size.
+pub(super) struct Artifact {
+    pub abs: PathBuf,
+    pub rel: String,
+    pub size: u64,
+}
+
+/// The artifact checks every evidence row passes, an R case or a QA result (R104, D-40): a path
+/// that cannot corrupt a ledger row, a file that exists and holds bytes, and one the target did
+/// not start after.
+pub(super) fn checked_artifact(roots: &Roots, target: &Target, artifact: &str) -> Result<Artifact> {
+    // A tab or a newline in the path would invent a column or a whole row in cases.tsv, which
+    // the shell writes raw; D-09 refuses the input instead of corrupting the ledger, so this
+    // line has no shell wording to match and is checked before anything reads the path.
+    if artifact.contains('\t') || artifact.contains('\n') {
+        fail!("artifact path must not contain tabs or newlines")
+    }
+    let abs = resolve_artifact(artifact)?;
+    let base = abs
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    let size = file_size(&abs).unwrap_or(0);
+    if size == 0 {
+        fail!(
+            "artifact is zero bytes: {} — an empty file proves nothing",
+            abs.display()
+        )
+    }
+
+    // (5) an artifact older than the target cannot be evidence produced by it.
+    let (start, source) = start_epoch(roots, target)?.ok_or_else(|| {
+        Error::cannot_decide(format!(
+            "cannot read when this {} started (no started_at / no state row)",
+            kind_word(target.kind)
+        ))
+    })?;
+    let mtime = file_mtime(&abs).unwrap_or(0);
+    if mtime < start {
+        fail!(
+            "artifact mtime {} is earlier than this {} started ({source}) — re-run the command that produces {base}",
+            stamp(mtime),
+            kind_word(target.kind)
+        )
+    }
+
+    // Store paths relative to the store's repository so a ledger stays readable from any worktree.
+    let rel = match abs.strip_prefix(&roots.main_root) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => abs.to_string_lossy().into_owned(),
+    };
+    Ok(Artifact { abs, rel, size })
 }
 
 /// (1) the R must exist in the request and still be alive: recording evidence for a row the

@@ -15,12 +15,40 @@ use super::verdict;
 /// A day is what `touch -t "$(_selftest_yesterday)"` puts between the fixture and the run.
 const A_DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// The request a `qa-` fixture is recorded against: one usage scenario, S1, for QA1 to cover.
+const QA_REQUEST: &str = "---
+work_type: cli
+route: new-goal
+external_research: none
+risk_axes: none
+design_review: skip
+review: off
+codex_effort: high
+e2e: cli
+unit_tests: off
+visual: none
+korean_polish: off
+---
+# 자체 검사 요청
+
+## 사용 시나리오
+
+### S1 명령을 실행해요
+
+메인이 명령을 실행하고 결과를 기록해요.
+
+## 요구사항
+
+- [ ] **R01** 명령이 센 수를 출력해요. — accept: 표준 출력에 \"checked N\"이 나와요.
+";
+
 pub(super) struct EvidenceAdd;
 pub(super) struct EvidenceRetire;
 
 /// evidence-add: the fixture is the artifact itself. A zero-byte fixture cannot carry a
-/// directive comment, so the two fixtures that need staging (an old mtime, a second R) are
-/// recognised by name — the one place a name decides behaviour.
+/// directive comment, so the fixtures that need staging (an old mtime, a second R, a QA result)
+/// are recognised by name — the one place a name decides behaviour. A `qa-` fixture is recorded
+/// as QA1's result, its status and note read from its own directives.
 impl Selftest for EvidenceAdd {
     fn checker(&self) -> &'static str {
         "evidence-add"
@@ -29,9 +57,15 @@ impl Selftest for EvidenceAdd {
     fn run(&self, ctx: &mut Context, fixture: &Path) -> Result<Verdict> {
         let sandbox = Sandbox::new(ctx)?;
         let run_dir = sandbox.run_dir()?;
-        sandbox.write_request(&run_dir)?;
-        let _ = sandbox.dsx(ctx, &["cases", "sync"])?;
         let name = file_name(fixture);
+        let qa = ["good-qa-", "bad-qa-"].iter().any(|prefix| name.starts_with(prefix));
+        match qa {
+            true => stage_qa(&sandbox, ctx, &run_dir)?,
+            false => {
+                sandbox.write_request(&run_dir)?;
+                let _ = sandbox.dsx(ctx, &["cases", "sync"])?;
+            }
+        }
         let artifact = sandbox.dir.join("artifacts").join(&name);
         copy(fixture, &artifact)?;
         // Repository fixtures are older than the sandbox run by definition; every fixture but
@@ -43,6 +77,9 @@ impl Selftest for EvidenceAdd {
         };
         set_mtime(&artifact, stamp)?;
         let path = artifact.to_string_lossy().into_owned();
+        if qa {
+            return verdict(record_qa(&sandbox, ctx, fixture, &path)?, "dstack evidence add --qa");
+        }
         let mut code = add(&sandbox, ctx, "R01", &path)?;
         if name.starts_with("bad-shared-without-flag") {
             code = add(&sandbox, ctx, "R02", &path)?;
@@ -70,6 +107,39 @@ fn add(sandbox: &Sandbox, ctx: &Context, r: &str, artifact: &str) -> Result<i32>
             "selftest",
         ],
     )?;
+    Ok(code)
+}
+
+/// A request whose usage scenario S1 has QA1, recorded by qa add as a user would.
+fn stage_qa(sandbox: &Sandbox, ctx: &Context, run_dir: &Path) -> Result<()> {
+    let request = run_dir.join("request.md");
+    fs::write(&request, QA_REQUEST).map_err(|e| {
+        Error::cannot_decide(format!("selftest: cannot write {}: {e}", request.display()))
+    })?;
+    let body = sandbox.artifact("qa1.md", "준비: 빈 저장소예요.\n단계: 명령을 실행해요.\n기대 결과: 종료 코드 0이에요.")?;
+    let body = body.to_string_lossy();
+    let (code, output) = sandbox.dsx(ctx, &["qa", "add", "--scenario", "S1", "--from", &body])?;
+    match code {
+        0 => Ok(()),
+        code => Err(Error::cannot_decide(format!(
+            "selftest: dstack qa add exited {code}: {output}"
+        ))),
+    }
+}
+
+/// The one call a `qa-` fixture is judged by: QA1's result, with the fixture's status and note.
+fn record_qa(sandbox: &Sandbox, ctx: &Context, fixture: &Path, artifact: &str) -> Result<i32> {
+    let mut args = vec!["evidence", "add", "--qa", "QA1", "--artifact", artifact];
+    args.extend(["--produced-by", "selftest"]);
+    let status = Sandbox::directive(fixture, "status");
+    let note = Sandbox::directive(fixture, "note");
+    if let Some(status) = status.as_deref() {
+        args.extend(["--status", status]);
+    }
+    if let Some(note) = note.as_deref() {
+        args.extend(["--note", note]);
+    }
+    let (code, _) = sandbox.dsx(ctx, &args)?;
     Ok(code)
 }
 

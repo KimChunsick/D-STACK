@@ -1,0 +1,5 @@
+<!-- selftest-status: failed -->
+<!-- selftest-note: the second row was missing -->
+$ dstack check request
+QA1 S1: check request: 2 rows, pending 0, withdrawn 0, deferred 0
+exit 0

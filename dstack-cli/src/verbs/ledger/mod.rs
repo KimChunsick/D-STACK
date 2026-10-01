@@ -36,6 +36,7 @@ pub mod artifact;
 pub mod cases;
 pub mod coverage;
 pub mod evidence;
+pub mod evidence_qa;
 pub mod evidence_selftests;
 pub mod retire;
 pub mod worker;

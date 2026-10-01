@@ -1,8 +1,9 @@
 // verbs/e2e_brief.rs
-// dstack e2e brief --milestone M<n>: each Plan's E2E focus, covered R rows and open cases (R07).
+// dstack e2e brief --milestone M<n>: each Plan's E2E focus, covered R rows and open cases (R07);
+// --goal: every Goal QA scenario with its text and the open ones (R08).
 //
 // It prints the part of the e2e-runner brief the ledgers hold, verbatim, and only reads:
-// plan.json, request.md and cases.tsv stay as they are.
+// plan.json, request.md, cases.tsv and the QA ledger stay as they are.
 
 use std::path::Path;
 
@@ -13,6 +14,7 @@ use crate::core::paths::{base_name, parse_rid};
 use crate::core::verb::Verb;
 use crate::store::cases;
 use crate::store::plan::Plan;
+use crate::store::qa::{self, QaRow, NO_SCENARIO};
 use crate::store::request::RequestDoc;
 use crate::store::rows::Row;
 use crate::verbs::plan::plan_target;
@@ -20,7 +22,7 @@ use crate::verbs::plan::plan_target;
 /// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }
 
-const USAGE: &str = "usage: dstack e2e brief --milestone M<n>";
+const USAGE: &str = "usage: dstack e2e brief --milestone M<n> | --goal";
 
 /// Case statuses that leave nothing for the runner to do.
 const CLOSED: [&str; 3] = ["met", "skipped", "retired"];
@@ -62,25 +64,36 @@ fn or_none(value: &str) -> &str {
     }
 }
 
-/// The one option the verb takes; --goal belongs to a later Plan and is refused until then.
-fn milestone_arg(ctx: &mut Context, rest: &[String]) -> Result<String> {
-    let mut m = String::new();
+/// What the brief covers: one Milestone's Plans, or the Goal's QA scenarios.
+enum Scope {
+    Milestone(String),
+    Goal,
+}
+
+/// The two options the verb takes, one of them exactly.
+fn scope_arg(ctx: &mut Context, rest: &[String]) -> Result<Scope> {
+    let (mut m, mut goal) = (None, false);
     let mut i = 0;
     while i < rest.len() {
         let arg = rest[i].as_str();
         if let Some((value, eaten)) = opt(arg, rest.get(i + 1).map(String::as_str), "milestone")? {
-            m = value;
+            m = Some(value);
             i += eaten;
+        } else if arg == "--goal" {
+            goal = true;
+            i += 1;
         } else if is_option(arg) {
             return Err(refuse(ctx, &format!("unknown option: {arg}")));
         } else {
             return Err(refuse(ctx, &format!("unexpected argument: {arg}")));
         }
     }
-    if m.is_empty() {
-        return Err(Error::failed(USAGE));
+    match (m, goal) {
+        (Some(_), true) => Err(refuse(ctx, "--milestone and --goal are mutually exclusive")),
+        (None, true) => Ok(Scope::Goal),
+        (Some(m), false) if !m.is_empty() => Ok(Scope::Milestone(m)),
+        _ => Err(Error::failed(USAGE)),
     }
-    Ok(m)
 }
 
 /// request.md as milestone brief reads it for the run's e2e value (verbs/plan/confirm.rs).
@@ -120,8 +133,11 @@ fn covered_rows(request: &RequestDoc, plans: &[&Plan]) -> Vec<Covered> {
 
 fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = plan_target(ctx, args)?;
+    let m = match scope_arg(ctx, &rest)? {
+        Scope::Milestone(m) => m,
+        Scope::Goal => return goal_brief(ctx, &target.dir),
+    };
     target.require()?;
-    let m = milestone_arg(ctx, &rest)?;
     let doc = target.load()?;
     let milestone = match doc.milestones.iter().find(|milestone| milestone.id == m) {
         Some(milestone) => milestone,
@@ -202,6 +218,61 @@ fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
             held.row.accept,
             held.plans.join(", ")
         );
+    }
+    Ok(())
+}
+
+/// The Goal QA scenarios for the runner (D-40): each one's usage scenario, status and text as
+/// written, then the ones still open. QA scenarios can be recorded before any plan, so this
+/// needs no plan.json, and the e2e value is shown, not obeyed: Goal-close QA runs either way.
+fn goal_brief(ctx: &mut Context, dir: &Path) -> Result<()> {
+    let request = request_doc(dir)?;
+    let e2e = request.field("e2e").unwrap_or_default();
+    say!(
+        ctx,
+        "e2e brief: run {} — Goal QA — e2e: {}",
+        base_name(dir),
+        if e2e.is_empty() { "(not set)" } else { &e2e }
+    );
+    let rows = qa::rows(dir)?;
+    if rows.is_empty() {
+        say!(ctx, "(no QA scenarios — run dstack qa add)");
+        return Ok(());
+    }
+    // Only a QA scenario tied to a usage scenario needs the request's ## 사용 시나리오 outline.
+    let titles = match rows.iter().any(|row| row.scenario != NO_SCENARIO) {
+        true => qa::scenarios(request.text())?,
+        false => Vec::new(),
+    };
+    let usage = |row: &QaRow| {
+        if row.scenario == NO_SCENARIO {
+            return "(none)".to_string();
+        }
+        match titles.iter().find(|(id, _)| *id == row.scenario) {
+            Some((id, title)) if !title.is_empty() => format!("{id} {title}"),
+            _ => row.scenario.clone(),
+        }
+    };
+
+    say!(ctx, "\n## QA scenarios");
+    for row in &rows {
+        say!(ctx, "\n### {} — usage scenario: {} — status: {}", row.qa, usage(row), row.status);
+        // The runner works from this text, so a ledger row whose text is gone cannot be briefed.
+        let text = qa::body_text(dir, row)?.ok_or_else(|| {
+            Error::cannot_decide(format!("QA text missing: {}", dir.join(&row.body).display()))
+        })?;
+        ctx.out.say(text.strip_suffix('\n').unwrap_or(&text));
+    }
+    say!(ctx, "\n## Open QA scenarios");
+    let open: Vec<&QaRow> = rows.iter().filter(|row| row.status == "open").collect();
+    if open.is_empty() {
+        say!(ctx, "(no open QA scenarios)");
+        return Ok(());
+    }
+    say!(ctx, "| QA | usage scenario |");
+    say!(ctx, "|---|---|");
+    for row in open {
+        say!(ctx, "| {} | {} |", row.qa, usage(row));
     }
     Ok(())
 }

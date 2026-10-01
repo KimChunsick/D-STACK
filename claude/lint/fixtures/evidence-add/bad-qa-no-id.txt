@@ -1,0 +1,3 @@
+$ dstack check request
+check request: 3 rows, pending 0, withdrawn 0, deferred 0
+exit 0
