@@ -343,7 +343,8 @@ fn planned_part3() -> String {
          ## M2 wrap\n\n- 목표: 보고서를 정리해요\n- 확인한 Plan: (비어 있어요)\n\n\
          ### P3 third\n\n- 목적: 보고서 틀을 만들어요\n- E2E 초점: 보고서 출력을 봐요\n\
          - 다루는 R 행: (비어 있어요)\n- 선언 파일: `e/f.sh`\n- 선행 Plan: (비어 있어요)\n- 상태: `ready`\n\
-         - Task: (비어 있어요)\n"
+         - Task: (비어 있어요)\n\n\
+         ## QA 시나리오\n\n- QA: (비어 있어요)\n"
     )
 }
 

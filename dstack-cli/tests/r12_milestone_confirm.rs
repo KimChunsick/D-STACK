@@ -102,6 +102,7 @@ fn R12_milestone_confirm_brief_prints_goal_purposes_focus_and_placeholders() {
                     \x20 deps:      P1\n\
                     \x20 files:     c/d.sh\n\
                     \x20 tasks:     (none)\n\
+                    QA scenarios: (none yet)\n\
                     confirmed: no\n\
                     \x20 confirmed plans: (none)\n\
                     \x20 not confirmed:   P1, P2\n\
@@ -109,7 +110,7 @@ fn R12_milestone_confirm_brief_prints_goal_purposes_focus_and_placeholders() {
     assert_eq!(out, expected);
     let out = t.ok(&["milestone", "brief", "M3"]);
     assert!(out.starts_with("milestone M3: empty\n  goal: (none)\n"), "{out}");
-    assert!(out.contains("\n  plans: (none)\nconfirmed: no\n"), "{out}");
+    assert!(out.contains("\n  plans: (none)\nQA scenarios: (none yet)\nconfirmed: no\n"), "{out}");
     assert_eq!(run_tree(&t), before, "brief writes nothing");
 }
 

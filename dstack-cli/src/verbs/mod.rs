@@ -19,6 +19,7 @@ pub mod lint;
 pub mod mode;
 pub mod plan;
 pub mod prompt;
+pub mod qa;
 pub mod quick;
 pub mod report;
 pub mod request;
@@ -45,6 +46,7 @@ pub fn all_verbs() -> Vec<Box<dyn Verb>> {
     verbs.extend(decision::verbs());
     verbs.extend(ledger::verbs());
     verbs.extend(e2e_brief::verbs());
+    verbs.extend(qa::verbs());
     verbs.extend(plan::verbs());
     verbs.extend(review::verbs());
     verbs.extend(verify::verbs());

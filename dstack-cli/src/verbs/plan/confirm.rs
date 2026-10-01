@@ -1,6 +1,7 @@
 // verbs/plan/confirm.rs
-// dstack milestone brief and milestone confirm: show a Milestone's decomposition and record the
-// user's confirmation of its Plans, the list plan start and next read before a worker runs (R12).
+// dstack milestone brief and milestone confirm: show a Milestone's decomposition with the Goal's
+// QA scenarios and record the user's confirmation of its Plans, the list plan start and next read
+// before a worker runs (R12).
 
 use std::path::Path;
 
@@ -9,6 +10,7 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::store::plan::{Milestone, Plan, PlanDoc};
 use crate::store::plan_graph::counts_line;
+use crate::store::qa;
 use crate::store::request::RequestDoc;
 
 const BRIEF_USAGE: &str = "usage: dstack milestone brief M<n>";
@@ -147,6 +149,16 @@ fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
             say!(ctx, "    purpose: {}", or_none(&task.purpose));
             say!(ctx, "    covers:  {}", list(&task.covers));
         }
+    }
+    // The QA scenarios belong to the Goal, so every Milestone's brief shows all of them.
+    let scenarios = qa::rows(&target.dir)?;
+    if scenarios.is_empty() {
+        say!(ctx, "QA scenarios: (none yet)");
+    } else {
+        say!(ctx, "QA scenarios:");
+    }
+    for row in &scenarios {
+        say!(ctx, "  {}: scenario {}, status {}", row.qa, row.scenario, row.status);
     }
     let open: Vec<String> = plans
         .iter()

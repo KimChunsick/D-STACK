@@ -1,7 +1,7 @@
 // store/request_part3.rs
 // Part 3 of a Goal request (D-38, D-39): the marker line under `# 3부 계획과 검증`, the bytes the
 // approval hash covers, the requirement lines above it, and the plan the CLI regenerates below the
-// marker from plan.json.
+// marker from plan.json and the QA ledger.
 
 use std::path::Path;
 
@@ -9,6 +9,7 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, read_text, sha256_bytes};
 use crate::store::plan::{self, Milestone, Plan, PlanDoc};
 use crate::store::plan_graph::plan_covers;
+use crate::store::request_part3_qa;
 use crate::store::rows::{self, Row};
 use crate::store::visible::{heading, lines, Line};
 
@@ -83,10 +84,10 @@ pub fn sha256_approved(path: &Path) -> Result<String> {
         .map_err(|e| Error::cannot_decide(format!("cannot read {}: {e}", path.display())))
 }
 
-/// Rewrite part 3 of the request in the run directory `dir` from `doc`, written only when it
-/// changes. The bytes through the marker never change, so the approval stays valid. A run without
-/// request.md or without the marker (a legacy request) is left alone, and so is a marker on the
-/// last line without a line break, since appending would have to change the line it ends.
+/// Rewrite part 3 of the request in the run directory `dir` from `doc` and the run's QA ledger,
+/// written only when it changes. The bytes through the marker never change, so the approval stays
+/// valid. A run without request.md or without the marker (a legacy request) is left alone, and so
+/// is a marker on the last line without a line break, since appending would change the line.
 pub fn regenerate(dir: &Path, run: &str, doc: &PlanDoc) -> Result<()> {
     let file = dir.join("request.md");
     let Some(text) = read_text(&file)? else {
@@ -98,12 +99,27 @@ pub fn regenerate(dir: &Path, run: &str, doc: &PlanDoc) -> Result<()> {
     if !head.ends_with('\n') {
         return Ok(());
     }
-    let fresh = format!("{head}{}", render(&title(&text), run, doc));
+    let qa = request_part3_qa::render(dir)?;
+    let fresh = format!("{head}{}{qa}", render(&title(&text), run, doc));
     if fresh == text {
         return Ok(());
     }
     atomic_write(&file, fresh.as_bytes())
         .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", file.display())))
+}
+
+/// Part 3 rewritten for a writer that changes no plan (the QA ledger): from plan.json, or from no
+/// plan yet when the run has none, so a QA scenario recorded before planning shows too.
+pub fn refresh(dir: &Path, run: &str) -> Result<()> {
+    let doc = match plan::exists(dir) {
+        true => plan::load(dir)?,
+        false => PlanDoc {
+            v: 2,
+            milestones: Vec::new(),
+            plans: Vec::new(),
+        },
+    };
+    regenerate(dir, run, &doc)
 }
 
 /// What check request holds a marker-bearing request to (D-38): a row below the marker is no row
@@ -208,13 +224,13 @@ fn render_plan(out: &mut String, doc: &PlanDoc, plan: &Plan) {
 
 /// One `- label: value` list item, the value made inert and the placeholder standing in for an
 /// empty one.
-fn item(out: &mut String, indent: &str, label: &str, value: &str) {
+pub(crate) fn item(out: &mut String, indent: &str, label: &str, value: &str) {
     out.push_str(&format!("{indent}- {label}: {}\n", or_empty(&inert(value))));
 }
 
 /// Entered text as part 3 shows it: a `<` would open an HTML comment or tag that hides the rest
 /// of the part from a reader, so it is the entity, which still reads as `<`.
-fn inert(value: &str) -> String {
+pub(crate) fn inert(value: &str) -> String {
     value.replace('<', "&lt;")
 }
 
@@ -231,7 +247,7 @@ fn or_empty(value: &str) -> &str {
 }
 
 /// An identifier as inline code, or nothing when it is empty, so the placeholder shows instead.
-fn code(value: &str) -> String {
+pub(crate) fn code(value: &str) -> String {
     match value.is_empty() {
         true => String::new(),
         false => format!("`{value}`"),
