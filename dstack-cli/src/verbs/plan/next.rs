@@ -59,9 +59,10 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
     let ready = ids_with(&doc, "ready");
     let in_progress = ids_with(&doc, "in-progress");
     // R12/R07: a ready Plan its Milestone has not confirmed, or one without the E2E focus the
-    // run checks, is never schedulable. The run's e2e is read only when a ready Plan needs it,
-    // and before anything is printed, so a request.md that cannot be read leaves no half output.
-    let e2e = match ready.is_empty() {
+    // run checks, is never schedulable. The run's e2e is read whenever the run has a Plan, ready
+    // or not, so an e2e none run says the check is skipped even when nothing is ready; and before
+    // anything is printed, so a request.md that cannot be read leaves no half output.
+    let e2e = match doc.plans.is_empty() {
         true => None,
         false => Some(gate_e2e(&target.dir)?),
     };

@@ -202,3 +202,68 @@ fn R07_focus_gate_e2e_none_skips_the_focus_check() {
     assert!(out.starts_with("plan P1: ready → in-progress at "), "{out}");
     assert!(out.contains(&format!("\n  {SKIPPED}\n")), "{out}");
 }
+
+#[test]
+fn R12_focus_gate_a_re_minted_id_needs_a_new_confirm() {
+    let t = scratch(Some("cli"));
+    add_plan(&t, "first", Some("출력을 봐요"));
+    t.ok(&["milestone", "confirm", "M1"]);
+    t.ok(&["plan", "remove", "P1"]);
+    // With no Plan left, plan add mints P1 again for a different Plan.
+    let out = t.ok(&["plan", "add", "replacement", "--milestone", "M1", "--files", "replacement/a.sh", "--purpose", "바꿔요", "--e2e-focus", "출력을 봐요"]);
+    assert!(out.starts_with("plan P1: replacement (milestone M1)\n"), "{out}");
+    let next = t.ok(&["next"]);
+    assert!(
+        next.contains(&format!("excluded: P1 — {}\nschedulable: (none) — 0 of 3 free slot(s)\n", unconfirmed("P1"))),
+        "{next}"
+    );
+    assert_start_refused(&t, "P1", &unconfirmed("P1"));
+
+    t.ok(&["milestone", "confirm", "M1"]);
+    let out = t.ok(&["plan", "start", "P1", "--worktree", "wt"]);
+    assert!(out.starts_with("plan P1: ready → in-progress at "), "{out}");
+    assert!(git(&t, &["branch", "--list"]).contains("plan/P1-replacement"));
+}
+
+#[test]
+fn R12_focus_gate_a_re_minted_decimal_id_needs_a_new_confirm() {
+    let t = scratch(Some("cli"));
+    add_plan(&t, "first", Some("출력을 봐요"));
+    let insert = ["plan", "insert", "inserted", "--after", "P1", "--files", "inserted/a.sh", "--purpose", "끼워요", "--e2e-focus", "보고서를 봐요"];
+    t.ok(&insert);
+    t.ok(&["milestone", "confirm", "M1"]);
+    t.ok(&["plan", "remove", "P1.1"]);
+    let out = t.ok(&insert);
+    assert!(out.starts_with("plan P1.1: inserted (milestone M1)\n"), "{out}");
+    let next = t.ok(&["next"]);
+    assert!(
+        next.contains(&format!("excluded: P1.1 — {}\nschedulable: P1 — 1 of 3 free slot(s)\n", unconfirmed("P1.1"))),
+        "{next}"
+    );
+    assert_start_refused(&t, "P1.1", &unconfirmed("P1.1"));
+}
+
+#[test]
+fn R07_focus_gate_e2e_none_prints_the_skip_line_when_no_plan_is_ready() {
+    let t = scratch(Some("none"));
+    add_plan(&t, "first", None);
+    t.ok(&["milestone", "confirm", "M1"]);
+    t.ok(&["plan", "start", "P1"]);
+    let next = t.ok(&["next"]);
+    assert!(
+        next.contains(&format!("{SKIPPED}\nschedulable: (none) — 0 of 2 free slot(s)\n")),
+        "{next}"
+    );
+}
+
+#[test]
+fn R07_focus_gate_e2e_none_without_plans_prints_no_skip_line() {
+    let t = scratch(Some("none"));
+    let next = t.ok(&["next"]);
+    assert_eq!(
+        next,
+        "ready:       (none)\nin-progress: (none)\noverlaps:\n  (none)\n  overlapping file pairs: 0\n\
+         cap:         3 (PROJECT.md max_concurrent); in-progress 0; free slots 3\n\
+         schedulable: (none) — 0 of 3 free slot(s)\ncross-run warnings: 0\n"
+    );
+}
