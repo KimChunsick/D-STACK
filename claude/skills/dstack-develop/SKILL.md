@@ -264,8 +264,8 @@ including quick tasks and the final sealing review; legacy request values do not
    artifact. A failed case becomes a reviewed decimal Plan (`plan insert --after P<n>`); the milestone waits.
 2. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0.
 3. `dstack review --scope milestone --milestone M2` → ledger pass → seal.
-4. Goal close records no new evidence (every case ran at its milestone): `dstack verify` also
-   checks branch containment (R38). If the Goal branch does not contain the base branch HEAD it
+4. Goal close runs the Goal QA and records its evidence (dstack-verify §7). `dstack verify` also
+   checks branch containment (R38): if the Goal branch does not contain the base branch HEAD it
    refuses with "rebase first". After the rebase, re-run the ledger pass (step 3) for every
    Plan whose files had conflicts, then close.
 5. `dstack report` — R table with computed status; `UNMET` exits 1, only `ABSTAIN`/`BLOCKED`

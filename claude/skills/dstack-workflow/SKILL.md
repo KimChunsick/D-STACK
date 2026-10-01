@@ -232,7 +232,7 @@ With `request.approved` written and `dstack check request` clean, hand to **dsta
 milestones, Plans, `dstack next` waves, worker briefs, per-Plan review through **codex-review**.
 External research, when `external_research: one-pass`, is one research pass and one audit,
 executed by **codex-research** (R54) — never twice, never a re-audit loop. Verification and the
-final report belong to **dstack-verify**.
+final report belong to **dstack-verify**; Goal close runs the Goal QA per dstack-verify §7.
 
 ## 10. Long external runs (R98)
 

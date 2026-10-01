@@ -3,13 +3,20 @@
 // --milestone`, runs the Goal QA at Goal close (qa add with its three labels, `dstack e2e brief
 // --goal`, evidence add --qa), names verify's Goal QA refusals and when they apply, drops the old
 // "Goal close records no new evidence" sentence and stays within the 300-line skill cap;
-// runtime.md says verify also checks Goal QA.
+// runtime.md says verify also checks Goal QA. The pointers: dstack-develop §10 and dstack-workflow
+// send Goal close to dstack-verify §7, e2e-runner.md takes a Goal QA brief, and the help roster
+// names --goal, --qa, the Goal QA check and the QA table.
 #![allow(non_snake_case)]
 
 use std::path::PathBuf;
+use std::process::Command;
 
 const VERIFY: &str = "claude/skills/dstack-verify/SKILL.md";
 const RUNTIME: &str = "claude/runtime.md";
+const DEVELOP: &str = "claude/skills/dstack-develop/SKILL.md";
+const WORKFLOW: &str = "claude/skills/dstack-workflow/SKILL.md";
+const RUNNER: &str = "claude/agents/e2e-runner.md";
+const RECEIPT: &str = "Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.";
 const OLD_CLOSE: &str = "records no new evidence";
 
 fn repo() -> PathBuf {
@@ -65,7 +72,7 @@ fn R11_verify_docs_milestone_and_goal_briefs_come_from_e2e_brief() {
             "dstack e2e brief --goal",
             "set -euo pipefail",
             "mktemp -d",
-            "Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits; artifact paths; blockers/skips. Raw logs stay in artifacts.",
+            RECEIPT,
         ],
     );
     assert!(
@@ -143,4 +150,67 @@ fn R11_verify_docs_runtime_names_the_goal_qa_check() {
 fn R11_verify_docs_skill_stays_within_the_cap() {
     let lines = read(VERIFY).lines().count();
     assert!(lines <= 300, "{VERIFY}: {lines} lines, over 300");
+}
+
+#[test]
+fn R11_verify_docs_develop_sends_goal_close_to_verify() {
+    let text = read(DEVELOP);
+    assert!(!text.contains(OLD_CLOSE), "{DEVELOP} still says Goal close {OLD_CLOSE}");
+    let close = section(&text, "10. Closing a Milestone and the Goal");
+    assert_names("develop §10", close, &["Goal QA", "dstack-verify §7"]);
+}
+
+#[test]
+fn R11_verify_docs_workflow_points_at_the_goal_qa() {
+    assert_names(WORKFLOW, &read(WORKFLOW), &["Goal QA", "dstack-verify §7"]);
+}
+
+#[test]
+fn R11_verify_docs_runner_takes_a_goal_qa_brief() {
+    assert_names(
+        RUNNER,
+        &read(RUNNER),
+        &[
+            "dstack e2e brief --goal",
+            "준비:",
+            "단계:",
+            "기대 결과:",
+            "QA id",
+            "never edit",
+            "failed",
+            RECEIPT,
+        ],
+    );
+}
+
+#[test]
+fn R11_verify_docs_help_names_the_goal_qa_options() {
+    let out = Command::new(env!("CARGO_BIN_EXE_dstack"))
+        .arg("help")
+        .current_dir(repo())
+        .output()
+        .expect("run dstack help");
+    let help = String::from_utf8_lossy(&out.stdout);
+    let line = |verb: &str| {
+        help.lines()
+            .find(|line| line.starts_with(&format!("  {verb} ")))
+            .unwrap_or_else(|| panic!("no help line for {verb}"))
+            .to_string()
+    };
+    for (verb, phrase) in [
+        ("e2e brief", "--goal"),
+        ("evidence add", "--qa"),
+        ("verify", "Goal QA"),
+        ("report", "QA table"),
+    ] {
+        assert!(line(verb).contains(phrase), "help line of {verb} does not name {phrase:?}");
+    }
+}
+
+#[test]
+fn R11_verify_docs_pointer_files_stay_within_the_skill_cap() {
+    for path in [DEVELOP, WORKFLOW, RUNNER] {
+        let lines = read(path).lines().count();
+        assert!(lines <= 300, "{path}: {lines} lines, over 300");
+    }
 }
