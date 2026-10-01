@@ -3,7 +3,8 @@
 // themselves, so prose after one fills a part-1 section (check request), a part-2 section (the
 // design gate of request approve) and a background block (request background), and a row after
 // one counts; a section holding only template guidance still fails as empty, and guidance kept
-// beside such prose is still caught. R01 and R03 also read a row inside a comment as no row
+// beside such prose is still caught, as is guidance in a complete comment on a heading line
+// (D-37), which still opens no comment. R01 and R03 also read a row inside a comment as no row
 // (D-33): `req add` puts the next row after the last visible one and never reuses the hidden id,
 // and check request, request approve and the row verbs pass it by. A write never changes what a
 // comment hides: `req add`, `request approve` and the row edits of `req accept`, `req withdraw`
@@ -375,4 +376,50 @@ fn R03_comment_semantics_a_marker_refuses_to_land_inside_a_comment() {
     for verb in ["withdraw", "defer"] {
         refuses_hiding(&before, &["req", verb, "R01", "--why", "필요 없어졌어요."]);
     }
+}
+
+/// The background body of the round-029 case: a level-three heading carrying the guidance.
+const HEADED: &str = "### 참고 <!-- 배경을 적어요. (키: background) -->";
+
+#[test]
+fn R03_comment_semantics_guidance_inside_a_heading_line_is_caught() {
+    let out = check_background(HEADED);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("section ## 배경과 문제: template guidance still present"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn R03_comment_semantics_a_heading_without_guidance_fills_a_section() {
+    for body in ["### 참고", "### 참고 <!-- 메모예요. -->"] {
+        let out = check_background(body);
+        assert_eq!(out.status.code(), Some(0), "{body}: {}", stdout(&out));
+    }
+}
+
+#[test]
+fn R03_comment_semantics_a_heading_holds_only_its_closed_comments() {
+    // A heading line opens no comment: an opener left unclosed on it is heading text.
+    assert!(visible::comments("### 참고 <!-- 열어요\n닫아요 -->\n").is_empty());
+    for (text, comment) in [("### 참고 <!-->\n", "<!-->"), ("### 참고 <!--->\n", "<!--->")] {
+        assert_eq!(visible::comments(text), vec![comment], "{text}");
+    }
+    assert_eq!(visible::visible(&format!("{HEADED}\n")), format!("{HEADED}\n"));
+}
+
+#[test]
+fn R03_comment_semantics_design_gate_catches_guidance_inside_a_heading_line() {
+    let guidance = "### 참고 <!-- 바꿀 구조를 적어요. (키: proposed) -->";
+    let t = scratch(&goal("required").replacen(PROPOSED, guidance, 1));
+    let out = t.run(&["request", "approve", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(1), "{}{}", stdout(&out), stderr(&out));
+    assert!(
+        stdout(&out).contains("section ## 바꿀 구조: template guidance still present"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(!t.0.join(STAMP).exists());
 }

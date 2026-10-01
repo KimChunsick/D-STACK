@@ -42,9 +42,23 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
     out
 }
 
-/// The HTML comments of a text, `<!--` through `-->` (or the end of the text), in order.
+/// The HTML comments of a text, `<!--` through `-->` (or the end of the text), in order. A heading
+/// line opens no comment, yet one opened and closed inside it is inline HTML a renderer hides, so
+/// it is here too (D-37); an opener left unclosed on a heading line is heading text.
 pub fn comments(text: &str) -> Vec<&str> {
-    read(text).0.into_iter().map(|span| &text[span]).collect()
+    let (mut spans, lines) = read(text);
+    let mut start = 0;
+    for (raw, (_, heading)) in text.split('\n').zip(lines) {
+        if heading {
+            let (mut found, still) = scan(raw.trim_end_matches('\r'), false);
+            found.truncate(found.len() - usize::from(still));
+            spans.extend(found.into_iter().map(|span| start + span.start..start + span.end));
+        }
+        start += raw.len() + 1;
+    }
+    // A heading line starts outside every comment of `read` and none ends on it: apart, so sorted.
+    spans.sort_by_key(|span| span.start);
+    spans.into_iter().map(|span| &text[span]).collect()
 }
 
 /// What a renderer shows of a text: the text less its comments, the line breaks inside them too.

@@ -780,6 +780,7 @@ fn R03_prd_checks_fixtures_cover_every_case() {
     for name in [
         "bad-both-requirements-headings.md",
         "bad-guidance-only-section.md",
+        "bad-heading-guidance.md",
         "bad-missing-section.md",
         "bad-quick-guidance-summary.md",
         "bad-quick-retained-summary.md",
