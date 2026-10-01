@@ -7,6 +7,7 @@ use crate::selftest::Selftest;
 pub mod ask;
 pub mod decision;
 pub mod doctor;
+pub mod e2e_brief;
 pub mod exec;
 pub mod gate;
 pub mod handoff;
@@ -43,6 +44,7 @@ pub fn all_verbs() -> Vec<Box<dyn Verb>> {
     verbs.extend(ask::verbs());
     verbs.extend(decision::verbs());
     verbs.extend(ledger::verbs());
+    verbs.extend(e2e_brief::verbs());
     verbs.extend(plan::verbs());
     verbs.extend(review::verbs());
     verbs.extend(verify::verbs());
