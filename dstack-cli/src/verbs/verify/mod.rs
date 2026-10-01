@@ -18,6 +18,8 @@ use crate::store::request::RequestDoc;
 
 use states::{branch_line, kind_word, policy_violations, KINDS_E2E};
 
+pub mod qa_states;
+mod qa_selftest;
 pub mod states;
 
 /// say(): one stdout line.
@@ -101,6 +103,9 @@ fn verify(ctx: &mut Context, args: &[String]) -> Result<()> {
 
     // (2)+(3) per-R evidence and the sha256 recheck.
     let states = states::of(dir, &roots.main_root, target.kind, !violations.is_empty())?;
+    // The Goal-close QA check (R08, D-41), read before any line is printed: None for an exempt
+    // target, which prints nothing, so its output and exit stay what they were.
+    let qa = qa_states::of(dir, &roots.main_root, target.kind, doc.text())?;
     // --accept-abstain first, so the summary already reflects what the owner just accepted.
     let mut accepted = 0;
     if !accept.is_empty() {
@@ -154,6 +159,14 @@ fn verify(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
 
+    if let Some(check) = &qa {
+        for state in &check.states {
+            ctx.out.say(&state.line());
+        }
+        ctx.out.say(&check.summary());
+    }
+    let qa_refused = qa.as_ref().is_some_and(qa_states::QaCheck::refused);
+
     // (4) containment is a property of the run, not of an R (R38): quick tasks have no branch.
     let mut contained = true;
     if target.kind == TargetKind::Run {
@@ -161,7 +174,7 @@ fn verify(ctx: &mut Context, args: &[String]) -> Result<()> {
         ctx.out.say(&line);
         contained = held;
     }
-    let code = if failed > 0 || !contained {
+    let code = if failed > 0 || !contained || qa_refused {
         1
     } else if abstain > 0 || blocked > 0 {
         2
@@ -229,7 +242,7 @@ fn write_file(path: &Path, text: &str) -> Result<()> {
 
 /// verify: the fixture is a request.md; `<!-- selftest-tamper: yes -->` makes the driver edit a
 /// recorded artifact after recording it, which is exactly the hand-edit the sha256 recheck owes
-/// us a failure for.
+/// us a failure for, and `<!-- selftest-qa: S1=<state> -->` stages the Goal QA (qa_selftest).
 struct VerifySelftest;
 
 impl Selftest for VerifySelftest {
@@ -256,6 +269,7 @@ impl Selftest for VerifySelftest {
             let _ = sandbox.dsx(ctx, &["evidence", "add", "--r", r, "--case", "c1", "--kind", "cli",
                 "--artifact", &artifact.to_string_lossy(), "--produced-by", "selftest"])?;
         }
+        qa_selftest::stage(&sandbox, ctx, fixture)?;
         if Sandbox::directive(fixture, "tamper").as_deref() == Some("yes") {
             if let Some(path) = &first {
                 let text = std::fs::read_to_string(path).unwrap_or_default();

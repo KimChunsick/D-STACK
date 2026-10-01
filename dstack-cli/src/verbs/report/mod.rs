@@ -3,8 +3,8 @@
 //
 // The report computes no status of its own. Coverage comes from coverage_of (what
 // `dstack check coverage` prints), the per-R state from verify::states (what `dstack verify`
-// prints), the decision check from `dstack check decisions` as a self-call. A second opinion
-// here would be a second truth.
+// prints), the decision check from `dstack check decisions` as a self-call, the Goal QA table from
+// verify::qa_states (what verify prints for it). A second opinion here would be a second truth.
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
@@ -17,12 +17,13 @@ use crate::store::plan_graph::tasks_covering;
 use crate::store::request::RequestDoc;
 use crate::store::tsv::undash;
 use crate::verbs::ledger::coverage::coverage_of;
-use crate::verbs::verify::reasons_pretty;
+use crate::verbs::verify::{qa_states, reasons_pretty};
 use crate::verbs::verify::states::{self, branch_line, kind_word, policy_violations};
 
 use metrics::run_metrics;
 
 pub mod metrics;
+mod qa;
 
 /// say(): one stdout line.
 macro_rules! say { ($ctx:expr, $($line:tt)*) => { $ctx.out.say(&format!($($line)*)) }; }
@@ -111,6 +112,7 @@ fn report(ctx: &mut Context, args: &[String]) -> Result<()> {
     let doc = RequestDoc::load(&request)?;
     let violations = policy_violations(&roots.store, &doc);
     let states = states::of(&dir, &roots.main_root, target.kind, !violations.is_empty())?;
+    let qa = qa_states::of(&dir, &roots.main_root, target.kind, doc.text())?;
     // Containment is run-level like the decision check: an unrebased Goal branch means no row of
     // it is proven on top of the base, so it lands in every row's status rather than nowhere.
     let (branch_out, contained) = match target.kind {
@@ -264,6 +266,12 @@ fn report(ctx: &mut Context, args: &[String]) -> Result<()> {
     } else {
         0
     };
+    // An exempt target (D-41) prints no QA table and keeps its exit.
+    if let Some(check) = &qa {
+        if qa::table(ctx, check) {
+            code = 1;
+        }
+    }
     if metrics {
         ctx.out.say("");
         if !run_metrics(ctx, &roots, &target, &format!("{met}/{base} ({rate}%)"))? {
