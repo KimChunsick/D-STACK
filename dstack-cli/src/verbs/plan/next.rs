@@ -51,7 +51,7 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
             Some(value) if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()) => {
                 (shell_int(&value), value, "PROJECT.md max_concurrent")
             }
-            _ => (3, "3".to_string(), "default"),
+            _ => (5, "5".to_string(), "default"),
         }
     };
 

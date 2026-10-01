@@ -212,11 +212,11 @@ call next-max-huge     -- "$DSTACK" next --max 99999999999999999999
 
 # A policy value that is not a number falls back to the built-in cap, and says so.
 cp "$SANDBOX/.dstack/project/PROJECT.md" "$SANDBOX/project.bak"
-sed 's/^max_concurrent: 3$/max_concurrent: many/' "$SANDBOX/project.bak" > "$SANDBOX/.dstack/project/PROJECT.md"
+sed 's/^max_concurrent: [0-9][0-9]*$/max_concurrent: many/' "$SANDBOX/project.bak" > "$SANDBOX/.dstack/project/PROJECT.md"
 call next-cap-default -- "$DSTACK" next
 # A policy value no integer can hold is not refused anywhere: it is printed as it stands and the
 # free slots come out of the same wrapping arithmetic bash does.
-sed 's/^max_concurrent: 3$/max_concurrent: 9223372036854775808/' "$SANDBOX/project.bak" > "$SANDBOX/.dstack/project/PROJECT.md"
+sed 's/^max_concurrent: [0-9][0-9]*$/max_concurrent: 9223372036854775808/' "$SANDBOX/project.bak" > "$SANDBOX/.dstack/project/PROJECT.md"
 call next-cap-overflow -- "$DSTACK" next
 cp "$SANDBOX/project.bak" "$SANDBOX/.dstack/project/PROJECT.md"
 

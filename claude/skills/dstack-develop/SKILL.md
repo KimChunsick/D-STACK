@@ -108,12 +108,12 @@ one and the check itself is the evidence row.
 ## 5. The wave loop (R66, R38)
 
 Plans are the concurrency unit; overlap is decided on declared `files`, not on guesswork.
-GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`,
-`workflow.use_worktrees` default `true`. v2 keeps both, but **the CLI creates the worktree**
-(R36) and only the main session writes `STATE.md` and the ledger, under the CLI's lock.
+GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`, `workflow.use_worktrees`
+default `true`. v2 keeps worktrees and caps at PROJECT.md `max_concurrent` (default 5); **the CLI creates
+the worktree** (R36) and only the main session writes `STATE.md` and the ledger, under the CLI's lock.
 
 ```
-1. dstack next --max 3
+1. dstack next   (cap: PROJECT.md max_concurrent, default 5)
      → ready set, overlapping pairs with reasons, the cap, the schedulable subset,
        and cross-run overlap warnings (R38: other runs warn, they do not block)
 2. for each schedulable plan:
@@ -125,7 +125,7 @@ GSD `docs/CONFIGURATION.md`: `parallelization.max_concurrent_agents` default `3`
      answer questions, record additions, stop only conflicting/affected work, disclose unsupported input.
      Never duplicate a launch or mark unfinished work done to free input.
 5. per returned worker: run the checklist of §7, in order.
-6. dstack next --max 3   → next wave. Repeat until the Milestone has no pending plan.
+6. dstack next   → next wave. Repeat until the Milestone has no pending plan.
 ```
 
 Fix a Plan that `next` excludes, never work around it: `dstack plan edit P<n> --purpose <text>` /

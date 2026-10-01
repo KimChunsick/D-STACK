@@ -128,9 +128,10 @@ quoted request rows remain Korean. Read the installed Korean output style before
 
 `request.md` is one file holding the request (part 1), the design (part 2) and the plan and verification (part 3); parts 2 and 3 are Korean 해요체 as well, and other workflow artifacts stay English.
 
-The main session runs `dstack next --max 3` and `dstack plan start P<n> --worktree <path>`;
-only the CLI creates worktrees and records them. Supply the actual cwd, common-dir, branch,
-HEAD, declared files, R rows and artifact path. Never enable native worktree isolation.
+The main session runs `dstack next`, capped by PROJECT.md `max_concurrent` (default 5), and
+`dstack plan start P<n> --worktree <path>`; only the CLI creates worktrees and records them.
+Supply the actual cwd, common-dir, branch, HEAD, declared files, R rows and artifact path.
+Never enable native worktree isolation.
 Workers first run `dstack run verify`, compare those values and stop on a location mismatch.
 Spawn only the schedulable disjoint Plans, then apply the interruptible wait protocol above.
 Claude may launch its Agent calls as one wave; Codex uses bounded `spawn_agent` calls and

@@ -129,7 +129,7 @@ fn project_template(name: &str) -> String {
          e2e_evidence: cli\n\
          visual_diff: forbidden\n\
          team_style:\n\
-         max_concurrent: 3\n\
+         max_concurrent: 5\n\
          why: default policy written by dstack init — edit to match what this repository can \
          actually verify\n"
     )

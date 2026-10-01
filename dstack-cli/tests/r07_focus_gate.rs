@@ -103,7 +103,7 @@ fn R12_focus_gate_refuses_an_unconfirmed_plan_until_confirm() {
     assert_start_refused(&t, "P1", &unconfirmed("P1"));
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P1 — {}\nschedulable: (none) — 0 of 3 free slot(s)\n", unconfirmed("P1"))),
+        next.contains(&format!("excluded: P1 — {}\nschedulable: (none) — 0 of 5 free slot(s)\n", unconfirmed("P1"))),
         "{next}"
     );
 
@@ -113,8 +113,8 @@ fn R12_focus_gate_refuses_an_unconfirmed_plan_until_confirm() {
     assert_eq!(
         next,
         "ready:       P1\nin-progress: (none)\noverlaps:\n  (none)\n  overlapping file pairs: 0\n\
-         cap:         3 (PROJECT.md max_concurrent); in-progress 0; free slots 3\n\
-         schedulable: P1 — 1 of 3 free slot(s)\ncross-run warnings: 0\n"
+         cap:         5 (PROJECT.md max_concurrent); in-progress 0; free slots 5\n\
+         schedulable: P1 — 1 of 5 free slot(s)\ncross-run warnings: 0\n"
     );
     let out = t.ok(&["plan", "start", "P1", "--worktree", "wt"]);
     assert!(out.starts_with("plan P1: ready → in-progress at "), "{out}");
@@ -131,7 +131,7 @@ fn R12_focus_gate_excludes_a_plan_added_after_confirm() {
     add_plan(&t, "second", Some("보고서를 봐요"));
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 3 free slot(s)\n", unconfirmed("P2"))),
+        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 5 free slot(s)\n", unconfirmed("P2"))),
         "{next}"
     );
     assert_start_refused(&t, "P2", &unconfirmed("P2"));
@@ -139,7 +139,7 @@ fn R12_focus_gate_excludes_a_plan_added_after_confirm() {
     t.ok(&["milestone", "confirm", "M1"]);
     let next = t.ok(&["next"]);
     assert!(!next.contains("excluded:"), "{next}");
-    assert!(next.contains("schedulable: P1 P2 — 2 of 3 free slot(s)\n"), "{next}");
+    assert!(next.contains("schedulable: P1 P2 — 2 of 5 free slot(s)\n"), "{next}");
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn R07_focus_gate_excludes_a_confirmed_plan_whose_focus_was_removed() {
 
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 3 free slot(s)\n", unfocused("P2"))),
+        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 5 free slot(s)\n", unfocused("P2"))),
         "{next}"
     );
     assert!(!next.contains(SKIPPED), "{next}");
@@ -164,7 +164,7 @@ fn R07_focus_gate_excludes_a_confirmed_plan_whose_focus_was_removed() {
     t.ok(&["plan", "edit", "P2", "--e2e-focus", "보고서를 봐요"]);
     let next = t.ok(&["next"]);
     assert!(!next.contains("excluded:"), "{next}");
-    assert!(next.contains("schedulable: P1 P2 — 2 of 3 free slot(s)\n"), "{next}");
+    assert!(next.contains("schedulable: P1 P2 — 2 of 5 free slot(s)\n"), "{next}");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn R07_focus_gate_a_run_without_request_md_requires_focus() {
 
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 3 free slot(s)\n", unfocused("P2"))),
+        next.contains(&format!("excluded: P2 — {}\nschedulable: P1 — 1 of 5 free slot(s)\n", unfocused("P2"))),
         "{next}"
     );
     assert_start_refused(&t, "P2", &unfocused("P2"));
@@ -194,7 +194,7 @@ fn R07_focus_gate_e2e_none_skips_the_focus_check() {
     t.ok(&["milestone", "confirm", "M1"]);
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("{SKIPPED}\nschedulable: P1 — 1 of 3 free slot(s)\n")),
+        next.contains(&format!("{SKIPPED}\nschedulable: P1 — 1 of 5 free slot(s)\n")),
         "{next}"
     );
     assert!(!next.contains("excluded:"), "{next}");
@@ -214,7 +214,7 @@ fn R12_focus_gate_a_re_minted_id_needs_a_new_confirm() {
     assert!(out.starts_with("plan P1: replacement (milestone M1)\n"), "{out}");
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P1 — {}\nschedulable: (none) — 0 of 3 free slot(s)\n", unconfirmed("P1"))),
+        next.contains(&format!("excluded: P1 — {}\nschedulable: (none) — 0 of 5 free slot(s)\n", unconfirmed("P1"))),
         "{next}"
     );
     assert_start_refused(&t, "P1", &unconfirmed("P1"));
@@ -237,7 +237,7 @@ fn R12_focus_gate_a_re_minted_decimal_id_needs_a_new_confirm() {
     assert!(out.starts_with("plan P1.1: inserted (milestone M1)\n"), "{out}");
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("excluded: P1.1 — {}\nschedulable: P1 — 1 of 3 free slot(s)\n", unconfirmed("P1.1"))),
+        next.contains(&format!("excluded: P1.1 — {}\nschedulable: P1 — 1 of 5 free slot(s)\n", unconfirmed("P1.1"))),
         "{next}"
     );
     assert_start_refused(&t, "P1.1", &unconfirmed("P1.1"));
@@ -251,7 +251,7 @@ fn R07_focus_gate_e2e_none_prints_the_skip_line_when_no_plan_is_ready() {
     t.ok(&["plan", "start", "P1"]);
     let next = t.ok(&["next"]);
     assert!(
-        next.contains(&format!("{SKIPPED}\nschedulable: (none) — 0 of 2 free slot(s)\n")),
+        next.contains(&format!("{SKIPPED}\nschedulable: (none) — 0 of 4 free slot(s)\n")),
         "{next}"
     );
 }
@@ -263,7 +263,7 @@ fn R07_focus_gate_e2e_none_without_plans_prints_no_skip_line() {
     assert_eq!(
         next,
         "ready:       (none)\nin-progress: (none)\noverlaps:\n  (none)\n  overlapping file pairs: 0\n\
-         cap:         3 (PROJECT.md max_concurrent); in-progress 0; free slots 3\n\
-         schedulable: (none) — 0 of 3 free slot(s)\ncross-run warnings: 0\n"
+         cap:         5 (PROJECT.md max_concurrent); in-progress 0; free slots 5\n\
+         schedulable: (none) — 0 of 5 free slot(s)\ncross-run warnings: 0\n"
     );
 }
