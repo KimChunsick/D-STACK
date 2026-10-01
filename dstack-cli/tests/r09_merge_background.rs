@@ -2,8 +2,9 @@
 // R09: a row merged into an approved Goal request (`req add --run`) needs a background block from
 // `request background`: without one `check request` and `request approve` fail naming the verb,
 // with one the approval succeeds; every byte before the block is kept, approval leaves the block
-// as plain prose, a block without a pending row fails, a legacy-layout request still approves a
-// merged row without one, the verb refuses what it may not write, and the fixtures prove the rule.
+// as plain prose, a block without a pending row fails, as does a pending label with no prose
+// beside a valid block, a legacy-layout request still approves a merged row without one, the verb
+// refuses what it may not write (a heading among them), and the fixtures prove the rule.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -194,6 +195,37 @@ fn R09_merge_background_a_label_without_prose_does_not_count() {
     }
 }
 
+/// A pending label with no prose under it: the next line the reader sees is a heading.
+const BARE: &str = "### 추가 배경 (2026-01-03) — status: pending-approval\n\n";
+
+#[test]
+fn R09_merge_background_a_label_without_prose_beside_a_valid_block_fails() {
+    let t = approved_goal();
+    merge_row(&t);
+    assert_eq!(background(&t, ADDED).status.code(), Some(0));
+    let text = t.read(REQUEST);
+    let at = text.find("### 추가 배경 (").expect("the block");
+    let stray = format!("{}{BARE}{}", &text[..at], &text[at..]);
+    t.write(REQUEST, &stray);
+    let stamped = t.read(STAMP);
+    let lineno = text[..at].matches('\n').count() + 1;
+    let named =
+        format!("\n  background: line {lineno} is a pending background label with no prose");
+    let out = t.run(&["check", "request", "--run", RUN]);
+    let shown = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{shown}");
+    assert!(shown.contains(&named), "{shown}");
+    assert!(shown.contains(BARE.trim_end()), "{shown}");
+    // The valid block still counts, so the stray label is its own condition.
+    assert!(shown.contains("pending background blocks 1\n"), "{shown}");
+    assert!(!shown.contains(MISSING), "{shown}");
+    let out = t.run(&["request", "approve", "--run", RUN]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(stdout(&out).contains(&named), "{}", stdout(&out));
+    assert_eq!(t.read(REQUEST), stray, "a refused approval writes nothing");
+    assert_eq!(t.read(STAMP), stamped, "a refused approval keeps the stamp");
+}
+
 /// A label written as an example inside a comment and inside a fence of the approved background.
 const DECOYS: &str = "<!--\n### 추가 배경 (2026-01-01) — status: pending-approval\n\n\
                       주석 속 예시예요.\n-->\n\n```text\n\
@@ -291,6 +323,26 @@ fn R09_merge_background_refuses_what_it_may_not_write() {
         "added.md",
     ]);
     refused(&t, request, out, "quick");
+}
+
+#[test]
+fn R09_merge_background_refuses_a_heading_in_the_content() {
+    let t = approved_goal();
+    merge_row(&t);
+    keep(&t, REQUEST);
+    // First, the label has no prose before it; after prose, the heading splits the block.
+    for (content, lineno) in [
+        ("### 소제목\n\n소제목 아래 글이에요.\n", 1),
+        ("앞선 글이에요.\n\n###### 소제목\n\n뒤 글이에요.\n", 3),
+    ] {
+        let out = background(&t, content);
+        let why = format!("line {lineno} of the content is a heading (a background block is prose");
+        refused(&t, REQUEST, out, &why);
+    }
+    // In a fence or a comment a heading is an example, so the content is still prose.
+    let examples = "글이에요.\n\n```text\n### 예시\n```\n\n<!--\n### 주석 속 예시\n-->\n";
+    let out = background(&t, examples);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
 }
 
 /// The stamp an approval made before the PRD checks left behind.

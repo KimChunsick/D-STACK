@@ -68,6 +68,15 @@ pub fn background(ctx: &mut Context, args: &[String]) -> Result<()> {
             index + 1
         );
     }
+    // The label is the block's one heading: another would leave the label without prose or
+    // split the block, so the content holds none outside comments and fences (an example).
+    if let Some((index, (line, _))) = read(&content).enumerate().find(|(_, (_, l))| l.is_none()) {
+        fail!(
+            "line {} of the content is a heading (a background block is prose under the label request background writes): {}",
+            index + 1,
+            line.trim_end_matches('\r')
+        );
+    }
     let doc = load(&target)?;
     let date = utc_now()[..10].to_string();
     let text = match append(doc.text(), &content, &date) {
@@ -124,22 +133,41 @@ fn is_pending(line: &str) -> bool {
     line.starts_with(LABEL) && line.ends_with(MARKER)
 }
 
-/// The line numbers of the pending block labels in the background body; none when the outline
-/// gives no single section. A label counts only as a real heading (column 0, outside every
-/// comment and fence) whose block shows text outside comments before the next heading or the
-/// end of the section, so an example in a comment or fence is neither counted nor cleared.
-fn pending_lines(text: &str) -> Vec<usize> {
+/// The pending block labels of the background body as (line number, line, whether the block
+/// shows text outside comments before the next heading or the end of the section); none when
+/// the outline gives no single section. A label is a real heading (column 0, outside every
+/// comment and fence), so an example in a comment or fence is neither counted nor cleared.
+fn labels(text: &str) -> Vec<(usize, &str, bool)> {
     let Ok(range) = locate(text, &SECTION) else {
         return Vec::new();
     };
     let first = text[..range.start].matches('\n').count() + 1;
-    let mut found = Vec::new();
-    // The label line of the block being read, and whether it has shown text yet.
-    let mut label: Option<(usize, bool)> = None;
+    let mut found: Vec<(usize, &str, bool)> = Vec::new();
+    // Whether the block being read opened with a label.
+    let mut open = false;
+    for (index, (line, read)) in read(&text[range]).enumerate() {
+        match (read, found.last_mut()) {
+            (None, _) => {
+                open = is_pending(line);
+                if open {
+                    found.push((first + index, line, false));
+                }
+            }
+            (Some(shown), Some((_, _, seen))) if open => *seen |= shown,
+            _ => {}
+        }
+    }
+    found
+}
+
+/// Each raw line of a text (as `clear` strips the marker from it) with how the block reader
+/// sees it: None for a column-0 heading outside every comment and fence, else whether it shows
+/// text outside comments.
+fn read(text: &str) -> impl Iterator<Item = (&str, Option<bool>)> {
     let mut fence: Option<(u8, usize)> = None;
     let mut comment = false;
-    for (index, line) in text[range].split('\n').enumerate() {
-        let (raw, line) = (line, line.trim_end_matches('\r'));
+    text.split('\n').map(move |raw| {
+        let line = raw.trim_end_matches('\r');
         let shown;
         if let Some(open) = fence {
             fence = fence.filter(|_| !closes(line, open));
@@ -150,25 +178,12 @@ fn pending_lines(text: &str) -> Vec<usize> {
             fence = Some(open);
             shown = true;
         } else if heading(line) {
-            if let Some((lineno, true)) = label.take() {
-                found.push(lineno);
-            }
-            // The raw line, as `clear` strips the marker from it.
-            if is_pending(raw) {
-                label = Some((first + index, false));
-            }
-            continue;
+            return (raw, None);
         } else {
             (comment, shown) = outside(line, false);
         }
-        if let Some((_, seen)) = label.as_mut() {
-            *seen |= shown;
-        }
-    }
-    if let Some((lineno, true)) = label {
-        found.push(lineno);
-    }
-    found
+        (raw, Some(shown))
+    })
 }
 
 // The line reading below is the twin of store::request_sections (its `outline`, `comment_end`,
@@ -216,15 +231,28 @@ fn closes(line: &str, (mark, run): (u8, usize)) -> bool {
     line.len() - rest.len() <= 3 && length >= run && rest[length..].trim_matches(SPACE).is_empty()
 }
 
+/// The label line numbers of the blocks that count: a label with prose under it.
+fn blocks(text: &str) -> Vec<usize> {
+    let labels = labels(text).into_iter().filter(|(_, _, prose)| *prose);
+    labels.map(|(lineno, _, _)| lineno).collect()
+}
+
 /// How many blocks still wait for `request approve`.
 pub fn pending_blocks(text: &str) -> usize {
-    pending_lines(text).len()
+    blocks(text).len()
+}
+
+/// The pending labels with no prose under them, as (line number, line): `check request` fails
+/// each one, so `request approve` never leaves one behind with its marker.
+pub fn bare_labels(text: &str) -> Vec<(usize, &str)> {
+    let labels = labels(text).into_iter().filter(|(_, _, prose)| !prose);
+    labels.map(|(lineno, line, _)| (lineno, line)).collect()
 }
 
 /// The text with every block's marker removed, and how many there were: what `request approve`
 /// writes before it re-stamps, so the block stays as plain prose.
 pub fn clear(text: &str) -> (String, usize) {
-    let lines = pending_lines(text);
+    let lines = blocks(text);
     let mut out = text.to_string();
     for &lineno in &lines {
         let line = rowfile::lines(&out)[lineno - 1].to_string();

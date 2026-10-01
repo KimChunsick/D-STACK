@@ -119,7 +119,8 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
 
 /// R09: a row merged into an approved Goal request carries the background it adds, and a block
 /// explains a merged row. Pending rows without a pending background block fail, as does a block
-/// with no pending row; `request approve` clears both kinds of marker together. Judged in both
+/// with no pending row, and each pending label with no prose under it, even beside a block that
+/// counts; `request approve` clears both kinds of marker together. Judged in both
 /// modes, apart from `sections`, which skips an unchanged approval. A quick request (which
 /// `request background` refuses) and one with none of the PRD layout headings, which has no
 /// background section to append to, are exempt, so their merged rows still approve (D-28).
@@ -129,7 +130,11 @@ pub fn background(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize
     }
     let rows = doc.rows().iter().filter(|row| row.is_pending()).count();
     let blocks = block::pending_blocks(doc.text());
-    match (rows, blocks) {
+    let bare = block::bare_labels(doc.text());
+    for (lineno, line) in &bare {
+        say!(ctx, "  background: line {lineno} is a pending background label with no prose before the next heading (write prose under it, or remove it): {line}");
+    }
+    let failed = match (rows, blocks) {
         (0, 0) => 0,
         (_, 0) => {
             say!(ctx, "  background: {rows} pending row(s) and no pending background block (dstack request background {} --from <file>)", target_flags(target).join(" "));
@@ -146,7 +151,8 @@ pub fn background(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize
             );
             0
         }
-    }
+    };
+    failed + bare.len()
 }
 
 /// Whether any column-0 ATX heading of the text is one of the PRD layout's, at its level. Unlike
