@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::fsx::sha256_file;
 use crate::core::target::{Target, TargetKind};
 use crate::store::request::{approval_matches, RequestDoc};
+use crate::store::request_part3::sha256_approved;
 use crate::store::request_sections::{body, is_blank, label, Place};
 use crate::store::tables::decisions;
 
@@ -34,7 +34,7 @@ pub fn gate(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> Result<()> 
     }
     let approved = is_approved(target);
     if approved {
-        let unchanged = sha256_file(&request_file(target))
+        let unchanged = sha256_approved(&request_file(target))
             .is_ok_and(|hash| approval_matches(&target.dir, &hash).unwrap_or(false));
         if unchanged {
             ctx.out.say("  not judged (approved and unchanged since)");

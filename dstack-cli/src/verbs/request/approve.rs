@@ -4,11 +4,12 @@
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::fsx::{sha256_file, utc_now};
+use crate::core::fsx::utc_now;
 use crate::core::mode::Mode;
 use crate::core::target::{resolve_target, TargetKind};
 use crate::core::tools::tool_check_for_mode;
 use crate::store::request::{seen_lines, seen_rows, write_approval};
+use crate::store::request_part3::sha256_approved;
 use crate::store::{cases, rows, visible};
 
 use super::{
@@ -102,8 +103,7 @@ pub fn approve(ctx: &mut Context, args: &[String]) -> Result<()> {
         rowfile::write(&file, &text)?;
     }
 
-    let hash = sha256_file(&file)
-        .map_err(|e| Error::cannot_decide(format!("cannot read {}: {e}", file.display())))?;
+    let hash = sha256_approved(&file)?;
     write_approval(&target.dir, &hash, &utc_now())?;
 
     ctx.out.say("== diff against the agent draft");

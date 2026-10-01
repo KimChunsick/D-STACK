@@ -3,9 +3,9 @@
 // approval, and the lines the R43 cap counts.
 
 use crate::core::context::Context;
-use crate::core::fsx::sha256_file;
 use crate::core::target::{Target, TargetKind};
 use crate::store::request::{approval_matches, RequestDoc};
+use crate::store::request_part3::sha256_approved;
 use crate::store::request_sections::{body, is_blank, label, Place, REQUIREMENTS, SECTION_KEYS};
 use crate::store::rows;
 use crate::store::visible;
@@ -44,7 +44,7 @@ pub fn sections(ctx: &mut Context, target: &Target, doc: &RequestDoc) -> usize {
     let approved = is_approved(target);
     if approved {
         // An unreadable file or stamp proves nothing unchanged, so the request is judged.
-        let unchanged = sha256_file(&request_file(target))
+        let unchanged = sha256_approved(&request_file(target))
             .is_ok_and(|hash| approval_matches(&target.dir, &hash).unwrap_or(false));
         if unchanged {
             ctx.out.say(

@@ -10,6 +10,7 @@ use crate::core::fsx::{sha256_bytes, utc_to_epoch};
 use crate::handoff::types::{Document, Snapshot, WorkItem};
 use crate::store::cases::{CaseRow, CASES_HEADER};
 use crate::store::plan::PlanDoc;
+use crate::store::request_part3::approval_hash;
 use super::{canonical, cannot, entries, git, local_directory, push_document, read_bytes, read_text, required, DOCUMENT_LIMIT, ENTRY_LIMIT};
 
 pub(super) fn documents(run: &Path, docs: &mut Vec<Document>) -> Result<()> {
@@ -27,7 +28,7 @@ pub(super) fn documents(run: &Path, docs: &mut Vec<Document>) -> Result<()> {
     }
     let request = text(docs, "state:request").expect("required request");
     let stamp: Vec<_> = text(docs, "state:approval").expect("required approval").split_whitespace().collect();
-    if stamp.len() != 4 || stamp[0] != "sha256" || stamp[1] != sha256_bytes(request.as_bytes())
+    if stamp.len() != 4 || stamp[0] != "sha256" || stamp[1] != approval_hash(request)
         || stamp[2] != "approved_at" || utc_to_epoch(stamp[3]).is_none()
     {
         return Err(Error::failed("handoff requires the current request to match its valid approval stamp"));

@@ -8,8 +8,9 @@ use time::macros::format_description;
 use time::{Duration, OffsetDateTime};
 
 use crate::core::error::{Error, Result};
-use crate::core::fsx::{sha256_file, utc_now};
+use crate::core::fsx::utc_now;
 use crate::selftest::sandbox::Sandbox;
+use crate::store::request_part3::sha256_approved;
 
 /// A plain cli request with R01 and R02 (_selftest_write_request).
 const REQUEST: &str = "---
@@ -34,8 +35,8 @@ korean_polish: off
 impl Sandbox {
     /// The approval stamp request approve writes (two spaces between the fields).
     pub fn approve(&self, run_dir: &Path) -> Result<()> {
-        let hash = sha256_file(&run_dir.join("request.md"))
-            .map_err(|e| Error::cannot_decide(format!("sandbox: no request.md: {e}")))?;
+        let hash = sha256_approved(&run_dir.join("request.md"))
+            .map_err(|e| Error::cannot_decide(format!("sandbox: no request.md: {}", e.message())))?;
         self.write(
             &run_dir.join("request.approved"),
             &format!("sha256 {}  approved_at {}\n", hash, utc_now()),

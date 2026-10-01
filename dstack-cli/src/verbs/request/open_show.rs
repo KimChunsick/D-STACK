@@ -5,10 +5,10 @@ use std::process::{Command, Stdio};
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::fsx::sha256_file;
 use crate::core::target::resolve_target;
 use crate::core::tools::tool_present;
 use crate::store::request::{approval_matches, stamp_text};
+use crate::store::request_part3::sha256_approved;
 
 use super::{counts, draft_file, is_approved, load, require_file};
 
@@ -58,8 +58,7 @@ pub fn show(ctx: &mut Context, args: &[String]) -> Result<()> {
     ctx.out.say("---");
     say!(ctx, "path: {}", file.display());
     if is_approved(&target) {
-        let hash = sha256_file(&file)
-            .map_err(|e| Error::cannot_decide(format!("cannot read {}: {e}", file.display())))?;
+        let hash = sha256_approved(&file)?;
         say!(ctx, "approved: yes ({})", stamp_text(&target.dir)?.unwrap_or_default());
         if approval_matches(&target.dir, &hash)? {
             ctx.out.say("hash: matches the approved file");

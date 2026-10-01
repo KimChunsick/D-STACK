@@ -17,7 +17,7 @@ const TYPES: [&str; 5] = ["web-ui", "http-api", "cli", "library", "docs-writing"
 const TITLE: &str = "PRD 틀 시험";
 
 /// The headings of a fresh Goal request after its title, in file order.
-const LAYOUT: [&str; 14] = [
+const LAYOUT: [&str; 15] = [
     "## 한눈에 보기",
     "# 1부 요청",
     "## 배경과 문제",
@@ -32,6 +32,7 @@ const LAYOUT: [&str; 14] = [
     "## 검토한 대안과 버린 이유",
     "## R 행과 모듈의 대응",
     "## 위험",
+    "# 3부 계획과 검증",
 ];
 
 /// Prose for every part-1 key, so the request is one a reader could approve.
@@ -154,7 +155,14 @@ fn R01_prd_templates_keep_row_approval_and_hash_exit_codes() {
         t.write(&request, &skipped);
         assert_eq!(code(&t, &["request", "approve"]), 0, "{work_type}: approve");
         assert_eq!(code(&t, &["check", "request"]), 0, "{work_type}: approved");
-        let edited = format!("{}승인 뒤에 덧붙인 줄이에요.\n", t.read(&request));
+        // Part 3 below its marker is the CLI's to regenerate (R15), so the edit goes above it.
+        let approved = t.read(&request);
+        let edited = approved.replacen(
+            "\n# 3부 계획과 검증\n",
+            "\n승인 뒤에 덧붙인 줄이에요.\n\n# 3부 계획과 검증\n",
+            1,
+        );
+        assert_ne!(edited, approved, "{work_type}: the part 3 heading");
         t.write(&request, &edited);
         let out = t.run(&["check", "request"]);
         assert_eq!(out.status.code(), Some(1), "{work_type}: edited");

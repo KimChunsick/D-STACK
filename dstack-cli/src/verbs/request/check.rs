@@ -7,12 +7,12 @@
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::fsx::sha256_file;
 use std::path::Path;
 
 use crate::core::paths::{fmt_rid, is_plain_name, parse_rid};
 use crate::core::target::{resolve_target, Target};
 use crate::store::request::{approval_matches, req_enum, seen_lines, RequestDoc, REQ_FIELDS};
+use crate::store::request_part3::sha256_approved;
 use crate::store::tables::{q_count, questions};
 
 use super::{is_approved, load, prd_check, request_file, rowfile};
@@ -180,15 +180,10 @@ pub fn core(ctx: &mut Context, target: &Target, mode: Mode) -> Result<usize> {
     let mut approved = "no";
     if is_approved(target) {
         approved = "yes";
-        if mode == Mode::Full {
-            let hash = sha256_file(&file).map_err(|e| {
-                Error::cannot_decide(format!("cannot read {}: {e}", file.display()))
-            })?;
-            if !approval_matches(&target.dir, &hash)? {
-                ctx.out
-                    .say("  hash mismatch (edited after approval): dstack request approve");
-                bad += 1;
-            }
+        if mode == Mode::Full && !approval_matches(&target.dir, &sha256_approved(&file)?)? {
+            ctx.out
+                .say("  hash mismatch (edited after approval): dstack request approve");
+            bad += 1;
         }
     }
     say!(ctx, "  approved: {approved}");
