@@ -42,6 +42,7 @@ macro_rules! plan_verb {
 }
 
 pub mod add;
+pub mod confirm;
 pub mod edit;
 pub mod lifecycle;
 pub mod milestone;
@@ -53,6 +54,8 @@ pub fn verbs() -> Vec<Box<dyn Verb>> {
     vec![
         Box::new(milestone::MilestoneAdd),
         Box::new(milestone::MilestoneEdit),
+        Box::new(confirm::MilestoneBrief),
+        Box::new(confirm::MilestoneConfirm),
         Box::new(add::PlanAdd),
         Box::new(add::PlanInsert),
         Box::new(edit::PlanRemove),
