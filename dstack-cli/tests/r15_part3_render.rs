@@ -1,14 +1,18 @@
 // tests/r15_part3_render.rs
 // R15 (T11): a Goal request carries part 3 under `# 3부 계획과 검증` with the marker line right
-// below the heading; the approval hash covers the bytes above the marker, so part 3 may change
-// after approval while one character changed above it fails, and a request without the marker
-// keeps the whole-file hash it always had (D-38).
+// below the heading; the approval hash covers the bytes through the marker line, so part 3 may
+// change after approval while one character changed above it fails, deleting the marker with
+// part 3 fails too, and a request without the marker keeps its whole-file hash (D-38, D-39).
+// R15 (T50): every plan verb regenerates part 3 from plan.json in hierarchy order, check request
+// names an empty Milestone goal or Plan purpose, and a legacy request is never touched.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
 
 #[path = "support/mode_settings.rs"]
 mod support;
+
+use std::path::PathBuf;
 
 use dstack_cli::core::fsx::sha256_bytes;
 use dstack_cli::core::roots::Roots;
@@ -43,7 +47,8 @@ fn request(marker: bool) -> String {
          ## 목표\n\n1. 계획이 바뀌어도 승인이 유지돼요.\n\n\
          ## 비목표\n\n1. 1부와 2부의 보호는 줄이지 않아요.\n\n\
          ## 사용 시나리오\n\n### S1 계획을 고쳐요\n\n메인이 계획을 고치고 요청서를 검사해요.\n\n\
-         ## 요구사항\n\n- [ ] **R01** 첫 요구사항이에요. — accept: 첫 확인이에요.\n\n\
+         ## 요구사항\n\n- [ ] **R01** 첫 요구사항이에요. — accept: 첫 확인이에요.\n\
+         - [ ] **R02** 둘째 요구사항이에요. — accept: 둘째 확인이에요.\n\n\
          ## 열린 가정\n\n없음.\n\n# 2부 설계\n\n\
          ## 위험\n\n승인 뒤의 수정을 놓칠 수 있어요.\n\n\
          {HEADING}\n{marker}<!-- 계획 대장에서 채워요. -->\n### M1 첫 묶음\n\n- P1 첫 계획이에요.\n"
@@ -81,10 +86,15 @@ fn stamp(t: &Scratch) -> String {
     text.split_whitespace().nth(1).expect("the hash field").to_string()
 }
 
-/// Every byte above the marker line, the marker line excluded.
-fn above_marker(text: &str) -> &str {
+/// Every byte through the marker line, its line break included: what the approval covers.
+fn through_marker(text: &str) -> &str {
     let at = text.find(&format!("\n{MARKER}\n")).expect("the marker line");
-    &text[..at + 1]
+    &text[..at + MARKER.len() + 2]
+}
+
+/// Everything below the marker line: what plan verbs regenerate.
+fn part3(text: &str) -> &str {
+    &text[through_marker(text).len()..]
 }
 
 /// check request's exit code and stdout.
@@ -180,10 +190,10 @@ fn R15_part3_hash_templates_put_the_marker_under_the_part3_heading() {
 }
 
 #[test]
-fn R15_part3_hash_stamps_the_bytes_above_the_marker() {
+fn R15_part3_hash_stamps_the_bytes_through_the_marker() {
     let text = request(true);
     let t = approved(&text);
-    assert_eq!(stamp(&t), sha256_bytes(above_marker(&text).as_bytes()));
+    assert_eq!(stamp(&t), sha256_bytes(through_marker(&text).as_bytes()));
     assert_matches(&t, "approved");
     for (what, edited) in [
         ("a line at the end", format!("{text}- P2 새 계획이에요.\n")),
@@ -195,7 +205,7 @@ fn R15_part3_hash_stamps_the_bytes_above_the_marker() {
             "a line right under the marker",
             edit(&text, &format!("{MARKER}\n"), &format!("{MARKER}\n새 줄이에요.\n")),
         ),
-        ("part 3 emptied", format!("{}{MARKER}\n", above_marker(&text))),
+        ("part 3 emptied", through_marker(&text).to_string()),
     ] {
         t.write(REQUEST, &edited);
         assert_matches(&t, what);
@@ -254,4 +264,206 @@ fn R15_part3_hash_request_section_risks_keeps_the_heading_and_marker() {
     assert_ne!(after, before, "the risks section was written");
     assert!(after.contains("## 위험\n\n승인 뒤의 수정을 놓칠 수 있어요.\n"), "{after}");
     assert_eq!(part3(&after), part3(&before));
+}
+
+#[test]
+fn R15_part3_hash_fails_when_the_marker_and_part3_are_deleted() {
+    let text = request(true);
+    let t = approved(&text);
+    let at = text.find(&format!("{MARKER}\n")).expect("the marker line");
+    t.write(REQUEST, &text[..at]);
+    assert_mismatch(&t, "the marker and part 3 deleted");
+    t.write(REQUEST, &text);
+    assert_matches(&t, "restored");
+}
+
+/// The guidance every render starts with, as the templates write it under the marker.
+const GUIDANCE: &str = "<!-- 이 부분은 직접 쓰지 않아요. 계획 대장(plan.json)이 바뀔 때마다 CLI가 Milestone, Plan, Task 분해를 채워요. -->";
+
+/// An approved request in a store with the scope table this checkout ships, so lint-ko and
+/// milestone confirm read request.md as the approve-time tests do.
+fn scoped(text: &str) -> Scratch {
+    let t = scratch(text);
+    let table = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../claude/lint/ko-scope.tsv");
+    let table = std::fs::read_to_string(table).expect("the shipped scope table");
+    t.write(".dstack/project/ko-scope.tsv", &table);
+    t.ok(&["request", "approve"]);
+    t
+}
+
+/// The planning steps of the fixture, each with a line its part 3 shows afterwards: two
+/// Milestones with goals; M1 holds P1 (task T1) and P2 (after P1, tasks T2 and T3, T3 without a
+/// purpose); M2 holds P3 without tasks.
+const PLANNING: [(&[&str], &str); 8] = [
+    (&["milestone", "add", "core", "--goal", "설치를 한 번에 끝내요"], "## M1 core\n\n- 목표: 설치를 한 번에 끝내요\n"),
+    (&["milestone", "add", "wrap", "--goal", "보고서를 정리해요"], "## M2 wrap\n\n- 목표: 보고서를 정리해요\n"),
+    (
+        &["plan", "add", "first", "--milestone", "M1", "--files", "a/b.sh", "--purpose", "설치 스크립트를 정리해요", "--e2e-focus", "설치 출력이 그대로예요"],
+        "### P1 first\n\n- 목적: 설치 스크립트를 정리해요\n",
+    ),
+    (
+        &["plan", "add", "second", "--milestone", "M1", "--files", "c/d.sh,c/e.sh", "--deps", "P1", "--purpose", "설치를 연결해요", "--e2e-focus", "설치 기록을 봐요"],
+        "### P2 second\n\n- 목적: 설치를 연결해요\n",
+    ),
+    (
+        &["plan", "add", "third", "--milestone", "M2", "--files", "e/f.sh", "--purpose", "보고서 틀을 만들어요", "--e2e-focus", "보고서 출력을 봐요"],
+        "### P3 third\n\n- 목적: 보고서 틀을 만들어요\n",
+    ),
+    (
+        &["task", "add", "write-lib", "--plan", "P1", "--covers", "R01", "--files", "a/b.sh", "--purpose", "라이브러리를 써요"],
+        "- Task T1 write-lib\n  - 목적: 라이브러리를 써요\n",
+    ),
+    (
+        &["task", "add", "wire", "--plan", "P2", "--covers", "R01,R02", "--files", "c/d.sh", "--purpose", "스크립트를 이어요"],
+        "- Task T2 wire\n  - 목적: 스크립트를 이어요\n",
+    ),
+    (&["task", "add", "docs", "--plan", "P2", "--covers", "R02", "--files", "c/e.sh"], "- Task T3 docs\n  - 목적: (비어 있어요)\n"),
+];
+
+/// Part 3 once every planning step ran.
+fn planned_part3() -> String {
+    format!(
+        "{GUIDANCE}\n\nGoal `{RUN}`: 3부 해시 시험\n\n\
+         ## M1 core\n\n- 목표: 설치를 한 번에 끝내요\n- 확인한 Plan: (비어 있어요)\n\n\
+         ### P1 first\n\n- 목적: 설치 스크립트를 정리해요\n- E2E 초점: 설치 출력이 그대로예요\n\
+         - 다루는 R 행: R01\n- 선언 파일: `a/b.sh`\n- 선행 Plan: (비어 있어요)\n- 상태: `ready`\n\
+         - Task T1 write-lib\n  - 목적: 라이브러리를 써요\n  - 다루는 R 행: R01\n\
+         \x20 - 상태: 아직 커밋하지 않았어요\n\n\
+         ### P2 second\n\n- 목적: 설치를 연결해요\n- E2E 초점: 설치 기록을 봐요\n\
+         - 다루는 R 행: R01, R02\n- 선언 파일: `c/d.sh`, `c/e.sh`\n- 선행 Plan: P1\n- 상태: `pending`\n\
+         - Task T2 wire\n  - 목적: 스크립트를 이어요\n  - 다루는 R 행: R01, R02\n\
+         \x20 - 상태: 아직 커밋하지 않았어요\n\
+         - Task T3 docs\n  - 목적: (비어 있어요)\n  - 다루는 R 행: R02\n\
+         \x20 - 상태: 아직 커밋하지 않았어요\n\n\
+         ## M2 wrap\n\n- 목표: 보고서를 정리해요\n- 확인한 Plan: (비어 있어요)\n\n\
+         ### P3 third\n\n- 목적: 보고서 틀을 만들어요\n- E2E 초점: 보고서 출력을 봐요\n\
+         - 다루는 R 행: (비어 있어요)\n- 선언 파일: `e/f.sh`\n- 선행 Plan: (비어 있어요)\n- 상태: `ready`\n\
+         - Task: (비어 있어요)\n"
+    )
+}
+
+fn planned(text: &str) -> Scratch {
+    let t = scoped(text);
+    for (args, _) in PLANNING {
+        t.ok(args);
+    }
+    t
+}
+
+#[test]
+fn R15_part3_render_shows_every_unit_in_hierarchy_order() {
+    let text = request(true);
+    let t = planned(&text);
+    let after = t.read(REQUEST);
+    assert_eq!(through_marker(&after), through_marker(&text));
+    assert_eq!(part3(&after), planned_part3());
+    assert_matches(&t, "planned");
+}
+
+#[test]
+fn R15_part3_render_follows_every_plan_verb() {
+    let text = request(true);
+    let t = scoped(&text);
+    let lifecycle: [(&[&str], &str); 5] = [
+        (&["plan", "edit", "P3", "--purpose", "보고서 틀을 고쳐요"], "- 목적: 보고서 틀을 고쳐요\n"),
+        (&["milestone", "confirm", "M1"], "- 확인한 Plan: P1, P2\n"),
+        (&["plan", "start", "P1"], "- 상태: `in-progress`\n"),
+        (&["plan", "done", "P1"], "- 상태: `done`\n"),
+        (&["milestone", "confirm", "M2"], "- 확인한 Plan: P3\n"),
+    ];
+    let mut before = t.read(REQUEST);
+    for (args, shown) in PLANNING.into_iter().chain(lifecycle) {
+        let what = args.join(" ");
+        t.ok(args);
+        let after = t.read(REQUEST);
+        assert_ne!(part3(&after), part3(&before), "{what}: part 3 regenerated");
+        assert!(part3(&after).contains(shown), "{what}: {shown:?} in {}", part3(&after));
+        assert_eq!(through_marker(&after), through_marker(&text), "{what}");
+        assert_matches(&t, &what);
+        before = after;
+    }
+    // P2 waited on P1, so plan done made it ready, and part 3 shows that too.
+    assert!(part3(&before).contains("- 선행 Plan: P1\n- 상태: `ready`\n"), "{before}");
+    // A hand edit below the marker keeps the stamp, and plan render writes the plan back.
+    t.write(REQUEST, &format!("{}손으로 고친 3부예요.\n", through_marker(&before)));
+    assert_matches(&t, "part 3 edited by hand");
+    t.ok(&["plan", "render"]);
+    assert_eq!(t.read(REQUEST), before, "plan render regenerates part 3");
+}
+
+#[test]
+fn R15_part3_render_keeps_parts_1_and_2_hashed() {
+    let text = request(true);
+    let t = planned(&text);
+    let rendered = t.read(REQUEST);
+    assert_eq!(part3(&rendered), planned_part3());
+    for (what, from, to) in [("part 1", "없었어요.", "없었어요!"), ("part 2", "놓칠 수 있어요.", "놓칠 수 있어요!")] {
+        t.write(REQUEST, &edit(&rendered, from, to));
+        assert_mismatch(&t, what);
+        t.write(REQUEST, &rendered);
+        assert_matches(&t, what);
+    }
+}
+
+#[test]
+fn R15_part3_render_check_names_an_empty_goal_and_purpose() {
+    let t = planned(&request(true));
+    t.ok(&["milestone", "add", "later"]);
+    t.ok(&["plan", "add", "fourth", "--milestone", "M3", "--files", "g/h.sh"]);
+    let part = part3(&t.read(REQUEST)).to_string();
+    assert!(part.contains("## M3 later\n\n- 목표: (비어 있어요)\n"), "{part}");
+    assert!(part.contains("### P4 fourth\n\n- 목적: (비어 있어요)\n"), "{part}");
+    let (code, stdout) = check(&t);
+    assert_eq!(code, 1, "{stdout}");
+    let goal = "  part 3: milestone M3 has no goal (dstack milestone edit M3 --goal <text>)\n";
+    let purpose = "  part 3: plan P4 has no purpose (dstack plan edit P4 --purpose <text>)\n";
+    assert!(stdout.contains(goal) && stdout.contains(purpose), "{stdout}");
+    assert!(stdout.contains(", failures 2\n"), "{stdout}");
+    t.ok(&["milestone", "edit", "M3", "--goal", "나중에 정리해요"]);
+    t.ok(&["plan", "edit", "P4", "--purpose", "남은 일을 끝내요"]);
+    assert_matches(&t, "goal and purpose filled");
+
+    // Without the marker nothing new is checked.
+    let legacy = scoped(&request(false));
+    legacy.ok(&["milestone", "add", "later"]);
+    legacy.ok(&["plan", "add", "fourth", "--milestone", "M1", "--files", "g/h.sh"]);
+    let (code, stdout) = check(&legacy);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(!stdout.contains("part 3:"), "{stdout}");
+}
+
+#[test]
+fn R15_part3_render_leaves_a_legacy_request_byte_identical() {
+    let text = request(false);
+    let t = planned(&text);
+    t.ok(&["milestone", "confirm", "M1"]);
+    t.ok(&["plan", "start", "P1"]);
+    t.ok(&["plan", "done", "P1"]);
+    t.ok(&["plan", "render"]);
+    assert_eq!(t.read(REQUEST), text);
+    assert_matches(&t, "legacy after plan verbs");
+}
+
+#[test]
+fn R15_part3_render_passes_lint_ko_and_adds_no_rows() {
+    let text = request(true);
+    let rows = |t: &Scratch| -> String {
+        let (_, stdout) = check(t);
+        stdout.lines().find(|line| line.starts_with("  rows: ")).expect("a rows line").to_string()
+    };
+    let t = scoped(&text);
+    let unplanned = rows(&t);
+    for (args, _) in PLANNING {
+        t.ok(args);
+    }
+    assert_eq!(rows(&t), unplanned);
+    assert!(unplanned.starts_with("  rows: 2 (live 2,"), "{unplanned}");
+    let after = t.read(REQUEST);
+    assert_eq!(part3(&after), planned_part3());
+    for line in part3(&after).lines() {
+        let bare = line.trim_start();
+        assert!(!bare.starts_with("- [") && !bare.contains("**R"), "row-shaped: {line}");
+    }
+    let out = t.ok(&["lint-ko", REQUEST]);
+    assert!(out.contains("files 1, hits 0 (S1 0), unclassified 0"), "{out}");
 }

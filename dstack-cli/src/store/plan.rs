@@ -9,6 +9,7 @@ use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, utc_now};
 use crate::core::roots::git_out;
 use crate::store::plan_graph::{refresh, render_roadmap, render_state};
+use crate::store::request_part3;
 
 /// What the first milestone of a run writes — compact, exactly as _plan_ensure prints it.
 pub const SEED: &str = "{\"v\":2,\"milestones\":[],\"plans\":[]}\n";
@@ -103,8 +104,9 @@ impl PlanDoc {
         text
     }
 
-    /// _plan_commit(): refresh the derived statuses, write plan.json, regenerate both documents.
-    /// One function so no mutation path can forget half of it; the caller holds the lock.
+    /// _plan_commit(): refresh the derived statuses, write plan.json, regenerate both documents
+    /// and part 3 of a marker-bearing request (R15). One function so no mutation path can forget
+    /// part of it; the caller holds the lock.
     pub fn commit(&self, dir: &Path, run_id: &str, worktree_for_last_commit: &Path) -> Result<()> {
         let mut doc = self.clone();
         refresh(&mut doc);
@@ -118,7 +120,8 @@ impl PlanDoc {
         write_file(
             &dir.join("STATE.md"),
             &render_state(&doc, run_id, &last, &utc_now()),
-        )
+        )?;
+        request_part3::regenerate(dir, run_id, &doc)
     }
 
     pub fn plan(&self, id: &str) -> Option<&Plan> {

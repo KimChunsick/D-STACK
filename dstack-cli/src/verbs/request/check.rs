@@ -12,7 +12,7 @@ use std::path::Path;
 use crate::core::paths::{fmt_rid, is_plain_name, parse_rid};
 use crate::core::target::{resolve_target, Target};
 use crate::store::request::{approval_matches, req_enum, seen_lines, RequestDoc, REQ_FIELDS};
-use crate::store::request_part3::sha256_approved;
+use crate::store::request_part3::{plan_problems, sha256_approved};
 use crate::store::tables::{q_count, questions};
 
 use super::{is_approved, load, prd_check, request_file, rowfile};
@@ -88,6 +88,9 @@ pub fn core(ctx: &mut Context, target: &Target, mode: Mode) -> Result<usize> {
     bad += grammar.len();
     bad += prd_check::sections(ctx, target, &doc);
     bad += prd_check::background(ctx, target, &doc);
+    let part3 = plan_problems(&target.dir, doc.text())?;
+    part3.iter().for_each(|line| say!(ctx, "  {line}"));
+    bad += part3.len();
 
     let rows = doc.rows();
     let (mut pend, mut wdn, mut dfr, mut sup, mut asm, mut row_bad) = (0, 0, 0, 0, 0, 0);

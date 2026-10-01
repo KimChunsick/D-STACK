@@ -140,8 +140,9 @@ impl Target {
         Ok(doc)
     }
 
-    /// _plan_regen(): ROADMAP.md and STATE.md alone. `plan render` is its only caller — every
-    /// other path goes through write(), which regenerates them as part of the commit.
+    /// _plan_regen(): ROADMAP.md, STATE.md and part 3 of a marker-bearing request, without
+    /// writing plan.json. `plan render` is its only caller — every other path goes through
+    /// write(), which regenerates them as part of the commit.
     pub(crate) fn regen(&self, doc: &PlanDoc) -> Result<()> {
         let _lock = with_lock(&self.roots.local)?;
         let run = base_name(&self.dir);
@@ -151,7 +152,8 @@ impl Target {
         write_file(
             &self.dir.join("STATE.md"),
             &render_state(doc, &run, &last, &utc_now()),
-        )
+        )?;
+        crate::store::request_part3::regenerate(&self.dir, &run, doc)
     }
 
     /// The checkout STATE.md's last_commit is read from: the run's own worktree while it exists,
