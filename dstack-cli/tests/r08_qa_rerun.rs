@@ -1,7 +1,8 @@
 // tests/r08_qa_rerun.rs
 // R08 (T57): dstack evidence retire --qa reopens a recorded Goal QA result with a reason, keeps the
 // retired result and the reason in the append-only qa-history.tsv, refuses without writing
-// anything, and lets evidence add --qa record the scenario again (D-46).
+// anything, and lets evidence add --qa record the scenario again (D-46). R08 (T58): verify at Goal
+// close refuses the reopened scenario until it is recorded again.
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -267,5 +268,33 @@ fn R08_qa_rerun_retire_waits_for_the_run_lock() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(!lock.exists(), "the retire left the run lock behind");
     assert_eq!(qa_row(&t, "QA1"), fresh(1));
+    assert_eq!(history(&t).len(), 1);
+}
+
+#[test]
+fn R08_qa_rerun_verify_at_goal_close_refuses_the_reopened_qa_until_it_is_recorded_again() {
+    // No plan.json: the Goal is closing, so an open QA result refuses.
+    let t = goal();
+    let verify = |t: &Scratch| {
+        let out = t.run(&["verify"]);
+        (out.status.code().unwrap_or(-1), stdout(&out))
+    };
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    record(&t, "QA2", "qa2-run.txt", &[]);
+    let (code, out) = verify(&t);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("QA1 (S1) FAIL (failed): 목록이 비어 있어요; a failed result does not close the Goal\n"), "{out}");
+
+    let retired = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
+    assert_eq!(retired.status.code(), Some(0), "{}", stderr(&retired));
+    let (code, out) = verify(&t);
+    assert_eq!(code, 1, "{out}");
+    let open = "QA1 (S1) FAIL (open): no recorded result — record it: dstack evidence add --qa QA1 --artifact <file> --produced-by <command>\n";
+    assert!(out.contains(open), "{out}");
+
+    record(&t, "QA1", "qa1-second.txt", &[]);
+    let (code, out) = verify(&t);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("QA1 (S1) met\nQA2 (S2) met\nqa: "), "{out}");
     assert_eq!(history(&t).len(), 1);
 }

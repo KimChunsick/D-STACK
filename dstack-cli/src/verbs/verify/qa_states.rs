@@ -1,6 +1,7 @@
 // verbs/verify/qa_states.rs
-// The Goal-close QA check (R08, D-41, D-42) dstack verify and dstack report share: which targets
-// it holds, and per QA scenario and uncovered usage scenario whether it passes and why not.
+// The Goal-close QA check (R08, D-41, D-42, D-46) dstack verify and dstack report share: which
+// targets it holds, whether the Goal is closing, and per QA scenario and uncovered usage scenario
+// whether it passes and why not.
 //
 // Both commands print what `of` returned and nothing else, so they cannot disagree on a refusal.
 
@@ -9,12 +10,16 @@ use std::path::{Path, PathBuf};
 use crate::core::error::{Error, Result};
 use crate::core::fsx::sha256_file;
 use crate::core::target::TargetKind;
+use crate::store::plan;
 use crate::store::qa::{self, QaRow, QA_RESULTS};
 use crate::store::request_sections::SECTION_KEYS;
 use crate::store::visible::{heading, lines};
 
 /// The results that close a Goal; failed and open never do.
 const PASSING: [&str; 3] = ["met", "skipped", "blocked"];
+
+/// The Plan statuses of work still to come; while one is left the Goal is not closing (D-46).
+const LEFT: [&str; 3] = ["pending", "ready", "in-progress"];
 
 /// One line of the check: a QA scenario of the ledger, or a usage scenario no QA scenario covers.
 pub struct QaState {
@@ -26,6 +31,9 @@ pub struct QaState {
     pub status: String,
     /// The recorded reason of a failed, skipped or blocked result; None when there is none.
     pub note: Option<String>,
+    /// Before Goal close, what an open result or an uncovered usage scenario still needs; it
+    /// informs and never refuses.
+    pub info: Option<String>,
     /// The artifact cell as recorded, `-` when there is none.
     pub artifact: String,
     /// Why this line refuses the Goal close; empty when it passes.
@@ -41,21 +49,23 @@ impl QaState {
         }
     }
 
-    /// The recorded reason first, then every refusal; `-` when there is neither.
+    /// The recorded reason first, then what it still needs, then every refusal; `-` when there is
+    /// none of them.
     pub fn reason(&self) -> String {
-        let parts: Vec<&str> = self.note.iter().chain(&self.refusals).map(String::as_str).collect();
+        let notes = self.note.iter().chain(&self.info);
+        let parts: Vec<&str> = notes.chain(&self.refusals).map(String::as_str).collect();
         match parts.is_empty() {
             true => "-".to_string(),
             false => parts.join("; "),
         }
     }
 
-    /// The verify line: the status that passes, or FAIL with every reason.
+    /// The verify line: the status that passes with its reason, or FAIL with every reason.
     pub fn line(&self) -> String {
-        match (self.refusals.is_empty(), &self.note) {
-            (true, None) => format!("{} {}", self.label(), self.status),
-            (true, Some(note)) => format!("{} {}: {note}", self.label(), self.status),
-            (false, _) => format!("{} FAIL ({}): {}", self.label(), self.status, self.reason()),
+        match (self.refusals.is_empty(), self.reason()) {
+            (true, reason) if reason == "-" => format!("{} {}", self.label(), self.status),
+            (true, reason) => format!("{} {}: {reason}", self.label(), self.status),
+            (false, reason) => format!("{} FAIL ({}): {reason}", self.label(), self.status),
         }
     }
 }
@@ -63,6 +73,8 @@ impl QaState {
 /// The check of one Goal run: its usage scenarios and one state per line.
 pub struct QaCheck {
     pub scenarios: usize,
+    /// Whether the Goal is closing: no Plan is pending, ready or in progress (D-46).
+    pub closing: bool,
     pub states: Vec<QaState>,
 }
 
@@ -72,18 +84,26 @@ impl QaCheck {
         self.states.iter().any(|state| !state.refusals.is_empty())
     }
 
-    /// The `qa:` line both commands end the QA block with.
+    /// The `qa:` line both commands end the QA block with. Open and uncovered count every such
+    /// line, refused or not; the other results only those that pass.
     pub fn summary(&self) -> String {
         let ledger = self.states.iter().filter(|state| state.qa.is_some());
         let count = |status: &str| ledger.clone().filter(|state| state.status == status && state.refusals.is_empty()).count();
+        let all = |status: &str| self.states.iter().filter(|state| state.status == status).count();
         let refused = self.states.iter().filter(|state| !state.refusals.is_empty()).count();
         format!(
-            "qa: usage scenarios {}, QA scenarios {}, met {}, skipped {}, blocked {}, refused {refused} → {}",
+            "qa: usage scenarios {}, QA scenarios {}, met {}, skipped {}, blocked {}, open {}, uncovered {}, refused {refused}, {} → {}",
             self.scenarios,
             ledger.clone().count(),
             count("met"),
             count("skipped"),
             count("blocked"),
+            all("open"),
+            all("uncovered"),
+            match self.closing {
+                true => "at Goal close",
+                false => "before Goal close",
+            },
             match self.refused() {
                 true => "refused",
                 false => "ok",
@@ -108,28 +128,51 @@ pub fn usage_ids(kind: TargetKind, request: &Path, text: &str) -> Result<Vec<Str
     qa::scenario_ids(text).map_err(|e| Error::failed(format!("{}: {}", request.display(), e.message())))
 }
 
-/// The check of the target in `dir`, None when it is exempt. The run's QA ledger and every file
-/// it names are read here, once; `judge` decides from what was read.
+/// The check of the target in `dir`, None when it is exempt. The run's QA ledger, every file it
+/// names and plan.json are read here, once; `judge` decides from what was read.
 pub fn of(dir: &Path, main_root: &Path, kind: TargetKind, text: &str) -> Result<Option<QaCheck>> {
     let ids = usage_ids(kind, &dir.join("request.md"), text)?;
     if ids.is_empty() {
         return Ok(None);
     }
+    let closing = closing(dir)?;
     let rows = qa::rows(dir)?;
     let files: Vec<Vec<String>> = rows.iter().map(|row| file_refusals(dir, main_root, row)).collect();
-    Ok(Some(judge(&ids, &rows, files)))
+    Ok(Some(judge(&ids, &rows, files, closing)))
 }
 
-/// The per-line states from the usage scenario ids, the ledger rows and each row's file refusals.
-fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>) -> QaCheck {
+/// D-46: the Goal is closing once no Plan is left — none pending, ready or in progress, or no
+/// plan.json at all. A plan.json that cannot be read refuses, since guessing either way would
+/// pass an open result at Goal close or refuse a milestone close for it.
+fn closing(dir: &Path) -> Result<bool> {
+    if !plan::exists(dir) {
+        return Ok(true);
+    }
+    let doc = plan::load(dir)?;
+    Ok(!doc.plans.iter().any(|plan| LEFT.contains(&plan.status.as_str())))
+}
+
+/// What an open result or an uncovered usage scenario needs: a refusal at Goal close, information
+/// before it.
+fn pending(closing: bool, need: &str, fix: String) -> (Option<String>, Vec<String>) {
+    match closing {
+        true => (None, vec![format!("{need} — {fix}")]),
+        false => (Some(format!("{need} yet — checked at Goal close; {fix}")), Vec::new()),
+    }
+}
+
+/// The per-line states from the usage scenario ids, the ledger rows, each row's file refusals and
+/// whether the Goal is closing.
+fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>, closing: bool) -> QaCheck {
     let mut states = Vec::new();
     for (row, files) in rows.iter().zip(files) {
         let mut refusals = Vec::new();
+        let mut info = None;
         match row.status.as_str() {
-            "open" => refusals.push(format!(
-                "no recorded result — record it: dstack evidence add --qa {} --artifact <file> --produced-by <command>",
-                row.qa
-            )),
+            "open" => {
+                let fix = format!("record it: dstack evidence add --qa {} --artifact <file> --produced-by <command>", row.qa);
+                (info, refusals) = pending(closing, "no recorded result", fix);
+            }
             "failed" => refusals.push("a failed result does not close the Goal".to_string()),
             status if PASSING.contains(&status) => {}
             status => refusals.push(format!("status {status} is no QA result (open, {})", QA_RESULTS.join(", "))),
@@ -141,21 +184,25 @@ fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>) -> QaCheck {
             scenario: row.scenario.clone(),
             status: row.status.clone(),
             note: noted.then(|| row.note.clone()),
+            info,
             artifact: row.artifact.clone(),
             refusals,
         });
     }
     for id in ids.iter().filter(|id| !rows.iter().any(|row| row.scenario == **id)) {
+        let fix = format!("add one: dstack qa add --scenario {id} --from <file>");
+        let (info, refusals) = pending(closing, "no QA scenario", fix);
         states.push(QaState {
             qa: None,
             scenario: id.clone(),
             status: "uncovered".to_string(),
             note: None,
+            info,
             artifact: "-".to_string(),
-            refusals: vec![format!("no QA scenario — add one: dstack qa add --scenario {id} --from <file>")],
+            refusals,
         });
     }
-    QaCheck { scenarios: ids.len(), states }
+    QaCheck { scenarios: ids.len(), closing, states }
 }
 
 /// D-42: the text of every QA scenario, and the artifact of every recorded result, still hash to

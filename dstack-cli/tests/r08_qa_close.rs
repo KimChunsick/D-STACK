@@ -3,6 +3,9 @@
 // scenario has no result, a result failed, or a recorded text or artifact changed; skipped and
 // blocked pass with their reason in dstack report, whose exit agrees with verify. A request
 // without usage scenarios and a quick task keep their output and exit code (D-41, D-42).
+// R08 (T58): the Goal is closing once no Plan is pending, ready or in progress (or there is no
+// plan.json); before that an uncovered usage scenario and an open result only inform, while a
+// failed result and a changed text or artifact refuse at any time (D-46).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -26,14 +29,19 @@ const BODIES: [&str; 3] = [
     "준비: 열린 run이 있어요.\n단계: check request를 실행해요.\n기대 결과: 종료 코드 0이에요.\n",
 ];
 
-/// One task covering R01, so report's coverage reads ok and only the QA check decides its exit.
-const PLAN: &str = r#"{ "v": 2,
-  "milestones": [ {"id":"M1","slug":"close","order":1} ],
-  "plans": [ {"id":"P1","milestone":"M1","slug":"close","files":["a"],"deps":[],
-              "status":"in-progress","worktree":"","started_at":"","done_at":"",
-              "tasks":[ {"id":"T1","slug":"close","covers":["R01"],"files":["a"],
-                         "deps":[],"commit":"","done_at":""} ] } ] }
-"#;
+/// One Plan in `status` with one task covering R01, so report's coverage reads ok and only the QA
+/// check decides its exit.
+fn plan(status: &str) -> String {
+    format!(
+        r#"{{ "v": 2,
+  "milestones": [ {{"id":"M1","slug":"close","order":1}} ],
+  "plans": [ {{"id":"P1","milestone":"M1","slug":"close","files":["a"],"deps":[],
+              "status":"{status}","worktree":"","started_at":"","done_at":"",
+              "tasks":[ {{"id":"T1","slug":"close","covers":["R01"],"files":["a"],
+                         "deps":[],"commit":"","done_at":""}} ] }} ] }}
+"#
+    )
+}
 
 const ROUND: &str = "| R | verdict | evidence in the diff |\n|---|---|---|\n| R01 | covered | r01-run.txt |\n\nVERDICT: approve\n";
 
@@ -47,8 +55,9 @@ fn request(scenarios: &str) -> String {
     )
 }
 
-/// A started Goal run whose one R row is proven — cli evidence, a sealed covered round and a task —
-/// so verify and report exit 0 unless the QA check refuses; the three QA texts sit beside it.
+/// A started Goal run at its close — its one Plan done — whose one R row is proven: cli evidence,
+/// a sealed covered round and a task, so verify and report exit 0 unless the QA check refuses; the
+/// three QA texts sit beside it.
 fn goal(scenarios: &str) -> Scratch {
     let t = Scratch::new();
     t.init();
@@ -60,7 +69,7 @@ fn goal(scenarios: &str) -> Scratch {
     t.write("r01-run.txt", "$ dstack status\nR01 checked 1\nexit: 0\n");
     let r01 = ["evidence", "add", "--r", "R01", "--case", "c1", "--kind", "cli"];
     t.ok(&[&r01[..], &["--artifact", "r01-run.txt", "--produced-by", "dstack status"]].concat());
-    t.write(&format!("{DIR}/plan.json"), PLAN);
+    t.write(&format!("{DIR}/plan.json"), &plan("done"));
     t.write(&format!("{DIR}/review/codex-review-001.md"), ROUND);
     for (n, body) in BODIES.iter().enumerate() {
         t.write(&format!("qa-{}.md", n + 1), body);
@@ -148,7 +157,7 @@ fn R08_qa_close_a_usage_scenario_without_qa_refuses_and_run_close_refuses() {
     assert_eq!(code, 1, "{verify}");
     let why = |s: &str| format!("no QA scenario — add one: dstack qa add --scenario {s} --from <file>");
     let uncovered = |s: &str| format!("{s} FAIL (uncovered): {}", why(s));
-    let summary = "qa: usage scenarios 2, QA scenarios 0, met 0, skipped 0, blocked 0, refused 2 → refused";
+    let summary = "qa: usage scenarios 2, QA scenarios 0, met 0, skipped 0, blocked 0, open 0, uncovered 2, refused 2, at Goal close → refused";
     assert_eq!(qa_lines(&verify), [uncovered("S1").as_str(), &uncovered("S2"), summary], "{verify}");
     assert!(verify.ends_with(&format!("{VERIFIED} → exit 1\n")), "{verify}");
     let row = |s: &str| format!("| - | {s} | uncovered | {} | - |", why(s));
@@ -172,7 +181,7 @@ fn R08_qa_close_an_open_or_failed_result_refuses() {
     let open = |qa: &str, s: &str| {
         format!("{qa} ({s}) FAIL (open): no recorded result — record it: dstack evidence add --qa {qa} --artifact <file> --produced-by <command>")
     };
-    let summary = "qa: usage scenarios 2, QA scenarios 2, met 0, skipped 0, blocked 0, refused 2 → refused";
+    let summary = "qa: usage scenarios 2, QA scenarios 2, met 0, skipped 0, blocked 0, open 2, uncovered 0, refused 2, at Goal close → refused";
     assert_eq!(qa_lines(&verify), [open("QA1", "S1").as_str(), &open("QA2", "S2"), summary], "{verify}");
     assert!(report.contains("| QA1 | S1 | open | no recorded result — record it: dstack evidence add --qa QA1 "), "{report}");
 
@@ -181,7 +190,7 @@ fn R08_qa_close_an_open_or_failed_result_refuses() {
     let (code, verify, report) = judged(&t);
     assert_eq!(code, 1, "{verify}");
     let failed = "QA2 (S2) FAIL (failed): 목록이 비어 있어요; a failed result does not close the Goal";
-    let summary = "qa: usage scenarios 2, QA scenarios 2, met 1, skipped 0, blocked 0, refused 1 → refused";
+    let summary = "qa: usage scenarios 2, QA scenarios 2, met 1, skipped 0, blocked 0, open 0, uncovered 0, refused 1, at Goal close → refused";
     assert_eq!(qa_lines(&verify), ["QA1 (S1) met", failed, summary], "{verify}");
     let rows = qa_table(&report);
     assert_eq!(rows[2], "| QA1 | S1 | met | - | qa1-run.txt |", "{report}");
@@ -243,7 +252,7 @@ fn R08_qa_close_every_result_met_passes_and_run_close_closes() {
     record(&t, "QA3", "qa3-run.txt", &[]);
     let (code, verify, report) = judged(&t);
     assert_eq!(code, 0, "{verify}");
-    let summary = "qa: usage scenarios 2, QA scenarios 3, met 3, skipped 0, blocked 0, refused 0 → ok";
+    let summary = "qa: usage scenarios 2, QA scenarios 3, met 3, skipped 0, blocked 0, open 0, uncovered 0, refused 0, at Goal close → ok";
     assert_eq!(qa_lines(&verify), ["QA1 (S1) met", "QA2 (S2) met", "QA3 (none) met", summary], "{verify}");
     assert!(verify.contains(&format!("QA3 (none) met\n{summary}\nbranch containment: ")), "{verify}");
     assert!(verify.ends_with(&format!("{VERIFIED} → exit 0\n")), "{verify}");
@@ -263,11 +272,97 @@ fn R08_qa_close_skipped_and_blocked_pass_with_their_reason_in_report() {
     record(&t, "QA2", "qa2-run.txt", &["--status", "blocked", "--note", "권한 | 승인을 기다려요"]);
     let (code, verify, report) = judged(&t);
     assert_eq!(code, 0, "{verify}");
-    let summary = "qa: usage scenarios 2, QA scenarios 2, met 0, skipped 1, blocked 1, refused 0 → ok";
+    let summary = "qa: usage scenarios 2, QA scenarios 2, met 0, skipped 1, blocked 1, open 0, uncovered 0, refused 0, at Goal close → ok";
     let lines = ["QA1 (S1) skipped: 실행할 환경이 없어서 건너뛰어요", "QA2 (S2) blocked: 권한 | 승인을 기다려요", summary];
     assert_eq!(qa_lines(&verify), lines, "{verify}");
     let rows = qa_table(&report);
     assert_eq!(rows[2], "| QA1 | S1 | skipped | 실행할 환경이 없어서 건너뛰어요 | qa1-run.txt |", "{report}");
     assert_eq!(rows[3], "| QA2 | S2 | blocked | 권한 \\| 승인을 기다려요 | qa2-run.txt |", "{report}");
     assert_eq!(rows[4], summary, "{report}");
+}
+
+/// The informational line of an open result before Goal close, and its report reason.
+fn open_info(qa: &str) -> String {
+    format!("no recorded result yet — checked at Goal close; record it: dstack evidence add --qa {qa} --artifact <file> --produced-by <command>")
+}
+
+/// The informational line of an uncovered usage scenario before Goal close, and its report reason.
+fn uncovered_info(s: &str) -> String {
+    format!("no QA scenario yet — checked at Goal close; add one: dstack qa add --scenario {s} --from <file>")
+}
+
+#[test]
+fn R08_qa_close_open_and_uncovered_inform_while_a_plan_is_left() {
+    for status in ["pending", "ready", "in-progress"] {
+        let t = goal(SCENARIOS);
+        t.write(&format!("{DIR}/plan.json"), &plan(status));
+        add(&t, "S1", "qa-1.md");
+        let (code, verify, report) = judged(&t);
+        assert_eq!(code, 0, "{status}: {verify}");
+        let summary = "qa: usage scenarios 2, QA scenarios 1, met 0, skipped 0, blocked 0, open 1, uncovered 1, refused 0, before Goal close → ok";
+        let open = format!("QA1 (S1) open: {}", open_info("QA1"));
+        let uncovered = format!("S2 uncovered: {}", uncovered_info("S2"));
+        assert_eq!(qa_lines(&verify), [open.as_str(), &uncovered, summary], "{status}: {verify}");
+        assert!(!verify.contains("FAIL"), "{status}: {verify}");
+        assert!(verify.ends_with(&format!("{VERIFIED} → exit 0\n")), "{status}: {verify}");
+        let rows = qa_table(&report);
+        assert_eq!(rows[2], format!("| QA1 | S1 | open | {} | - |", open_info("QA1")), "{status}: {report}");
+        assert_eq!(rows[3], format!("| - | S2 | uncovered | {} | - |", uncovered_info("S2")), "{status}: {report}");
+        assert_eq!(rows[4], summary, "{status}: {report}");
+    }
+}
+
+#[test]
+fn R08_qa_close_failed_and_a_changed_artifact_refuse_while_a_plan_is_in_progress() {
+    let t = goal(SCENARIOS);
+    t.write(&format!("{DIR}/plan.json"), &plan("in-progress"));
+    add(&t, "S1", "qa-1.md");
+    add(&t, "S2", "qa-2.md");
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    record(&t, "QA2", "qa2-run.txt", &[]);
+    let (code, verify, _) = judged(&t);
+    assert_eq!(code, 1, "{verify}");
+    let failed = "QA1 (S1) FAIL (failed): 목록이 비어 있어요; a failed result does not close the Goal";
+    let summary = "qa: usage scenarios 2, QA scenarios 2, met 1, skipped 0, blocked 0, open 0, uncovered 0, refused 1, before Goal close → refused";
+    assert_eq!(qa_lines(&verify), [failed, "QA2 (S2) met", summary], "{verify}");
+    assert!(verify.ends_with(&format!("{VERIFIED} → exit 1\n")), "{verify}");
+
+    let artifact = t.0.join("qa2-run.txt");
+    let kept = t.read("qa2-run.txt");
+    t.write("qa2-run.txt", &format!("{kept}나중에 손으로 고쳤어요.\n"));
+    let (code, verify, report) = judged(&t);
+    assert_eq!(code, 1, "{verify}");
+    let changed = format!("artifact {} changed after it was recorded (sha256 mismatch)", artifact.display());
+    assert!(qa_lines(&verify).contains(&format!("QA2 (S2) FAIL (met): {changed}").as_str()), "{verify}");
+    assert!(report.contains(&format!("| QA2 | S2 | met | {changed} | qa2-run.txt |")), "{report}");
+}
+
+#[test]
+fn R08_qa_close_once_every_plan_is_done_open_and_uncovered_refuse() {
+    let t = goal(SCENARIOS);
+    add(&t, "S1", "qa-1.md");
+    let open = "QA1 (S1) FAIL (open): no recorded result — record it: dstack evidence add --qa QA1 --artifact <file> --produced-by <command>";
+    let uncovered = "S2 FAIL (uncovered): no QA scenario — add one: dstack qa add --scenario S2 --from <file>";
+    let refused = "qa: usage scenarios 2, QA scenarios 1, met 0, skipped 0, blocked 0, open 1, uncovered 1, refused 2, at Goal close → refused";
+    let (code, verify, _) = judged(&t);
+    assert_eq!(code, 1, "every Plan done: {verify}");
+    assert_eq!(qa_lines(&verify), [open, uncovered, refused], "{verify}");
+
+    t.write(&format!("{DIR}/plan.json"), &plan("in-progress"));
+    assert_eq!(judged(&t).0, 0, "a Plan in progress");
+    t.write(&format!("{DIR}/plan.json"), &plan("done"));
+    let (code, verify, _) = judged(&t);
+    assert_eq!(code, 1, "the same state once the Plan is done: {verify}");
+    assert_eq!(qa_lines(&verify), [open, uncovered, refused], "{verify}");
+
+    std::fs::remove_file(t.0.join(DIR).join("plan.json")).expect("drop plan.json");
+    let (code, verify) = call(&t, &["verify"]);
+    assert_eq!(code, 1, "no plan.json: {verify}");
+    assert_eq!(qa_lines(&verify), [open, uncovered, refused], "{verify}");
+
+    // An unreadable plan.json cannot say whether the Goal is closing, so verify does not guess.
+    t.write(&format!("{DIR}/plan.json"), "{ 읽을 수 없어요");
+    let out = t.run(&["verify"]);
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("plan.json"), "{}", String::from_utf8_lossy(&out.stderr));
 }
