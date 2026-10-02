@@ -39,6 +39,7 @@ pub mod evidence;
 pub mod evidence_qa;
 pub mod evidence_selftests;
 pub mod retire;
+pub mod retire_qa;
 pub mod worker;
 
 pub fn verbs() -> Vec<Box<dyn Verb>> {

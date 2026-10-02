@@ -6,6 +6,7 @@ pub mod plan;
 pub mod plan_graph;
 pub mod plan_ids;
 pub mod qa;
+pub mod qa_retire;
 pub mod request;
 pub mod request_part3;
 pub mod request_part3_qa;

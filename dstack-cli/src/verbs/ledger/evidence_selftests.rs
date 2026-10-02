@@ -144,7 +144,8 @@ fn record_qa(sandbox: &Sandbox, ctx: &Context, fixture: &Path, artifact: &str) -
 }
 
 /// evidence-retire: the fixture's first line is the status to retire from (met|open); "reject"
-/// means the retire was refused.
+/// means the retire was refused. `<!-- selftest-retire: qa -->` retires the Goal QA result of QA1
+/// instead of R01's case.
 impl Selftest for EvidenceRetire {
     fn checker(&self) -> &'static str {
         "evidence-retire"
@@ -162,6 +163,9 @@ impl Selftest for EvidenceRetire {
             .collect();
         let sandbox = Sandbox::new(ctx)?;
         let run_dir = sandbox.run_dir()?;
+        if Sandbox::directive(fixture, "retire").as_deref() == Some("qa") {
+            return retire_qa(&sandbox, ctx, fixture, &run_dir, &status);
+        }
         sandbox.write_request(&run_dir)?;
         let _ = sandbox.dsx(ctx, &["cases", "sync"])?;
         if status == "met" {
@@ -176,6 +180,21 @@ impl Selftest for EvidenceRetire {
         )?;
         verdict(code, "dstack evidence retire")
     }
+}
+
+/// The QA form of an evidence-retire fixture: QA1 of a usage scenario, recorded met first when the
+/// fixture retires from met, then retired.
+fn retire_qa(sandbox: &Sandbox, ctx: &Context, fixture: &Path, run_dir: &Path, status: &str) -> Result<Verdict> {
+    stage_qa(sandbox, ctx, run_dir)?;
+    if status == "met" {
+        let artifact = sandbox.artifact("qa1-run.txt", "QA1 실행했어요: 종료 코드 0이에요.")?;
+        let code = record_qa(sandbox, ctx, fixture, &artifact.to_string_lossy())?;
+        if code != 0 {
+            return Err(Error::cannot_decide(format!("selftest: dstack evidence add --qa exited {code}")));
+        }
+    }
+    let (code, _) = sandbox.dsx(ctx, &["evidence", "retire", "--qa", "QA1", "--why", "fixture"])?;
+    verdict(code, "dstack evidence retire --qa")
 }
 
 fn file_name(path: &Path) -> String {

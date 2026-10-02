@@ -9,7 +9,7 @@ use crate::core::target::resolve_target;
 use crate::store::cases;
 use crate::store::tsv;
 
-const RETIRE_USAGE: &str = "usage: dstack evidence retire --r R<NN> --case <id> --why \"<reason>\"";
+pub(super) const RETIRE_USAGE: &str = "usage: dstack evidence retire --r R<NN> --case <id> --why \"<reason>\" | dstack evidence retire --qa QA<n> --why \"<reason>\" [--run <id>]";
 
 ledger_verb!(EvidenceRetire, "evidence retire", retire);
 
@@ -37,6 +37,10 @@ fn retire(ctx: &mut Context, args: &[String]) -> Result<()> {
         } else if let Some((value, eaten)) = opt(arg, next, "why")? {
             why = value;
             i += eaten;
+        } else if arg == "--qa" || arg.starts_with("--qa=") {
+            // Only an option position chooses the QA retire, so a value reading `--qa=QA1` (a
+            // reason, say) never does; the QA loop reads every argument again.
+            return super::retire_qa::retire(ctx, &roots, &target, &rest);
         } else {
             fail!("unknown argument: {arg} — {RETIRE_USAGE}")
         }

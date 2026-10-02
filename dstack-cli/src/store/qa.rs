@@ -56,6 +56,23 @@ impl QaRow {
         }
     }
 
+    /// A row as qa add writes it: open, every result cell `-`.
+    pub fn open(qa: String, scenario: String, body: String, body_sha256: String) -> QaRow {
+        let dash = || "-".to_string();
+        QaRow {
+            qa,
+            scenario,
+            status: "open".to_string(),
+            body,
+            body_sha256,
+            artifact: dash(),
+            artifact_sha256: dash(),
+            produced_by: dash(),
+            recorded_at: dash(),
+            note: dash(),
+        }
+    }
+
     pub fn cells(&self) -> Vec<String> {
         vec![
             self.qa.clone(),
@@ -89,7 +106,7 @@ pub struct QaResult {
     pub note: String,
 }
 
-fn index(dir: &Path) -> PathBuf {
+pub(crate) fn index(dir: &Path) -> PathBuf {
     dir.join("qa.tsv")
 }
 
@@ -169,18 +186,7 @@ pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
     let qa = format!("QA{next}");
     let rel = body_rel(&qa);
     let file = dir.join(&rel);
-    let row = QaRow {
-        qa,
-        scenario: scenario.to_string(),
-        status: "open".to_string(),
-        body: rel,
-        body_sha256: sha256_bytes(text.as_bytes()),
-        artifact: "-".to_string(),
-        artifact_sha256: "-".to_string(),
-        produced_by: "-".to_string(),
-        recorded_at: "-".to_string(),
-        note: "-".to_string(),
-    };
+    let row = QaRow::open(qa, scenario.to_string(), rel, sha256_bytes(text.as_bytes()));
     ledger.push((row.clone(), Some(text.to_string())));
     let part3 = request_part3::preview(dir, run, &ledger)?;
     let parent = file.parent().unwrap_or(dir);
@@ -191,7 +197,7 @@ pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
         write(&index(dir), &format!("{QA_HEADER}\n"))?;
     }
     tsv::append_line(&index(dir), &row.cells())?;
-    publish(dir, &row.qa, part3)?;
+    publish(dir, &row.qa, part3, ["recorded", "record"])?;
     Ok(row)
 }
 
@@ -233,25 +239,32 @@ pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRo
         note: tsv::dash(&tsv::tsv_clean(&result.note)),
         ..held
     };
+    let out = replaced(dir, &row)?;
+    ledger[at].0 = row.clone();
+    let part3 = request_part3::preview(dir, run, &ledger)?;
+    write(&index(dir), &out)?;
+    publish(dir, qa, part3, ["recorded", "record"])?;
+    Ok(row)
+}
+
+/// The index text with the line of `row`'s QA id replaced by `row`; every other line verbatim.
+pub(crate) fn replaced(dir: &Path, row: &QaRow) -> Result<String> {
     let text = read_text(&index(dir))?.unwrap_or_default();
     let mut out = String::new();
     for (at, line) in text.lines().enumerate() {
-        match at > 0 && line.split('\t').next() == Some(qa) {
+        match at > 0 && line.split('\t').next() == Some(row.qa.as_str()) {
             true => out.push_str(&row.to_line()),
             false => out.push_str(line),
         }
         out.push('\n');
     }
-    ledger[at].0 = row.clone();
-    let part3 = request_part3::preview(dir, run, &ledger)?;
-    write(&index(dir), &out)?;
-    publish(dir, qa, part3)?;
-    Ok(row)
+    Ok(out)
 }
 
-/// Part 3 written after the ledger. The QA write stands even when this one fails, so the refusal
-/// says so and names what writes part 3 again; recording the scenario again would not.
-fn publish(dir: &Path, qa: &str, part3: Option<String>) -> Result<()> {
+/// Part 3 written after the ledger. The QA write (`done` and `deed` name it: recorded and record,
+/// retired and retire) stands even when this one fails, so the refusal says so and names what
+/// writes part 3 again; repeating the QA write would not.
+pub(crate) fn publish(dir: &Path, qa: &str, part3: Option<String>, [done, deed]: [&str; 2]) -> Result<()> {
     let Some(text) = part3 else {
         return Ok(());
     };
@@ -261,13 +274,13 @@ fn publish(dir: &Path, qa: &str, part3: Option<String>) -> Result<()> {
             false => "the next plan or QA write (dstack milestone add) writes it again",
         };
         Error::cannot_decide(format!(
-            "{qa} is recorded in qa.tsv, but part 3 of request.md is not refreshed ({}); {again} — do not record {qa} again",
+            "{qa} is {done} in qa.tsv, but part 3 of request.md is not refreshed ({}); {again} — do not {deed} {qa} again",
             e.message()
         ))
     })
 }
 
-fn write(file: &Path, text: &str) -> Result<()> {
+pub(crate) fn write(file: &Path, text: &str) -> Result<()> {
     atomic_write(file, text.as_bytes())
         .map_err(|e| Error::cannot_decide(format!("cannot write {}: {e}", file.display())))
 }
