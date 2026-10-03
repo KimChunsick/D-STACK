@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use crate::core::error::{Error, Result};
 use crate::core::fsx::{atomic_write, read_text, sha256_bytes, utc_now, with_lock, LockGuard};
 use crate::store::plan;
+use crate::store::qa_retire;
 use crate::store::request_part3;
 use crate::store::request_sections::{body, Place};
 use crate::store::tsv;
@@ -197,14 +198,15 @@ pub fn add(dir: &Path, run: &str, scenario: &str, text: &str) -> Result<QaRow> {
         write(&index(dir), &format!("{QA_HEADER}\n"))?;
     }
     tsv::append_line(&index(dir), &row.cells())?;
-    publish(dir, &row.qa, part3, ["recorded", "record"])?;
+    publish(dir, &row.qa, part3)?;
     Ok(row)
 }
 
 /// Record the result of the open QA scenario `qa` in place, then part 3, which is rendered before
 /// the first write so a refusal writes nothing. A recorded result is never overwritten; a status
-/// that is no result and a failed, skipped or blocked one without a reason refuse. Every other
-/// line is copied verbatim. The caller holds its worktree lock and then the run lock (`lock`).
+/// that is no result and a failed, skipped or blocked one without a reason refuse. A pending retire
+/// is finished first, as it may reopen `qa`. Every other line is copied verbatim. The caller holds
+/// its worktree lock and then the run lock (`lock`).
 pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRow> {
     if !QA_RESULTS.contains(&result.status.as_str()) {
         return Err(Error::failed(format!(
@@ -219,6 +221,7 @@ pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRo
             result.status
         )));
     }
+    qa_retire::finish(dir, run)?;
     let mut ledger = entries(dir)?;
     let Some(at) = ledger.iter().position(|(row, _)| row.qa == qa) else {
         return Err(Error::failed(format!("QA scenario not found: {qa}")));
@@ -243,7 +246,7 @@ pub fn record(dir: &Path, run: &str, qa: &str, result: &QaResult) -> Result<QaRo
     ledger[at].0 = row.clone();
     let part3 = request_part3::preview(dir, run, &ledger)?;
     write(&index(dir), &out)?;
-    publish(dir, qa, part3, ["recorded", "record"])?;
+    publish(dir, qa, part3)?;
     Ok(row)
 }
 
@@ -261,10 +264,9 @@ pub(crate) fn replaced(dir: &Path, row: &QaRow) -> Result<String> {
     Ok(out)
 }
 
-/// Part 3 written after the ledger. The QA write (`done` and `deed` name it: recorded and record,
-/// retired and retire) stands even when this one fails, so the refusal says so and names what
-/// writes part 3 again; repeating the QA write would not.
-pub(crate) fn publish(dir: &Path, qa: &str, part3: Option<String>, [done, deed]: [&str; 2]) -> Result<()> {
+/// Part 3 written after the ledger. The QA record stands even when this one fails, so the refusal
+/// says so and names what writes part 3 again; recording again would not.
+fn publish(dir: &Path, qa: &str, part3: Option<String>) -> Result<()> {
     let Some(text) = part3 else {
         return Ok(());
     };
@@ -274,7 +276,7 @@ pub(crate) fn publish(dir: &Path, qa: &str, part3: Option<String>, [done, deed]:
             false => "the next plan or QA write (dstack milestone add) writes it again",
         };
         Error::cannot_decide(format!(
-            "{qa} is {done} in qa.tsv, but part 3 of request.md is not refreshed ({}); {again} — do not {deed} {qa} again",
+            "{qa} is recorded in qa.tsv, but part 3 of request.md is not refreshed ({}); {again} — do not record {qa} again",
             e.message()
         ))
     })

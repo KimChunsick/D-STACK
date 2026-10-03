@@ -3,7 +3,10 @@
 // retired result and the reason in the append-only qa-history.tsv, refuses without writing
 // anything, and lets evidence add --qa record the scenario again (D-46). R08 (T58): verify at Goal
 // close refuses the reopened scenario until it is recorded again. R08 (T60): the same retire run
-// again after a failed qa.tsv rewrite finishes it without a second history row (D-47).
+// again after a failed qa.tsv rewrite finishes it without a second history row (D-47). R08 (T64):
+// every history row carries its attempt and a retire stays pending in qa-retire.pending until its
+// last step, so the same retire or a record finishes an interrupted one, and identical recordings
+// within one second keep a history row and a reason each (D-53).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -21,7 +24,8 @@ use support::{tree, Scratch};
 const RUN: &str = "20261003T000000Z_rerun";
 const DIR: &str = ".dstack/runs/20261003T000000Z_rerun";
 const MARKER: &str = "<!-- dstack 3부 경계: 이 줄 아래는 CLI가 계획 대장에서 다시 만들고, 승인 해시는 이 줄 위까지만 봐요. 이 줄은 지우거나 고치지 않아요. -->";
-const HISTORY: &str = "qa\tretired_at\twas_status\tartifact\tartifact_sha256\tproduced_by\trecorded_at\tresult_note\twhy";
+const HISTORY: &str = "qa\tretired_at\twas_status\tartifact\tartifact_sha256\tproduced_by\trecorded_at\tresult_note\twhy\tattempt";
+const PENDING: &str = ".dstack/runs/20261003T000000Z_rerun/qa-retire.pending";
 
 /// The QA texts of S1 and S2, written to qa-1.md and qa-2.md.
 const BODIES: [&str; 2] = [
@@ -145,7 +149,8 @@ fn R08_qa_rerun_retire_reopens_a_failed_qa_and_keeps_its_result_in_history() {
     assert_eq!(row[2..8].iter().collect::<Vec<_>>(), kept, "the retired result stays as history");
     assert_eq!((row[3].as_str(), row[7].as_str()), ("qa1-run.txt", "목록이 비어 있어요"));
     assert_eq!(row[8], "목록을 고쳤어요");
-    assert_eq!(row.len(), 9, "{row:?}");
+    assert_eq!(row[9], "1", "the first retire of QA1 is its attempt 1");
+    assert_eq!(row.len(), 10, "{row:?}");
     assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n"), "{}", part3(&t));
     assert!(part3(&t).contains("- QA2: 사용 시나리오 S2\n  - 상태: `met`\n"), "{}", part3(&t));
 }
@@ -310,7 +315,9 @@ fn R08_qa_rerun_the_same_retire_finishes_a_partial_one_with_one_history_row() {
     let args = ["--qa", "QA1", "--why", "목록을 고쳤어요"];
     let out = retire(&t, &args);
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
-    // What a failed qa.tsv rewrite leaves: the history row written, qa.tsv and part 3 as they were.
+    // What a failed qa.tsv rewrite leaves: the pending row and the history row written, qa.tsv
+    // and part 3 as they were. The pending row is the history row the retire wrote.
+    t.write(PENDING, &format!("{}\n", history(&t)[0].join("\t")));
     t.write(&index, &before[0]);
     t.write(&request, &before[1]);
     assert_eq!((qa_row(&t, "QA1")[2].as_str(), history(&t).len()), ("failed", 1));
@@ -324,6 +331,8 @@ fn R08_qa_rerun_the_same_retire_finishes_a_partial_one_with_one_history_row() {
     assert_eq!(rows.len(), 1, "no second row for the same result: {rows:?}");
     let kept = [&held[2], &held[5], &held[6], &held[7], &held[8], &held[9]];
     assert_eq!(rows[0][2..8].iter().collect::<Vec<_>>(), kept);
+    assert_eq!(rows[0][9], "1");
+    assert!(!t.0.join(PENDING).exists(), "the finished retire is no longer pending");
     assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n"), "{}", part3(&t));
 
     // A new recording is another result: retiring it adds the second row.
@@ -332,5 +341,87 @@ fn R08_qa_rerun_the_same_retire_finishes_a_partial_one_with_one_history_row() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     let rows = history(&t);
     assert_eq!(rows.len(), 2, "{rows:?}");
-    assert_eq!((rows[1][2].as_str(), rows[1][3].as_str()), ("met", "qa1-second.txt"));
+    assert_eq!((rows[1][2].as_str(), rows[1][3].as_str(), rows[1][9].as_str()), ("met", "qa1-second.txt", "2"));
+}
+
+#[test]
+fn R08_qa_rerun_identical_recordings_within_one_second_keep_both_retires() {
+    let t = goal();
+    let failed = ["--status", "failed", "--note", "목록이 비어 있어요"];
+    record(&t, "QA1", "qa1-run.txt", &failed);
+    let first = qa_row(&t, "QA1");
+    let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    record(&t, "QA1", "qa1-run.txt", &failed);
+    // recorded_at has one-second precision: the second recording takes the first one's stamp, so
+    // the two recordings are identical whatever the clock did between them.
+    let index = format!("{DIR}/qa.tsv");
+    let second = qa_row(&t, "QA1").join("\t");
+    t.write(&index, &t.read(&index).replace(&second, &first.join("\t")));
+    assert_eq!(qa_row(&t, "QA1"), first, "the same artifact, status, command, note and stamp");
+
+    let out = retire(&t, &["--qa", "QA1", "--why", "같은 결과를 다시 거둬요"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(stdout(&out).lines().next(), Some("retired QA1 (was failed): 같은 결과를 다시 거둬요"));
+    assert_eq!(qa_row(&t, "QA1"), fresh(1));
+    let rows = history(&t);
+    assert_eq!(rows.len(), 2, "each retire keeps its own row: {rows:?}");
+    assert_eq!(rows[0][2..8], rows[1][2..8], "the two retired results are identical");
+    let reason = |row: &Vec<String>| (row[8].clone(), row[9].clone());
+    assert_eq!(reason(&rows[0]), ("목록을 고쳤어요".into(), "1".into()));
+    assert_eq!(reason(&rows[1]), ("같은 결과를 다시 거둬요".into(), "2".into()));
+}
+
+/// What a QA1 retire leaves when it stops after each of its first three steps.
+const POINTS: [&str; 3] = ["the pending write", "the history append", "the qa.tsv rewrite"];
+
+/// A Goal whose QA1 retire stopped after POINTS[point]: a whole retire, then every file a later
+/// step writes put back as it was. The pending row is the history row the retire wrote.
+fn interrupted(point: usize) -> Scratch {
+    let t = goal();
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    let (index, request) = (format!("{DIR}/qa.tsv"), format!("{DIR}/request.md"));
+    let before = [t.read(&index), t.read(&request)];
+    let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    t.write(PENDING, &format!("{}\n", history(&t)[0].join("\t")));
+    if point == 0 {
+        std::fs::remove_file(history_file(&t)).expect("no history before the append");
+    }
+    if point < 2 {
+        t.write(&index, &before[0]);
+    }
+    t.write(&request, &before[1]);
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `failed`\n"), "{}", part3(&t));
+    t
+}
+
+/// The interrupted retire is finished: one history row, attempt 1 with its reason, nothing pending.
+fn finished(t: &Scratch, after: &str) {
+    let rows = history(t);
+    assert_eq!(rows.len(), 1, "after {after}: {rows:?}");
+    let row = (rows[0][2].as_str(), rows[0][8].as_str(), rows[0][9].as_str());
+    assert_eq!(row, ("failed", "목록을 고쳤어요", "1"), "after {after}");
+    assert!(!t.0.join(PENDING).exists(), "after {after}: the retire is still pending");
+}
+
+#[test]
+fn R08_qa_rerun_each_interruption_point_is_finished_by_the_same_retire_or_a_record() {
+    for (point, after) in POINTS.iter().enumerate() {
+        let t = interrupted(point);
+        let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
+        assert_eq!(out.status.code(), Some(0), "after {after}: {}", stderr(&out));
+        let first = stdout(&out).lines().next().map(String::from);
+        assert_eq!(first.as_deref(), Some("retired QA1 (was failed): 목록을 고쳤어요"), "after {after}");
+        assert_eq!(qa_row(&t, "QA1"), fresh(1), "after {after}");
+        finished(&t, after);
+        assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n"), "after {after}: {}", part3(&t));
+
+        let t = interrupted(point);
+        record(&t, "QA1", "qa1-second.txt", &[]);
+        let row = qa_row(&t, "QA1");
+        assert_eq!((row[2].as_str(), row[5].as_str()), ("met", "qa1-second.txt"), "after {after}");
+        finished(&t, after);
+        assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "after {after}: {}", part3(&t));
+    }
 }
