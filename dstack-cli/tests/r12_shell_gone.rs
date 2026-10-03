@@ -8,6 +8,8 @@
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
 
+#[path = "support/doctor_home.rs"]
+mod doctor_home;
 #[path = "support/shell_ref.rs"]
 mod shell_ref;
 
@@ -75,9 +77,9 @@ fn r12__nothing_but_the_installer_and_the_hook_wrapper_names_the_shell() {
 
 #[test]
 fn r12__doctor_passes_over_the_tree_the_shell_left_behind() {
-    let out = Command::new(env!("CARGO_BIN_EXE_dstack"))
-        .arg("doctor")
-        .current_dir(repo())
+    let home = doctor_home::ScratchHome::new(&doctor_home::dstack_only());
+    let out = home
+        .doctor()
         .output()
         .expect("run dstack doctor");
     assert_eq!(

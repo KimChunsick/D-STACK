@@ -11,6 +11,9 @@
 // twins they claim to be, and doctor's verb sweep answers for the wording.
 #![allow(non_snake_case)]
 
+#[path = "support/doctor_home.rs"]
+mod doctor_home;
+
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -268,9 +271,9 @@ fn r05__the_two_root_rule_files_differ_only_in_their_title() {
 
 #[test]
 fn r05__doctor_passes_over_the_documents_the_rule_touched() {
-    let out = Command::new(env!("CARGO_BIN_EXE_dstack"))
-        .arg("doctor")
-        .current_dir(repo())
+    let home = doctor_home::ScratchHome::new(&doctor_home::dstack_only());
+    let out = home
+        .doctor()
         .output()
         .expect("run dstack doctor");
     let printed = stdout(&out);

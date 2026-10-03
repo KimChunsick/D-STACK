@@ -1,0 +1,4 @@
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh stop" } ] }

@@ -16,6 +16,7 @@ pub mod agents;
 pub mod codex;
 pub mod deps;
 pub mod hooks;
+pub mod hooks_check;
 pub mod korules;
 pub mod layout;
 pub mod locks;
@@ -50,6 +51,7 @@ pub fn selftests() -> Vec<Box<dyn Selftest>> {
         Box::new(layout::Checker),
         Box::new(modes::Checker),
         Box::new(main_runtime::Checker),
+        Box::new(hooks_check::Checker),
     ]
 }
 

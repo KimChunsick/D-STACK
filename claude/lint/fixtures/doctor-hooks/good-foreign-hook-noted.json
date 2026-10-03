@@ -1,0 +1,23 @@
+{
+  "hooks": {
+    "Notification": [
+      { "hooks": [ { "type": "command", "command": "'/Applications/NotchTheRock.app/Contents/PlugIns/Agents.notchplugin/Contents/Helpers/notch-hook' Notification", "timeout": 10 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Agent|Task", "hooks": [ { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh agent-model", "timeout": 10 } ] },
+      { "matcher": "Write|Edit|Bash", "hooks": [ { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh pre-write", "timeout": 20 } ] },
+      { "matcher": "AskUserQuestion", "hooks": [ { "type": "command", "command": "'/Applications/NotchTheRock.app/Contents/PlugIns/Agents.notchplugin/Contents/Helpers/notch-hook' PreToolUse", "timeout": 630 } ] }
+    ],
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "'/Applications/NotchTheRock.app/Contents/PlugIns/Agents.notchplugin/Contents/Helpers/notch-hook' SessionStart", "timeout": 10 } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh stop", "timeout": 60 } ] },
+      { "hooks": [ { "type": "command", "command": "'/Applications/NotchTheRock.app/Contents/PlugIns/Agents.notchplugin/Contents/Helpers/notch-hook' Stop", "timeout": 10 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh inject", "timeout": 15 } ] },
+      { "hooks": [ { "type": "command", "command": "'/Applications/NotchTheRock.app/Contents/PlugIns/Agents.notchplugin/Contents/Helpers/notch-hook' UserPromptSubmit", "timeout": 10 } ] }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "model": "fable",
+  "effortLevel": "xhigh",
+  "outputStyle": "dstack-korean",
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "bash $HOME/.claude/statusline-command.sh"
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh inject", "timeout": 15 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh stop", "timeout": 60 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh agent-model", "timeout": 10 }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          { "type": "command", "command": "bash $HOME/.claude/hooks/dstack-hook.sh pre-write", "timeout": 20 }
+        ]
+      }
+    ]
+  }
+}
