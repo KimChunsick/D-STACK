@@ -7,7 +7,8 @@
 // every history row carries its attempt and a retire stays pending in qa-retire.pending until its
 // last step, so the same retire or a record finishes an interrupted one, and identical recordings
 // within one second keep a history row and a reason each (D-53). R08 (T67): while a retire is
-// pending, verify — before Goal close or at it — and report refuse, naming the QA (D-56).
+// pending, verify — before Goal close or at it — and report refuse, naming the QA (D-56). R08
+// (T68): a history ending without a newline is refused and left unchanged (D-57).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -428,6 +429,37 @@ fn R08_qa_rerun_each_interruption_point_is_finished_by_the_same_retire_or_a_reco
         finished(&t, after);
         assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "after {after}: {}", part3(&t));
     }
+}
+
+#[test]
+fn R08_qa_rerun_a_history_ending_without_a_newline_is_refused_and_left_unchanged() {
+    // A row an append cut short: its cells stop before the newline that ends a row.
+    let partial = format!("{HISTORY}\nQA1\t");
+    let file = format!("{DIR}/qa-history.tsv");
+    let refused = |t: &Scratch, out: &Output| {
+        assert_eq!(out.status.code(), Some(2), "{}", stdout(out));
+        assert!(stderr(out).contains("qa-history.tsv does not end with a newline"), "{}", stderr(out));
+        assert_eq!(t.read(&file), partial, "the history is left as it was");
+        assert_eq!(qa_row(t, "QA1")[2], "failed", "the result is still recorded");
+    };
+    // Finishing a pending retire, by the same retire or by a record, refuses before any write.
+    let t = interrupted(0, "failed");
+    t.write(&file, &partial);
+    let pending = t.read(PENDING);
+    t.write("qa1-second.txt", "$ dstack status\nQA1 확인했어요.\nexit: 0\n");
+    let again = ["evidence", "retire", "--qa", "QA1", "--why", "목록을 고쳤어요"];
+    let record_again = ["evidence", "add", "--qa", "QA1", "--artifact", "qa1-second.txt", "--produced-by", "dstack status"];
+    for args in [&again[..], &record_again[..]] {
+        refused(&t, &t.run(args));
+        assert_eq!(t.read(PENDING), pending, "{args:?}: the retire is still pending");
+    }
+
+    // A retire with nothing pending refuses before its pending write.
+    let t = goal();
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    t.write(&file, &partial);
+    refused(&t, &t.run(&again));
+    assert!(!t.0.join(PENDING).exists(), "the refused retire left a pending row");
 }
 
 /// A plan.json whose one Plan has `status`: while it is in progress the Goal is not closing yet.
