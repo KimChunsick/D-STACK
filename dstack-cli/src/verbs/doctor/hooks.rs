@@ -9,20 +9,19 @@ use crate::core::error::Result;
 use crate::core::roots::git_out;
 
 /// The registrations of this machine, judged by hooks_check: a dstack hook missing, registered
-/// twice or under a stale event fails; a hook of another program is a note (R18).
+/// twice or under a stale event fails, and no settings.json leaves every one missing; a hook of
+/// another program is a note (R18).
 pub fn section(ctx: &mut Context) -> Result<bool> {
     let settings =
         PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".claude/settings.json");
     say!(ctx, "hooks registered in {}:", settings.display());
-    let judgement = match std::fs::read_to_string(&settings) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            unread(true, "  (no settings.json: no hook is registered on this machine)")
+    let text = std::fs::read_to_string(&settings);
+    let judgement = match (text, hooks_check::expected(&ctx.home.home)) {
+        (Err(e), _) if e.kind() != std::io::ErrorKind::NotFound => {
+            unread(&format!("  FAIL: cannot read settings.json: {e}"))
         }
-        Err(e) => unread(false, &format!("  FAIL: cannot read settings.json: {e}")),
-        Ok(text) => match hooks_check::expected(&ctx.home.home) {
-            Ok(expected) => hooks_check::judge(&text, &expected),
-            Err(e) => unread(false, &format!("  FAIL: {}", e.message())),
-        },
+        (_, Err(e)) => unread(&format!("  FAIL: {}", e.message())),
+        (text, Ok(expected)) => hooks_check::judge(text.ok().as_deref(), &expected),
     };
     for line in &judgement.lines {
         say!(ctx, "{line}");
@@ -39,14 +38,14 @@ pub fn section(ctx: &mut Context) -> Result<bool> {
     Ok(judgement.holds)
 }
 
-/// A settings.json the judgement never saw: one line, and whether the section holds without it.
-fn unread(holds: bool, line: &str) -> Judgement {
+/// A settings.json the judgement never saw: one failing line.
+fn unread(line: &str) -> Judgement {
     Judgement {
         lines: vec![line.to_string()],
         registered: 0,
         dstack: 0,
         other: 0,
-        holds,
+        holds: false,
     }
 }
 

@@ -97,6 +97,72 @@ fn R18__a_duplicated_dstack_hook_fails_the_section() {
     assert_eq!(out.status.code(), Some(1), "dstack doctor:\n{printed}");
 }
 
+/// Every expected dstack hook named as missing, after the line saying why none is registered.
+fn assert_every_dstack_hook_missing(out: &Output, printed: &str, why: &str) {
+    let hooks = section(printed);
+    assert!(hooks.contains(&why), "the reason line:\n{printed}");
+    for want in ["inject", "stop", "agent-model", "pre-write"] {
+        assert!(
+            hooks.iter().any(|line| {
+                line.starts_with("  FAIL: dstack hook missing: ")
+                    && line.ends_with(&format!("dstack-hook.sh {want}"))
+            }),
+            "the {want} hook is not named missing:\n{printed}"
+        );
+    }
+    assert_eq!(out.status.code(), Some(1), "dstack doctor:\n{printed}");
+}
+
+#[test]
+fn R18__an_empty_hooks_table_leaves_every_dstack_hook_missing() {
+    let (_home, out, printed) = doctor(&doctor_home::fixture("bad-no-hooks.json"));
+    assert_every_dstack_hook_missing(&out, &printed, "  (settings.json registers no hook)");
+}
+
+#[test]
+fn R18__no_settings_json_leaves_every_dstack_hook_missing() {
+    let home = ScratchHome::without_settings();
+    let out = home.doctor().output().expect("run dstack doctor");
+    let printed = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert_eq!(section(&printed).first().copied(), Some(header(&home).as_str()));
+    assert_every_dstack_hook_missing(
+        &out,
+        &printed,
+        "  (no settings.json: no hook is registered on this machine)",
+    );
+}
+
+#[test]
+fn R18__a_command_that_only_mentions_the_wrapper_is_a_note() {
+    let (_home, out, printed) = doctor(&doctor_home::fixture("good-mentions-wrapper-noted.json"));
+    let hooks = section(&printed);
+    assert!(
+        hooks.contains(&format!("  Notification [*] → logger dstack-hook.sh{NOTE}").as_str()),
+        "the mention is not a note:\n{printed}"
+    );
+    assert!(!hooks.iter().any(|line| line.contains("FAIL")), "{printed}");
+    assert!(hooks.contains(&"  registered: 5, dstack: 4, other: 1"), "{printed}");
+    assert_eq!(out.status.code(), Some(0), "dstack doctor:\n{printed}");
+}
+
+#[test]
+fn R18__echoing_the_wrapper_does_not_register_the_stop_hook() {
+    let (_home, out, printed) = doctor(&doctor_home::fixture("bad-echo-not-invoked.json"));
+    let hooks = section(&printed);
+    assert!(
+        hooks.contains(&format!("  Stop [*] → echo dstack-hook.sh stop{NOTE}").as_str()),
+        "the echo is not a note:\n{printed}"
+    );
+    assert!(
+        hooks.iter().any(|line| {
+            line.starts_with("  FAIL: dstack hook missing: Stop [*] → ")
+                && line.ends_with("dstack-hook.sh stop")
+        }),
+        "the Stop hook is not named missing:\n{printed}"
+    );
+    assert_eq!(out.status.code(), Some(1), "dstack doctor:\n{printed}");
+}
+
 /// The tests that run doctor never read this machine's settings.json: the section names the
 /// scratch file, and the four dstack hooks give the same verdict with or without foreign ones.
 #[test]

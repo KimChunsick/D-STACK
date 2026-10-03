@@ -34,15 +34,20 @@ pub struct ScratchHome(pub PathBuf);
 
 impl ScratchHome {
     pub fn new(settings: &str) -> Self {
+        let home = Self::without_settings();
+        fs::write(home.settings(), settings).expect("write settings.json");
+        home
+    }
+
+    /// A home whose .claude directory holds no settings.json at all.
+    pub fn without_settings() -> Self {
         let path = std::env::temp_dir().join(format!(
             "dstack-doctor-home-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(path.join(".claude")).expect("a scratch home");
-        let home = Self(fs::canonicalize(path).expect("the physical path of the scratch home"));
-        fs::write(home.settings(), settings).expect("write settings.json");
-        home
+        Self(fs::canonicalize(path).expect("the physical path of the scratch home"))
     }
 
     pub fn path(&self) -> &Path {

@@ -70,17 +70,54 @@ pub struct Hook {
 }
 
 impl Hook {
-    /// The dstack hook a wrapper command runs: its event, its matcher and the argument after the
-    /// wrapper. Nothing for a command of another program.
-    fn key(&self) -> Option<(&str, &str, &str)> {
-        let mut words = self.command.split_whitespace();
-        words.find(|word| word.contains(WRAPPER))?;
-        Some((&self.event, &self.matcher, words.next().unwrap_or("")))
+    /// The dstack hook this registration is: its event, its matcher and what its command runs.
+    /// Nothing for a command of another program, even one that only mentions the wrapper.
+    fn key(&self, expected: &[Hook]) -> Option<(&str, &str, String)> {
+        let runs = invocation(&self.command, expected)?;
+        Some((&self.event, &self.matcher, runs))
     }
 
     fn row(&self) -> String {
         format!("{} [{}] → {}", self.event, self.matcher, self.command)
     }
+}
+
+/// What a command runs when it invokes the wrapper: every argument after the script when its
+/// first token runs dstack-hook.sh (a shell — bash, sh or an absolute path to one — followed by
+/// the script, or the script itself), the whole command when it equals an expected one. Words
+/// lose one layer of surrounding quotes. Nothing for any other command.
+fn invocation(command: &str, expected: &[Hook]) -> Option<String> {
+    let words: Vec<&str> = command.split_whitespace().map(unquote).collect();
+    let is_wrapper = |word: &str| word.rsplit('/').next() == Some(WRAPPER);
+    let is_shell = |word: &str| {
+        matches!(word, "bash" | "sh")
+            || (word.starts_with('/') && (word.ends_with("/bash") || word.ends_with("/sh")))
+    };
+    let script = match words.as_slice() {
+        [shell, script, ..] if is_shell(shell) && is_wrapper(script) => 2,
+        [script, ..] if is_wrapper(script) => 1,
+        _ => {
+            let plain = collapse(command);
+            return expected
+                .iter()
+                .any(|want| collapse(&want.command) == plain)
+                .then_some(plain);
+        }
+    };
+    Some(words[script..].join(" "))
+}
+
+fn unquote(word: &str) -> &str {
+    for quote in ['\'', '"'] {
+        if let Some(inner) = word.strip_prefix(quote).and_then(|w| w.strip_suffix(quote)) {
+            return inner;
+        }
+    }
+    word
+}
+
+fn collapse(command: &str) -> String {
+    command.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Every registration of a settings.json text, in document order.
@@ -120,10 +157,10 @@ pub struct Judgement {
     pub holds: bool,
 }
 
-/// A settings.json text against the expected dstack registrations. Text that is not a readable
-/// hooks table fails rather than reading as "no hooks"; a file that registers nothing at all is
-/// a machine dstack was never installed on, and holds as it always has.
-pub fn judge(text: &str, expected: &[Hook]) -> Judgement {
+/// A settings.json text, None when there is no such file, against the expected dstack
+/// registrations. Text that is not a readable hooks table fails rather than reading as "no
+/// hooks"; no file, no hooks key and an empty table all leave every dstack hook missing.
+pub fn judge(text: Option<&str>, expected: &[Hook]) -> Judgement {
     let mut judgement = Judgement {
         lines: Vec::new(),
         registered: 0,
@@ -131,30 +168,38 @@ pub fn judge(text: &str, expected: &[Hook]) -> Judgement {
         other: 0,
         holds: true,
     };
-    let actual = match registrations(text) {
-        Ok(actual) => actual,
-        Err(e) => {
+    let actual = match text.map(registrations) {
+        None => {
+            judgement
+                .lines
+                .push("  (no settings.json: no hook is registered on this machine)".to_string());
+            Vec::new()
+        }
+        Some(Err(e)) => {
             judgement.holds = false;
             judgement.lines.push(format!(
                 "  FAIL: settings.json is not a hooks table doctor can read: {e}"
             ));
             return judgement;
         }
+        Some(Ok(actual)) if actual.is_empty() => {
+            judgement.lines.push("  (settings.json registers no hook)".to_string());
+            actual
+        }
+        Some(Ok(actual)) => actual,
     };
-    if actual.is_empty() {
-        judgement.lines.push("  (settings.json registers no hook)".to_string());
-        return judgement;
-    }
-    for hook in &actual {
+    let wanted: Vec<_> = expected.iter().map(|want| want.key(expected)).collect();
+    let keys: Vec<_> = actual.iter().map(|hook| hook.key(expected)).collect();
+    for (hook, key) in actual.iter().zip(&keys) {
         judgement.registered += 1;
-        let (note, held) = match hook.key() {
+        let (note, held) = match key {
             None => {
                 judgement.other += 1;
                 (FOREIGN, true)
             }
-            Some(key) => {
+            Some(_) => {
                 judgement.dstack += 1;
-                match expected.iter().any(|want| want.key() == Some(key)) {
+                match wanted.contains(key) {
                     true => ("", true),
                     false => (STALE, false),
                 }
@@ -163,8 +208,8 @@ pub fn judge(text: &str, expected: &[Hook]) -> Judgement {
         judgement.holds &= held;
         judgement.lines.push(format!("  {}{note}", hook.row()));
     }
-    for want in expected {
-        let times = actual.iter().filter(|hook| hook.key() == want.key()).count();
+    for (want, key) in expected.iter().zip(&wanted) {
+        let times = keys.iter().filter(|hook| *hook == key).count();
         let fail = match times {
             1 => continue,
             0 => format!("  FAIL: dstack hook missing: {}", want.row()),
@@ -189,7 +234,7 @@ impl Selftest for Checker {
         let text = std::fs::read_to_string(fixture).map_err(|e| {
             Error::cannot_decide(format!("cannot read {}: {e}", fixture.display()))
         })?;
-        Ok(match judge(&text, &expected(&ctx.home.home)?).holds {
+        Ok(match judge(Some(&text), &expected(&ctx.home.home)?).holds {
             true => Verdict::Pass,
             false => Verdict::Reject,
         })
