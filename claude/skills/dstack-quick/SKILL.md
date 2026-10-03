@@ -110,8 +110,10 @@ Off by default; the skip line is `external research: skipped — external_resear
 1. With `korean_polish: on`, polish the request prose **once, before approval**, through the
    **ko-polish** native worker (`runtime.md`). It never touches R rows, frontmatter, tables or code spans.
    After approval the hash freezes the file (R46) — never polish it again.
-2. `dstack request open --quick <slug>` — opens `code -g <abs>:1`, or prints the path.
-3. Ask in Korean with three options plus the tool's built-in **Other**:
+2. `dstack request open --quick <slug>` — opens `code -g <abs>:1`, or prints the path; say that
+   path in the question text.
+3. Ask at once — no other output between `request open` and the question — in Korean with three
+   options plus the tool's built-in **Other**:
 
    | Option | Meaning | Next move |
    |---|---|---|
