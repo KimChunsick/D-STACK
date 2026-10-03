@@ -97,6 +97,56 @@ fn R18__a_duplicated_dstack_hook_fails_the_section() {
     assert_eq!(out.status.code(), Some(1), "dstack doctor:\n{printed}");
 }
 
+/// The Stop hook named as registered twice and every Stop row counted as a dstack hook; the
+/// output of the run.
+fn assert_stop_registered_twice(fixture: &str) -> String {
+    let (_home, out, printed) = doctor(&doctor_home::fixture(fixture));
+    let hooks = section(&printed);
+    assert!(
+        hooks.iter().any(|line| {
+            line.starts_with("  FAIL: dstack hook registered 2 times: Stop [*] → ")
+                && line.ends_with("dstack-hook.sh stop (expected once)")
+        }),
+        "{fixture}: the duplicated hook is not named:\n{printed}"
+    );
+    assert!(
+        hooks.contains(&"  registered: 5, dstack: 5, other: 0"),
+        "{fixture}: the second Stop is not a dstack hook:\n{printed}"
+    );
+    assert_eq!(out.status.code(), Some(1), "{fixture}: dstack doctor:\n{printed}");
+    printed
+}
+
+#[test]
+fn R18__a_duplicate_after_a_double_dash_fails_the_section() {
+    let printed = assert_stop_registered_twice("bad-dstack-hook-duplicated-double-dash.json");
+    let row = "  Stop [*] → bash -- \"$HOME/.claude/hooks/dstack-hook.sh\" stop";
+    assert!(
+        section(&printed).contains(&row),
+        "the double-dash row is a note, not the dstack hook:\n{printed}"
+    );
+}
+
+#[test]
+fn R18__a_duplicate_behind_env_or_sh_c_fails_the_section() {
+    for fixture in [
+        "bad-dstack-hook-duplicated-env-prefix.json",
+        "bad-dstack-hook-duplicated-sh-c.json",
+    ] {
+        assert_stop_registered_twice(fixture);
+    }
+}
+
+#[test]
+fn R18__every_invocation_form_counts_as_the_dstack_hook() {
+    let (_home, out, printed) =
+        doctor(&doctor_home::fixture("good-dstack-invocation-option-forms.json"));
+    let hooks = section(&printed);
+    assert!(!hooks.iter().any(|line| line.contains("FAIL")), "{printed}");
+    assert!(hooks.contains(&"  registered: 4, dstack: 4, other: 0"), "{printed}");
+    assert_eq!(out.status.code(), Some(0), "dstack doctor:\n{printed}");
+}
+
 /// Every expected dstack hook named as missing, after the line saying why none is registered.
 fn assert_every_dstack_hook_missing(out: &Output, printed: &str, why: &str) {
     let hooks = section(printed);

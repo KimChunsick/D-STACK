@@ -82,38 +82,73 @@ impl Hook {
     }
 }
 
-/// What a command runs when it invokes the wrapper: every argument after the script when its
-/// first token runs dstack-hook.sh (a shell — bash, sh or an absolute path to one — followed by
-/// the script, or the script itself), the whole command when it equals an expected one. Words
-/// lose one layer of surrounding quotes. Nothing for any other command.
+/// What a command runs when it invokes the wrapper: the words after the script, or the whole
+/// command when it equals an expected one. Nothing for any other command, even one that only
+/// mentions dstack-hook.sh.
 fn invocation(command: &str, expected: &[Hook]) -> Option<String> {
-    let words: Vec<&str> = command.split_whitespace().map(unquote).collect();
-    let is_wrapper = |word: &str| word.rsplit('/').next() == Some(WRAPPER);
-    let is_shell = |word: &str| {
-        matches!(word, "bash" | "sh")
-            || (word.starts_with('/') && (word.ends_with("/bash") || word.ends_with("/sh")))
-    };
-    let script = match words.as_slice() {
-        [shell, script, ..] if is_shell(shell) && is_wrapper(script) => 2,
-        [script, ..] if is_wrapper(script) => 1,
-        _ => {
-            let plain = collapse(command);
-            return expected
-                .iter()
-                .any(|want| collapse(&want.command) == plain)
-                .then_some(plain);
-        }
-    };
-    Some(words[script..].join(" "))
+    runs(&shell_words(command), true).or_else(|| {
+        let plain = collapse(command);
+        expected
+            .iter()
+            .any(|want| collapse(&want.command) == plain)
+            .then_some(plain)
+    })
 }
 
-fn unquote(word: &str) -> &str {
-    for quote in ['\'', '"'] {
-        if let Some(inner) = word.strip_prefix(quote).and_then(|w| w.strip_suffix(quote)) {
-            return inner;
+/// The words after the script when `words` invoke it. After an optional env prefix (`env`, its
+/// options and NAME=value words) the first word is the script itself, or a shell — bash, sh, zsh,
+/// dash or a path to one — whose first word after its options (words starting with -, `--`
+/// included) is the script. A single-dash option holding c (`-c`, `-ec`) makes that word a
+/// command string, read by this same rule when `nest` allows it: once, never deeper.
+fn runs(words: &[String], nest: bool) -> Option<String> {
+    let mut words = words;
+    if words.first().is_some_and(|word| file_name(word) == "env") {
+        let prefix = words[1..]
+            .iter()
+            .take_while(|word| word.starts_with('-') || word.contains('='))
+            .count();
+        words = &words[1 + prefix..];
+    }
+    let (first, rest) = words.split_first()?;
+    if file_name(first) == WRAPPER {
+        return Some(rest.join(" "));
+    }
+    if !matches!(file_name(first), "bash" | "sh" | "zsh" | "dash") {
+        return None;
+    }
+    let (options, rest) = rest.split_at(rest.iter().take_while(|w| w.starts_with('-')).count());
+    let (next, after) = rest.split_first()?;
+    match options.iter().any(|o| !o.starts_with("--") && o.contains('c')) {
+        true if nest => runs(&shell_words(next), false),
+        true => None,
+        false => (file_name(next) == WRAPPER).then(|| after.join(" ")),
+    }
+}
+
+/// The words of a command as a shell splits them: unquoted whitespace separates words, and one
+/// layer of single or double quotes is removed wherever it appears in a word.
+fn shell_words(command: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word: Option<String> = None;
+    let mut quote = None;
+    for c in command.chars() {
+        match quote {
+            Some(open) if c == open => quote = None,
+            Some(_) => word.get_or_insert_with(String::new).push(c),
+            None if c == '\'' || c == '"' => {
+                quote = Some(c);
+                word.get_or_insert_with(String::new);
+            }
+            None if c.is_whitespace() => words.extend(word.take()),
+            None => word.get_or_insert_with(String::new).push(c),
         }
     }
-    word
+    words.extend(word);
+    words
+}
+
+fn file_name(word: &str) -> &str {
+    word.rsplit('/').next().unwrap_or(word)
 }
 
 fn collapse(command: &str) -> String {
@@ -255,5 +290,15 @@ mod tests {
         assert_eq!(names, vec!["UserPromptSubmit", "Stop"], "not sorted");
         assert_eq!(hooks[0].matcher, "*", "the default matcher is *");
         assert_eq!(hooks[1].command, "nope");
+    }
+
+    #[test]
+    fn R18__only_a_single_dash_c_makes_the_next_word_a_command_string_parsed_once() {
+        let runs = |command: String| invocation(&command, &[]);
+        let script = "$HOME/.claude/hooks/dstack-hook.sh";
+        let stop = Some("stop".to_string());
+        assert_eq!(runs(format!("sh -ec 'bash {script} stop'")), stop, "grouped -ec");
+        assert_eq!(runs(format!("bash --norc {script} stop")), stop, "--norc is not -c");
+        assert_eq!(runs(format!("sh -c \"sh -c 'bash {script} stop'\"")), None, "nested once");
     }
 }
