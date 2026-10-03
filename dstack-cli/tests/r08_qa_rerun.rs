@@ -2,7 +2,8 @@
 // R08 (T57): dstack evidence retire --qa reopens a recorded Goal QA result with a reason, keeps the
 // retired result and the reason in the append-only qa-history.tsv, refuses without writing
 // anything, and lets evidence add --qa record the scenario again (D-46). R08 (T58): verify at Goal
-// close refuses the reopened scenario until it is recorded again.
+// close refuses the reopened scenario until it is recorded again. R08 (T60): the same retire run
+// again after a failed qa.tsv rewrite finishes it without a second history row (D-47).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -297,4 +298,39 @@ fn R08_qa_rerun_verify_at_goal_close_refuses_the_reopened_qa_until_it_is_recorde
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("QA1 (S1) met\nQA2 (S2) met\nqa: "), "{out}");
     assert_eq!(history(&t).len(), 1);
+}
+
+#[test]
+fn R08_qa_rerun_the_same_retire_finishes_a_partial_one_with_one_history_row() {
+    let t = goal();
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    let (index, request) = (format!("{DIR}/qa.tsv"), format!("{DIR}/request.md"));
+    let before = [t.read(&index), t.read(&request)];
+    let held = qa_row(&t, "QA1");
+    let args = ["--qa", "QA1", "--why", "목록을 고쳤어요"];
+    let out = retire(&t, &args);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    // What a failed qa.tsv rewrite leaves: the history row written, qa.tsv and part 3 as they were.
+    t.write(&index, &before[0]);
+    t.write(&request, &before[1]);
+    assert_eq!((qa_row(&t, "QA1")[2].as_str(), history(&t).len()), ("failed", 1));
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `failed`"), "{}", part3(&t));
+
+    let out = retire(&t, &args);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert_eq!(stdout(&out).lines().next(), Some("retired QA1 (was failed): 목록을 고쳤어요"));
+    assert_eq!(qa_row(&t, "QA1"), fresh(1), "the same retire reopens the scenario");
+    let rows = history(&t);
+    assert_eq!(rows.len(), 1, "no second row for the same result: {rows:?}");
+    let kept = [&held[2], &held[5], &held[6], &held[7], &held[8], &held[9]];
+    assert_eq!(rows[0][2..8].iter().collect::<Vec<_>>(), kept);
+    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n"), "{}", part3(&t));
+
+    // A new recording is another result: retiring it adds the second row.
+    record(&t, "QA1", "qa1-second.txt", &[]);
+    let out = retire(&t, &["--qa", "QA1", "--why", "산출물을 잘못 골랐어요"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let rows = history(&t);
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert_eq!((rows[1][2].as_str(), rows[1][3].as_str()), ("met", "qa1-second.txt"));
 }

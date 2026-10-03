@@ -1,9 +1,10 @@
 // verbs/verify/qa_states.rs
-// The Goal-close QA check (R08, D-41, D-42, D-46) dstack verify and dstack report share: which
-// targets it holds, whether the Goal is closing, and per QA scenario and uncovered usage scenario
-// whether it passes and why not.
+// The Goal-close QA check (R08, D-41, D-42, D-46, D-47) dstack verify and dstack report share:
+// which targets it holds, whether the Goal is closing, and per QA scenario and uncovered usage
+// scenario whether it passes and why not.
 //
-// Both commands print what `of` returned and nothing else, so they cannot disagree on a refusal.
+// Both commands print what `of` returned and nothing else, so they cannot disagree on a refusal;
+// only verify --at-close, the close itself, prints what `at_close` returned instead.
 
 use std::path::{Path, PathBuf};
 
@@ -73,7 +74,8 @@ impl QaState {
 /// The check of one Goal run: its usage scenarios and one state per line.
 pub struct QaCheck {
     pub scenarios: usize,
-    /// Whether the Goal is closing: no Plan is pending, ready or in progress (D-46).
+    /// Whether the Goal is closing: no Plan is pending, ready or in progress (D-46), or the close
+    /// itself asks (`at_close`, D-47).
     pub closing: bool,
     pub states: Vec<QaState>,
 }
@@ -128,14 +130,26 @@ pub fn usage_ids(kind: TargetKind, request: &Path, text: &str) -> Result<Vec<Str
     qa::scenario_ids(text).map_err(|e| Error::failed(format!("{}: {}", request.display(), e.message())))
 }
 
-/// The check of the target in `dir`, None when it is exempt. The run's QA ledger, every file it
-/// names and plan.json are read here, once; `judge` decides from what was read.
+/// The check of the target in `dir`, None when it is exempt; whether the Goal is closing is read
+/// from its Plans (D-46).
 pub fn of(dir: &Path, main_root: &Path, kind: TargetKind, text: &str) -> Result<Option<QaCheck>> {
+    check(dir, main_root, kind, text, false)
+}
+
+/// The same check held to the Goal close whatever Plans are left, as closing the Goal itself needs
+/// it (verify --at-close, D-47): an open result and an uncovered usage scenario refuse.
+pub fn at_close(dir: &Path, main_root: &Path, kind: TargetKind, text: &str) -> Result<Option<QaCheck>> {
+    check(dir, main_root, kind, text, true)
+}
+
+/// The run's QA ledger, every file it names and, unless the close is `forced`, plan.json are read
+/// here, once; `judge` decides from what was read.
+fn check(dir: &Path, main_root: &Path, kind: TargetKind, text: &str, forced: bool) -> Result<Option<QaCheck>> {
     let ids = usage_ids(kind, &dir.join("request.md"), text)?;
     if ids.is_empty() {
         return Ok(None);
     }
-    let closing = closing(dir)?;
+    let closing = forced || closing(dir)?;
     let rows = qa::rows(dir)?;
     let files: Vec<Vec<String>> = rows.iter().map(|row| file_refusals(dir, main_root, row)).collect();
     Ok(Some(judge(&ids, &rows, files, closing)))

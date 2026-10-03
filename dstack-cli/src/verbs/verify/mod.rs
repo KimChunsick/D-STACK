@@ -60,18 +60,21 @@ fn verify(ctx: &mut Context, args: &[String]) -> Result<()> {
     let roots = ctx.roots()?;
     roots.require_store()?;
     let (target, rest) = resolve_target(ctx, args)?;
-    let (mut accept, mut why) = (String::new(), String::new());
+    let (mut accept, mut why, mut at_close) = (String::new(), String::new(), false);
     let mut i = 0;
     while i < rest.len() {
         let next = rest.get(i + 1).map(String::as_str);
-        if let Some((value, eaten)) = opt(&rest[i], next, "accept-abstain")? {
+        if rest[i] == "--at-close" {
+            at_close = true;
+            i += 1;
+        } else if let Some((value, eaten)) = opt(&rest[i], next, "accept-abstain")? {
             accept = value;
             i += eaten;
         } else if let Some((value, eaten)) = opt(&rest[i], next, "why")? {
             why = value;
             i += eaten;
         } else {
-            fail!("unknown argument: {} (usage: dstack verify [--run <id>|--quick <slug>] [--accept-abstain R01,R02 --why \"<reason>\"])", rest[i])
+            fail!("unknown argument: {} (usage: dstack verify [--run <id>|--quick <slug>] [--at-close] [--accept-abstain R01,R02 --why \"<reason>\"])", rest[i])
         }
     }
     let dir = &target.dir;
@@ -104,8 +107,12 @@ fn verify(ctx: &mut Context, args: &[String]) -> Result<()> {
     // (2)+(3) per-R evidence and the sha256 recheck.
     let states = states::of(dir, &roots.main_root, target.kind, !violations.is_empty())?;
     // The Goal-close QA check (R08, D-41), read before any line is printed: None for an exempt
-    // target, which prints nothing, so its output and exit stay what they were.
-    let qa = qa_states::of(dir, &roots.main_root, target.kind, doc.text())?;
+    // target, which prints nothing, so its output and exit stay what they were. --at-close holds
+    // it to the Goal close whatever Plans are left, for the close itself (D-47).
+    let qa = match at_close {
+        true => qa_states::at_close(dir, &roots.main_root, target.kind, doc.text())?,
+        false => qa_states::of(dir, &roots.main_root, target.kind, doc.text())?,
+    };
     // --accept-abstain first, so the summary already reflects what the owner just accepted.
     let mut accepted = 0;
     if !accept.is_empty() {

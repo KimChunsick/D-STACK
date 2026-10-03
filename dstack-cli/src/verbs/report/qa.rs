@@ -3,7 +3,8 @@
 // scenario none covers, with the reason a failed, skipped or blocked result was recorded with.
 //
 // The states come from verify::qa_states, the evaluation verify prints, so the report refuses a
-// Goal close exactly when verify does: its exit is 1 whenever that check refuses.
+// Goal close exactly when verify without --at-close does: its exit is 1 whenever that check
+// refuses.
 
 use crate::core::context::Context;
 use crate::verbs::verify::qa_states::QaCheck;

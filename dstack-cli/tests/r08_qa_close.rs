@@ -5,7 +5,8 @@
 // without usage scenarios and a quick task keep their output and exit code (D-41, D-42).
 // R08 (T58): the Goal is closing once no Plan is pending, ready or in progress (or there is no
 // plan.json); before that an uncovered usage scenario and an open result only inform, while a
-// failed result and a changed text or artifact refuse at any time (D-46).
+// failed result and a changed text or artifact refuse at any time (D-46). R08 (T60): verify
+// --at-close holds the check to the Goal close whatever Plans are left, for run close (D-47).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -365,4 +366,56 @@ fn R08_qa_close_once_every_plan_is_done_open_and_uncovered_refuse() {
     let out = t.run(&["verify"]);
     assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stderr).contains("plan.json"), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn R08_qa_close_at_close_refuses_open_and_uncovered_while_a_plan_is_in_progress() {
+    let t = goal(SCENARIOS);
+    t.write(&format!("{DIR}/plan.json"), &plan("in-progress"));
+    add(&t, "S1", "qa-1.md");
+    let (code, verify) = call(&t, &["verify"]);
+    assert_eq!(code, 0, "verify informs while a Plan is in progress: {verify}");
+    let (code, closing) = call(&t, &["verify", "--run", RUN, "--at-close"]);
+    assert_eq!(code, 1, "{closing}");
+    let open = "QA1 (S1) FAIL (open): no recorded result — record it: dstack evidence add --qa QA1 --artifact <file> --produced-by <command>";
+    let uncovered = "S2 FAIL (uncovered): no QA scenario — add one: dstack qa add --scenario S2 --from <file>";
+    let refused = "qa: usage scenarios 2, QA scenarios 1, met 0, skipped 0, blocked 0, open 1, uncovered 1, refused 2, at Goal close → refused";
+    assert_eq!(qa_lines(&closing), [open, uncovered, refused], "{closing}");
+    assert!(closing.ends_with(&format!("{VERIFIED} → exit 1\n")), "{closing}");
+    assert_eq!(call(&t, &["report"]).0, 0, "report keeps deciding from the Plan state");
+
+    // A failed result refuses with the flag and without it.
+    add(&t, "S2", "qa-2.md");
+    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    let failed = "QA1 (S1) FAIL (failed): 목록이 비어 있어요; a failed result does not close the Goal";
+    for args in [&["verify"][..], &["verify", "--at-close"]] {
+        let (code, out) = call(&t, args);
+        assert_eq!(code, 1, "{args:?}: {out}");
+        assert_eq!(qa_lines(&out)[0], failed, "{args:?}: {out}");
+    }
+
+    // An unknown argument still refuses, naming the flag in the usage.
+    let out = t.run(&["verify", "--at-close=yes"]);
+    assert_eq!(out.status.code(), Some(1));
+    let usage = "unknown argument: --at-close=yes (usage: dstack verify [--run <id>|--quick <slug>] [--at-close] [--accept-abstain R01,R02 --why \"<reason>\"])";
+    assert!(String::from_utf8_lossy(&out.stderr).contains(usage), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn R08_qa_close_at_close_agrees_with_verify_once_every_plan_is_done() {
+    let t = goal(SCENARIOS);
+    let both = |t: &Scratch| {
+        let plain = call(t, &["verify"]);
+        assert_eq!(call(t, &["verify", "--at-close"]), plain, "--at-close disagrees at Goal close");
+        plain.0
+    };
+    assert_eq!(both(&t), 1, "two uncovered usage scenarios");
+    add(&t, "S1", "qa-1.md");
+    add(&t, "S2", "qa-2.md");
+    assert_eq!(both(&t), 1, "two open results");
+    record(&t, "QA1", "qa1-run.txt", &[]);
+    record(&t, "QA2", "qa2-run.txt", &[]);
+    assert_eq!(both(&t), 0, "every result met");
+    std::fs::remove_file(t.0.join(DIR).join("plan.json")).expect("drop plan.json");
+    assert_eq!(both(&t), 0, "no plan.json");
 }
