@@ -11,11 +11,14 @@ use crate::core::context::Context;
 use crate::core::error::{Error, Result};
 use crate::selftest::{Selftest, Verdict};
 
-/// The script every dstack registration runs; any other command belongs to another program.
+/// The script every dstack registration runs. A command that names it is a dstack registration;
+/// any other command belongs to another program.
 const WRAPPER: &str = "dstack-hook.sh";
 const FOREIGN: &str = "  | note: registered by another program; dstack does not manage it";
 const STALE: &str =
     "  | FAIL: no dstack hook has this event, matcher and argument (stale or wrong registration)";
+const UNVERIFIABLE: &str = "  | FAIL: names the dstack wrapper in a form doctor cannot verify \
+     — register it exactly as claude/settings.enforced.json does";
 
 /// jq's `to_entries` walks the object in document order; serde_json's Map is sorted unless the
 /// crate is built with preserve_order, so the events are collected in the order they are read.
@@ -71,7 +74,7 @@ pub struct Hook {
 
 impl Hook {
     /// The dstack hook this registration is: its event, its matcher and what its command runs.
-    /// Nothing for a command of another program, even one that only mentions the wrapper.
+    /// Nothing for a command that does not invoke the wrapper in a form doctor can read.
     fn key(&self, expected: &[Hook]) -> Option<(&str, &str, String)> {
         let runs = invocation(&self.command, expected)?;
         Some((&self.event, &self.matcher, runs))
@@ -83,8 +86,8 @@ impl Hook {
 }
 
 /// What a command runs when it invokes the wrapper: the words after the script, or the whole
-/// command when it equals an expected one. Nothing for any other command, even one that only
-/// mentions dstack-hook.sh.
+/// command when it equals an expected one. Nothing for any other command; judge fails one that
+/// still names dstack-hook.sh.
 fn invocation(command: &str, expected: &[Hook]) -> Option<String> {
     runs(&shell_words(command), true).or_else(|| {
         let plain = collapse(command);
@@ -228,9 +231,13 @@ pub fn judge(text: Option<&str>, expected: &[Hook]) -> Judgement {
     for (hook, key) in actual.iter().zip(&keys) {
         judgement.registered += 1;
         let (note, held) = match key {
-            None => {
+            None if !hook.command.contains(WRAPPER) => {
                 judgement.other += 1;
                 (FOREIGN, true)
+            }
+            None => {
+                judgement.dstack += 1;
+                (UNVERIFIABLE, false)
             }
             Some(_) => {
                 judgement.dstack += 1;

@@ -1,8 +1,8 @@
 // tests/r18_doctor_hooks.rs
 // R18: `dstack doctor` shows a hook another program registered as a note, not a failure, while a
-// dstack hook that is missing, registered twice or registered under a stale event still fails the
-// hooks section. Every doctor run here reads a scratch home, never the settings.json of this
-// machine, so the result is the same whatever that file holds.
+// dstack hook that is missing, registered twice, registered under a stale event or named in a form
+// doctor cannot verify still fails the hooks section. Every doctor run here reads a scratch home,
+// never the settings.json of this machine, so the result is the same whatever that file holds.
 #![allow(non_snake_case)]
 
 #[path = "support/doctor_home.rs"]
@@ -20,6 +20,8 @@ use dstack_cli::verbs;
 use dstack_cli::verbs::doctor::selfrun;
 
 const NOTE: &str = "  | note: registered by another program; dstack does not manage it";
+const UNVERIFIABLE: &str = "  | FAIL: names the dstack wrapper in a form doctor cannot verify \
+     — register it exactly as claude/settings.enforced.json does";
 
 /// Doctor under a scratch home holding `settings`: the home (kept alive), the run and its stdout.
 fn doctor(settings: &str) -> (ScratchHome, Output, String) {
@@ -182,35 +184,52 @@ fn R18__no_settings_json_leaves_every_dstack_hook_missing() {
     );
 }
 
-#[test]
-fn R18__a_command_that_only_mentions_the_wrapper_is_a_note() {
-    let (_home, out, printed) = doctor(&doctor_home::fixture("good-mentions-wrapper-noted.json"));
+/// A command that names dstack-hook.sh in a form doctor cannot read as the wrapper fails on its
+/// own row and counts as a dstack hook; the output of the run.
+fn assert_unverifiable(fixture: &str, row: &str, count: &str) -> String {
+    let (_home, out, printed) = doctor(&doctor_home::fixture(fixture));
     let hooks = section(&printed);
     assert!(
-        hooks.contains(&format!("  Notification [*] → logger dstack-hook.sh{NOTE}").as_str()),
-        "the mention is not a note:\n{printed}"
+        hooks.contains(&format!("{row}{UNVERIFIABLE}").as_str()),
+        "{fixture}: the row does not fail as unverifiable:\n{printed}"
     );
-    assert!(!hooks.iter().any(|line| line.contains("FAIL")), "{printed}");
-    assert!(hooks.contains(&"  registered: 5, dstack: 4, other: 1"), "{printed}");
-    assert_eq!(out.status.code(), Some(0), "dstack doctor:\n{printed}");
+    assert!(hooks.contains(&count), "{fixture}: the count line:\n{printed}");
+    assert_eq!(out.status.code(), Some(1), "{fixture}: dstack doctor:\n{printed}");
+    printed
+}
+
+#[test]
+fn R18__a_command_that_only_mentions_the_wrapper_fails_the_section() {
+    assert_unverifiable(
+        "bad-mentions-wrapper.json",
+        "  Notification [*] → logger dstack-hook.sh",
+        "  registered: 5, dstack: 5, other: 0",
+    );
+}
+
+#[test]
+fn R18__a_duplicate_behind_an_option_argument_fails_the_section() {
+    assert_unverifiable(
+        "bad-dstack-hook-duplicated-option-argument.json",
+        "  Stop [*] → bash -o pipefail \"$HOME/.claude/hooks/dstack-hook.sh\" stop",
+        "  registered: 5, dstack: 5, other: 0",
+    );
 }
 
 #[test]
 fn R18__echoing_the_wrapper_does_not_register_the_stop_hook() {
-    let (_home, out, printed) = doctor(&doctor_home::fixture("bad-echo-not-invoked.json"));
-    let hooks = section(&printed);
-    assert!(
-        hooks.contains(&format!("  Stop [*] → echo dstack-hook.sh stop{NOTE}").as_str()),
-        "the echo is not a note:\n{printed}"
+    let printed = assert_unverifiable(
+        "bad-echo-not-invoked.json",
+        "  Stop [*] → echo dstack-hook.sh stop",
+        "  registered: 4, dstack: 4, other: 0",
     );
     assert!(
-        hooks.iter().any(|line| {
+        section(&printed).iter().any(|line| {
             line.starts_with("  FAIL: dstack hook missing: Stop [*] → ")
                 && line.ends_with("dstack-hook.sh stop")
         }),
         "the Stop hook is not named missing:\n{printed}"
     );
-    assert_eq!(out.status.code(), Some(1), "dstack doctor:\n{printed}");
 }
 
 /// The tests that run doctor never read this machine's settings.json: the section names the
