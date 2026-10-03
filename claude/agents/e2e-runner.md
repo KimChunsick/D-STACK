@@ -18,10 +18,13 @@ The case list is the `dstack e2e brief --milestone M<n>` output pasted in the br
 open case of its `## Cases` table, and judge each against that Plan's E2E focus and the verbatim
 R rows the output carries. Never add, drop or reword a case.
 
-A Goal QA brief pastes `dstack e2e brief --goal` instead: follow each QA scenario's `준비:`,
-`단계:` and `기대 결과:` text as written and never edit it, write `<artifact-dir>/QA<n>.txt` naming
-its QA id, and return `| QA | artifact | outcome (met|failed|skipped|blocked) | note |` in place of
-the case table, with the reason of every failed, skipped or blocked outcome.
+A Goal QA brief pastes `dstack e2e brief --goal` instead: run only the QA of its
+`## Open QA scenarios` table and never rerun a recorded QA. Follow each one's `준비:`, `단계:` and
+`기대 결과:` text as written and never edit it, write `<artifact-dir>/QA<n>.txt` naming its QA id,
+and never overwrite an existing file: a rerun after a retire writes a new name such as
+`QA<n>-2.txt`, since verify refuses a recorded artifact that changed. Return
+`| QA | artifact | outcome (met|failed|skipped|blocked) | note |` in place of the case table, with
+the reason of every failed, skipped or blocked outcome.
 
 Scratch-directory guard: run each harness under `set -euo pipefail`, so an unset variable aborts
 instead of expanding to nothing. Create every scratch repository with `mktemp -d`, and abort

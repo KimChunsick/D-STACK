@@ -262,15 +262,15 @@ including quick tasks and the final sealing review; legacy request values do not
 1. The milestone's e2e pass (verify §7 step 3): one runner over every open case of every Plan,
    its case table pasted from `dstack e2e brief --milestone M<n>`, one `dstack evidence add` per
    artifact. A failed case becomes a reviewed decimal Plan (`plan insert --after P<n>`); the milestone waits.
-2. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0.
+2. `dstack check coverage`, `dstack check decisions`, `dstack verify` — all exit 0. `verify` passes
+   with the Goal QA open while later Plans remain; when every Plan is done, the last milestone close
+   runs the Goal QA (dstack-verify §7) first. `dstack verify --at-close` previews Goal close.
 3. `dstack review --scope milestone --milestone M2` → ledger pass → seal.
-4. Goal close runs the Goal QA and records its evidence (dstack-verify §7). `dstack verify` also
-   checks branch containment (R38): if the Goal branch does not contain the base branch HEAD it
-   refuses with "rebase first". After the rebase, re-run the ledger pass (step 3) for every
-   Plan whose files had conflicts, then close.
+4. `dstack verify` also checks branch containment (R38): a Goal branch without the base branch HEAD
+   is refused with "rebase first"; after the rebase, re-run step 3 for every Plan whose files conflicted.
 5. `dstack report` — R table with computed status; `UNMET` exits 1, only `ABSTAIN`/`BLOCKED`
    exits 2. Accept each one deliberately: `dstack verify --accept-abstain R05 --why "<why>"`.
-6. `dstack run close`.
+6. `dstack run close` — it checks the Goal QA with `--at-close` whatever Plans remain.
 
 Korean wrap-up line, e.g. "M2는 Plan 4개가 전부 done이고 검사 세 개가 통과했어요. 남은
 ABSTAIN은 R05 하나예요 — 사유를 확인해 주시면 받고 Goal을 닫을게요."

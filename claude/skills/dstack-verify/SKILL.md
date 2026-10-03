@@ -30,19 +30,17 @@ in the codebase — SUMMARY.md claims are not evidence."* Here a worker's report
 |---|---|
 | A worker returns | the `test` rows its Tasks produced (Red/Green artifacts) → `dstack evidence add` at once: the Red output exists only at that moment |
 | A milestone closes | ONE e2e-runner pass over the cases of every Plan in the milestone, its cases pasted from `dstack e2e brief --milestone M<n>` → evidence → `dstack check coverage` → the §7 checklist |
-| The Goal closes | the Goal QA (request with usage scenarios, §6): `dstack qa add` per usage scenario, ONE e2e-runner pass over `dstack e2e brief --goal`, `dstack evidence add --qa` per QA → §7 checklist + `dstack report --metrics` + `dstack run close` |
+| The Goal closes | at the last milestone close, where every Plan is done, the Goal QA (request with usage scenarios, §6) before `dstack verify`: `dstack qa add` per usage scenario, ONE e2e-runner pass over the open QA of `dstack e2e brief --goal`, `dstack evidence add --qa` per QA → §7 checklist + `dstack report --metrics` + `dstack run close`, which checks the Goal QA with `--at-close` |
 | A case cannot be observed | record `blocked` / `abstain` (§5), then continue with the next case |
 
-Evidence has three rhythms. Test evidence is per Task and recorded the moment the worker's report
+Evidence has three rhythms. Test evidence is per Task, recorded the moment the worker's report
 arrives (develop §7). E2E evidence is per milestone, not per Plan: the Plans of a wave are
-independent, so one runner at milestone close covers them all, and the runner is the expensive
-part of verification. The price is that a failed case reopens a Plan that is already done and
-reviewed — the fix is a decimal Plan (`dstack plan insert --after P<n>`) with its own review
-round, and the milestone stays open until its case is re-run and recorded. Goal QA is the third:
-at Goal close one runner pass checks the request's usage scenarios end to end, whatever `e2e` says.
+independent, so one runner at milestone close covers them all, and the runner is the expensive part
+of verification. A failed case reopens a done, reviewed Plan: the fix is a decimal Plan with its own
+review round, and the milestone stays open until the case is re-run and recorded. Goal QA is the
+third: one runner pass checks the request's usage scenarios end to end, whatever `e2e` says.
 
-Phases are switched on by request fields only — never by a guess about the task's size. Read them
-with `dstack request show` and obey the table:
+Request fields alone switch phases on, never a guess about the task's size (`dstack request show`):
 
 | Field | Value | Effect here |
 |---|---|---|
@@ -53,10 +51,9 @@ with `dstack request show` and obey the table:
 | `visual` | any | no comparison tool is bundled: one `skipped` row per rendering R, note `no-visual-surface` |
 | `korean_polish` | `on` | the Korean prose under the report goes through `ko-polish` (native mapping in `runtime.md`) |
 
-A phase that does not run is written down, never silently dropped (§3-3): put
-`e2e-runner: skipped — e2e=none` (or the real reason) in the message that reports the milestone,
-and record the ledger row that carries the same note. There is no unconditional LLM round trip in
-this skill: the runner is delegated to only when at least one open case or QA scenario needs execution.
+A phase that does not run is written down, never silently dropped (§3-3): put the reason in the
+milestone report, e.g. `e2e-runner: skipped — e2e=none`, and record a ledger row with the same note.
+The runner is delegated to only when an open case or QA scenario needs execution.
 
 ## 2. The cases ledger (R73)
 
@@ -80,8 +77,7 @@ dstack check coverage             # every live R needs a covering task AND an ev
 
 ## 3. Verification profiles (R72)
 
-One profile per `work_type`. The profile says what one case must produce; the request's `e2e` field
-says which kind the ledger row carries.
+One profile per `work_type`: it says what one case must produce; the `e2e` field picks the ledger kind.
 
 | work_type | One case produces | Tool | Ledger kind |
 |---|---|---|---|
@@ -146,9 +142,11 @@ Compact receipt: location/HEAD; R outcomes; changed files/commit; commands/exits
 ```
 
 The Goal QA pass sends the same block for `Goal QA` instead of a milestone, `<scope>` `goal-qa`,
-and the `dstack e2e brief --goal` output pasted verbatim instead of the cases. The runner follows
-each QA scenario's `준비:` / `단계:` / `기대 결과:` text as written, writes `QA<n>.txt` naming its QA id,
-and returns `| QA | artifact | outcome (met|failed|skipped|blocked) | note |`, a reason per non-met.
+and the `dstack e2e brief --goal` output pasted verbatim instead of the cases. The runner runs only
+its `## Open QA scenarios` table, each text as written, and must never rerun a recorded QA. It
+writes `QA<n>.txt` naming its QA id and must never overwrite an existing file (a rerun after a
+retire writes `QA<n>-2.txt`: verify refuses a recorded artifact that changed). It returns
+`| QA | artifact | outcome (met|failed|skipped|blocked) | note |`, a reason per non-met.
 
 A run longer than the foreground cap uses the host completion mechanism in `runtime.md` (R98):
 `dstack exec <label> -- <the long command>`, label `e2e-M2`, `e2e-goal-qa`, `e2e-<quick slug>`, ….
@@ -171,13 +169,21 @@ dstack evidence add --r R09 --case c1 --kind review \
 
 Goal QA (§7) has two forms of its own. A QA text needs `준비:`, `단계:` and `기대 결과:` lines with
 visible text. A QA result takes no `--r`/`--case`/`--kind`, needs `--note` unless `met`, must name
-its QA id as a whole word, and is never overwritten: a `failed` one keeps refusing close (§6).
+its QA id as a whole word, and is never overwritten: a `failed` one keeps refusing (§6) until retired.
 
 ```bash
 dstack qa add --scenario S<n>|none --from <file>    # none: a check tied to no usage scenario
 dstack evidence add --qa QA<n> --artifact .dstack/local/artifacts/goal-qa/QA<n>.txt \
   --produced-by "<cmd>" --status met|failed|skipped|blocked --note "<reason>"
 ```
+
+A recorded row that must stop counting is retired, never edited or overwritten. An R row whose
+artifact was overwritten after recording (verify: `sha256 mismatch`) or proved the wrong thing:
+`dstack evidence retire --r R<NN> --case <id> --why "<reason>"` sets it to `retired` (artifact and
+old sha stay as history); record the replacement under a NEW case id. A failed or wrong QA result:
+`dstack evidence retire --qa QA<n> --why "<reason>"` reopens it, keeping the result and reason in
+`qa-history.tsv`; then rerun only that QA and record it again. An interrupted retire is finished
+by repeating it. Re-runs of a harness write new file names, never the recorded ones.
 
 ### 5.1 Why a row is rejected, and what fixes it
 
@@ -225,12 +231,14 @@ dstack report        # the R table: id, text, covering tasks, evidence path, sta
   ceiling; the request may only narrow it. When `verify` rejects a request that widens it, it prints
   the policy's `why` line — quote that line to the user and change the *request*. Never edit
   PROJECT.md to make a run pass.
-- **Goal QA.** Only a Goal run whose request has a `### S<n>` heading under
-  `## 사용 시나리오` is checked; legacy requests and quick tasks are untouched. `verify` then refuses
-  (exit 1, so `run close` refuses) a usage scenario with no QA scenario, an open or failed QA
-  result, and a QA text or artifact missing or changed after recording. `skipped` and `blocked`
-  pass; `report` prints their reasons in `| QA | scenario | status | reason | artifact |` and exits 1
-  whenever verify's QA check refuses.
+- **Goal QA.** Only a Goal run whose request has a `### S<n>` heading under `## 사용 시나리오` is
+  checked; legacy requests and quick tasks are untouched. A failed QA result, a pending retire and a
+  QA text or artifact missing or changed after recording refuse (exit 1) at any time. A usage
+  scenario with no QA scenario and an open QA result refuse only at Goal close (no Plan pending,
+  ready or in-progress): while later Plans remain, milestone-close `verify` passes with the Goal QA open.
+  `dstack run close` checks with `--at-close` whatever Plans remain; `dstack verify --at-close`
+  shows it ahead of time. `skipped` and `blocked` pass; `report` prints each reason in its QA table
+  `| QA | scenario | status | reason | artifact |` and exits 1 whenever verify's QA check refuses.
 - **Exit codes.** `0` pass; `1` something failed (the reason is printed); `2` only unaccepted
   ABSTAIN/BLOCKED remain. `report`: `1` on any UNMET, `2` when only ABSTAIN/BLOCKED remain,
   and `--metrics` exits `1` if any metric is `unavailable`.
@@ -266,12 +274,12 @@ Run in order. Every step prints counts; paste the counts, do not summarise them 
 | 4 | Ledger check for the milestone (R70): open findings and integration behaviour only, no new scope | `dstack review --scope milestone --milestone M2`, then the `codex-review` skill seals the round |
 | 5 | Coverage | `dstack check coverage` |
 | 6 | Interview decisions covered | `dstack check decisions` |
-| 7 | Goal close only, request with usage scenarios (§6): the Goal QA (§4, §5) — a QA scenario for every usage scenario still uncovered, one runner pass, one result per QA | `dstack qa add --scenario S<n>`, `dstack e2e brief --goal`, then `dstack evidence add --qa QA<n>` |
-| 8 | Evidence, policy and Goal QA | `dstack verify` |
+| 7 | At the last milestone close, where every Plan is done, request with usage scenarios (§6): the Goal QA (§4, §5) — a QA scenario for every usage scenario still uncovered, one runner pass over the open QA only, one result per QA. Earlier milestones skip it; their step 8 passes with it open. A failed QA: fix it (a decimal Plan when code must change), `dstack evidence retire --qa QA<n> --why "<reason>"` (§5), then rerun and record only that QA | `dstack qa add --scenario S<n>`, `dstack e2e brief --goal`, then `dstack evidence add --qa QA<n>` |
+| 8 | Evidence, policy and Goal QA (`dstack verify --at-close` previews the Goal close) | `dstack verify` |
 | 9 | Report | `dstack report` |
 | 10 | Finished quick items tidied (R99) | `dstack quick list`, `dstack quick close <slug>` |
 | 11 | Goal close only: R01 metrics (wall clock, tokens, review rounds, concurrent runs, R met rate) | `dstack report --metrics` |
-| 12 | Goal close only: runs verify, stamps closed_at, clears CURRENT | `dstack run close` |
+| 12 | Goal close only: runs verify with `--at-close` (the Goal QA whatever Plans remain), stamps closed_at, clears CURRENT | `dstack run close` |
 
 **Rebase rule (R38).** `dstack verify` refuses to close a Goal whose branch does not contain the base
 branch HEAD, and says "rebase first". Then: rebase onto the base branch; for every file that
@@ -290,11 +298,3 @@ is for a Goal that is being dropped, not for one that will not pass.
 | `agents/gsd-verifier.md:472` | "SUMMARY.md probe pass claims are not evidence. If a phase declares or implies probe-based verification, the verifier must run the probe in its own process and record the command result." |
 | `agents/gsd-verifier.md:498` | "Exit code 0 is PASS. Any non-zero exit is FAILED and must include stdout/stderr evidence in VERIFICATION.md." |
 | `gsd-core/references/honest-verifier.md` | "Never silent, never a hard halt." / "Explicit evidence = a wired held-out/property-based test that passes, or a behavior the verifier directly observed." |
-
-## A recorded row that must stop counting (`dstack evidence retire`)
-
-When an artifact was overwritten after recording (verify: `sha256 mismatch`) or proved the wrong
-thing, do not edit the ledger and do not overwrite the row: `dstack evidence retire --r R<NN>
---case <id> --why "<reason>"` sets the row to `retired` (its artifact and old sha stay as
-history), then record the replacement under a NEW case id with `dstack evidence add`. Re-runs
-of a harness must write new file names, never the recorded ones.

@@ -5,7 +5,10 @@
 // "Goal close records no new evidence" sentence and stays within the 300-line skill cap;
 // runtime.md says verify also checks Goal QA. The pointers: dstack-develop §10 and dstack-workflow
 // send Goal close to dstack-verify §7, e2e-runner.md takes a Goal QA brief, and the help roster
-// names --goal, --qa, the Goal QA check and the QA table.
+// names --goal, --qa, the Goal QA check and the QA table. After round 041 (D-46, D-47): the runner
+// runs only the open QA and never overwrites an artifact, §5 and §7 reopen a QA result with
+// `evidence retire --qa`, and dstack-verify and dstack-develop say a milestone-close verify passes
+// before the Goal QA, which the last milestone close runs, and that run close checks --at-close.
 #![allow(non_snake_case)]
 
 use std::path::PathBuf;
@@ -184,6 +187,75 @@ fn R11_verify_docs_runner_takes_a_goal_qa_brief() {
 }
 
 #[test]
+fn R11_verify_docs_runner_runs_only_the_open_qa_and_keeps_artifacts() {
+    let runner = read(RUNNER);
+    let text = read(VERIFY);
+    let brief = section(&text, "4. Running the cases — delegate to the native e2e-runner");
+    for (what, body) in [(RUNNER, runner.as_str()), ("verify §4", brief)] {
+        assert_names(
+            what,
+            body,
+            &[
+                "## Open QA scenarios",
+                "never rerun a recorded QA",
+                "never overwrite an existing file",
+                "QA<n>-2.txt",
+            ],
+        );
+    }
+}
+
+#[test]
+fn R11_verify_docs_retire_reopens_a_qa_result() {
+    let text = read(VERIFY);
+    let record = section(&text, "5. Recording evidence (R104)");
+    assert_names(
+        "verify §5",
+        record,
+        &[
+            "dstack evidence retire --qa QA<n> --why \"<reason>\"",
+            "qa-history.tsv",
+            "rerun only that QA",
+            "interrupted retire",
+            "repeating",
+        ],
+    );
+    let close = section(&text, "7. Milestone and Goal close checklist");
+    assert_names("verify §7", close, &["dstack evidence retire --qa QA<n>"]);
+}
+
+#[test]
+fn R11_verify_docs_milestone_close_passes_before_the_goal_qa() {
+    let text = read(VERIFY);
+    for (what, title) in [
+        ("verify §1", "1. When this runs"),
+        ("verify §7", "7. Milestone and Goal close checklist"),
+    ] {
+        assert_names(
+            what,
+            section(&text, title),
+            &["last milestone close", "every Plan is done", "--at-close"],
+        );
+    }
+    assert_names(
+        "verify §6",
+        section(&text, "6. verify, accept-abstain, report, metrics"),
+        &["while later Plans remain", "dstack verify --at-close", "dstack run close"],
+    );
+    let develop = read(DEVELOP);
+    assert_names(
+        "develop §10",
+        section(&develop, "10. Closing a Milestone and the Goal"),
+        &[
+            "while later Plans remain",
+            "last milestone close",
+            "every Plan is done",
+            "--at-close",
+        ],
+    );
+}
+
+#[test]
 fn R11_verify_docs_help_names_the_goal_qa_options() {
     let out = Command::new(env!("CARGO_BIN_EXE_dstack"))
         .arg("help")
@@ -201,6 +273,8 @@ fn R11_verify_docs_help_names_the_goal_qa_options() {
         ("e2e brief", "--goal"),
         ("evidence add", "--qa"),
         ("verify", "Goal QA"),
+        ("verify", "--at-close"),
+        ("evidence retire", "--qa"),
         ("report", "QA table"),
     ] {
         assert!(line(verb).contains(phrase), "help line of {verb} does not name {phrase:?}");
