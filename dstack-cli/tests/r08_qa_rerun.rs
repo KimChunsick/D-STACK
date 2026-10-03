@@ -6,7 +6,8 @@
 // again after a failed qa.tsv rewrite finishes it without a second history row (D-47). R08 (T64):
 // every history row carries its attempt and a retire stays pending in qa-retire.pending until its
 // last step, so the same retire or a record finishes an interrupted one, and identical recordings
-// within one second keep a history row and a reason each (D-53).
+// within one second keep a history row and a reason each (D-53). R08 (T67): while a retire is
+// pending, verify — before Goal close or at it — and report refuse, naming the QA (D-56).
 
 // The pipeline names a test after the R row it proves, which is not snake case.
 #![allow(non_snake_case)]
@@ -375,11 +376,13 @@ fn R08_qa_rerun_identical_recordings_within_one_second_keep_both_retires() {
 /// What a QA1 retire leaves when it stops after each of its first three steps.
 const POINTS: [&str; 3] = ["the pending write", "the history append", "the qa.tsv rewrite"];
 
-/// A Goal whose QA1 retire stopped after POINTS[point]: a whole retire, then every file a later
-/// step writes put back as it was. The pending row is the history row the retire wrote.
-fn interrupted(point: usize) -> Scratch {
+/// A Goal with QA2 met whose retire of a QA1 result with `status` stopped after POINTS[point]: a
+/// whole retire, then every file a later step writes put back as it was. The pending row is the
+/// history row the retire wrote. QA2 is recorded first, since any record finishes the retire.
+fn interrupted(point: usize, status: &str) -> Scratch {
     let t = goal();
-    record(&t, "QA1", "qa1-run.txt", &["--status", "failed", "--note", "목록이 비어 있어요"]);
+    record(&t, "QA2", "qa2-run.txt", &[]);
+    record(&t, "QA1", "qa1-run.txt", &["--status", status, "--note", "목록이 비어 있어요"]);
     let (index, request) = (format!("{DIR}/qa.tsv"), format!("{DIR}/request.md"));
     let before = [t.read(&index), t.read(&request)];
     let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
@@ -392,7 +395,8 @@ fn interrupted(point: usize) -> Scratch {
         t.write(&index, &before[0]);
     }
     t.write(&request, &before[1]);
-    assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `failed`\n"), "{}", part3(&t));
+    let held = format!("- QA1: 사용 시나리오 S1\n  - 상태: `{status}`\n");
+    assert!(part3(&t).contains(&held), "{}", part3(&t));
     t
 }
 
@@ -408,7 +412,7 @@ fn finished(t: &Scratch, after: &str) {
 #[test]
 fn R08_qa_rerun_each_interruption_point_is_finished_by_the_same_retire_or_a_record() {
     for (point, after) in POINTS.iter().enumerate() {
-        let t = interrupted(point);
+        let t = interrupted(point, "failed");
         let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
         assert_eq!(out.status.code(), Some(0), "after {after}: {}", stderr(&out));
         let first = stdout(&out).lines().next().map(String::from);
@@ -417,11 +421,79 @@ fn R08_qa_rerun_each_interruption_point_is_finished_by_the_same_retire_or_a_reco
         finished(&t, after);
         assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `open`\n"), "after {after}: {}", part3(&t));
 
-        let t = interrupted(point);
+        let t = interrupted(point, "failed");
         record(&t, "QA1", "qa1-second.txt", &[]);
         let row = qa_row(&t, "QA1");
         assert_eq!((row[2].as_str(), row[5].as_str()), ("met", "qa1-second.txt"), "after {after}");
         finished(&t, after);
         assert!(part3(&t).contains("- QA1: 사용 시나리오 S1\n  - 상태: `met`\n"), "after {after}: {}", part3(&t));
+    }
+}
+
+/// A plan.json whose one Plan has `status`: while it is in progress the Goal is not closing yet.
+fn plan(status: &str) -> String {
+    format!(
+        r#"{{ "v": 2,
+  "milestones": [ {{"id":"M1","slug":"rerun","order":1}} ],
+  "plans": [ {{"id":"P1","milestone":"M1","slug":"rerun","files":["a"],"deps":[],
+              "status":"{status}","worktree":"","started_at":"","done_at":"",
+              "tasks":[ {{"id":"T1","slug":"rerun","covers":["R01"],"files":["a"],
+                         "deps":[],"commit":"","done_at":""}} ] }} ] }}
+"#
+    )
+}
+
+/// verify, verify --at-close and report: each one's exit code and stdout.
+fn judged(t: &Scratch) -> [(i32, String); 3] {
+    let calls: [&[&str]; 3] = [&["verify"], &["verify", "--run", RUN, "--at-close"], &["report"]];
+    calls.map(|args| {
+        let out = t.run(args);
+        (out.status.code().unwrap_or(-1), stdout(&out))
+    })
+}
+
+#[test]
+fn R08_qa_rerun_a_pending_retire_refuses_verify_and_report_until_it_is_finished() {
+    let unfinished = "a retire of QA1 is unfinished (qa-retire.pending) — run the same dstack evidence retire --qa QA1 --why … again, or record QA1, which finishes it first";
+    // The same retire finishes it while a Plan is in progress: QA1 is open, which only the close
+    // itself refuses. A record finishes it once every Plan is done.
+    for (status, after) in [("in-progress", [0, 1, 0]), ("done", [0, 0, 0])] {
+        // A retire of a met QA1 stopped before its qa.tsv rewrite: the ledger still reads met, and
+        // nothing but the pending retire refuses.
+        let t = interrupted(1, "met");
+        t.write(&format!("{DIR}/plan.json"), &plan(status));
+        let refused = judged(&t);
+        for (code, out) in &refused {
+            assert_eq!(*code, 1, "{status}: {out}");
+            assert!(out.contains(unfinished), "{status}: {out}");
+        }
+        let verify = &refused[0].1;
+        assert!(verify.contains(&format!("QA1 (S1) FAIL (met): {unfinished}\n")), "{verify}");
+
+        match status {
+            "in-progress" => {
+                let out = retire(&t, &["--qa", "QA1", "--why", "목록을 고쳤어요"]);
+                assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+            }
+            _ => record(&t, "QA1", "qa1-second.txt", &[]),
+        }
+        assert!(!t.0.join(PENDING).exists(), "{status}: the retire is still pending");
+        for ((code, out), want) in judged(&t).into_iter().zip(after) {
+            assert_eq!(code, want, "{status}: {out}");
+            assert!(!out.contains("is unfinished"), "{status}: {out}");
+        }
+    }
+
+    // A pending file that holds no history row cannot say which QA it retires, and one naming a QA
+    // qa.tsv does not hold has no line to refuse on, so both refuse as undecidable.
+    let t = interrupted(1, "met");
+    let unknown = [&["QA9".to_string()][..], &history(&t)[0][1..]].concat().join("\t");
+    for (held, named) in [("읽을 수 없어요", "holds no qa-history.tsv row"), (unknown.as_str(), "names QA9")] {
+        t.write(PENDING, &format!("{held}\n"));
+        for args in [&["verify"][..], &["report"]] {
+            let out = t.run(args);
+            assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stdout(&out));
+            assert!(stderr(&out).contains(&format!("qa-retire.pending {named}")), "{args:?}: {}", stderr(&out));
+        }
     }
 }

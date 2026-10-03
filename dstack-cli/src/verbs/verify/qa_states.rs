@@ -1,7 +1,7 @@
 // verbs/verify/qa_states.rs
-// The Goal-close QA check (R08, D-41, D-42, D-46, D-47) dstack verify and dstack report share:
-// which targets it holds, whether the Goal is closing, and per QA scenario and uncovered usage
-// scenario whether it passes and why not.
+// The Goal-close QA check (R08, D-41, D-42, D-46, D-47, D-56) dstack verify and dstack report
+// share: which targets it holds, whether the Goal is closing, and per QA scenario and uncovered
+// usage scenario whether it passes and why not.
 //
 // Both commands print what `of` returned and nothing else, so they cannot disagree on a refusal;
 // only verify --at-close, the close itself, prints what `at_close` returned instead.
@@ -13,6 +13,7 @@ use crate::core::fsx::sha256_file;
 use crate::core::target::TargetKind;
 use crate::store::plan;
 use crate::store::qa::{self, QaRow, QA_RESULTS};
+use crate::store::qa_retire::{self, PENDING};
 use crate::store::request_sections::SECTION_KEYS;
 use crate::store::visible::{heading, lines};
 
@@ -142,17 +143,23 @@ pub fn at_close(dir: &Path, main_root: &Path, kind: TargetKind, text: &str) -> R
     check(dir, main_root, kind, text, true)
 }
 
-/// The run's QA ledger, every file it names and, unless the close is `forced`, plan.json are read
-/// here, once; `judge` decides from what was read.
+/// The run's QA ledger, every file it names, the pending retire and, unless the close is `forced`,
+/// plan.json are read here, once; `judge` decides from what was read. A pending retire whose QA
+/// the ledger does not hold cannot decide, so it never passes unnoticed.
 fn check(dir: &Path, main_root: &Path, kind: TargetKind, text: &str, forced: bool) -> Result<Option<QaCheck>> {
     let ids = usage_ids(kind, &dir.join("request.md"), text)?;
     if ids.is_empty() {
         return Ok(None);
     }
     let closing = forced || closing(dir)?;
+    let retiring = qa_retire::pending_qa(dir)?;
     let rows = qa::rows(dir)?;
+    if let Some(qa) = retiring.as_deref().filter(|qa| !rows.iter().any(|row| row.qa == *qa)) {
+        let file = dir.join(PENDING);
+        return Err(Error::cannot_decide(format!("{} names {qa}, which qa.tsv does not hold", file.display())));
+    }
     let files: Vec<Vec<String>> = rows.iter().map(|row| file_refusals(dir, main_root, row)).collect();
-    Ok(Some(judge(&ids, &rows, files, closing)))
+    Ok(Some(judge(&ids, &rows, files, retiring.as_deref(), closing)))
 }
 
 /// D-46: the Goal is closing once no Plan is left — none pending, ready or in progress, or no
@@ -175,9 +182,10 @@ fn pending(closing: bool, need: &str, fix: String) -> (Option<String>, Vec<Strin
     }
 }
 
-/// The per-line states from the usage scenario ids, the ledger rows, each row's file refusals and
-/// whether the Goal is closing.
-fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>, closing: bool) -> QaCheck {
+/// The per-line states from the usage scenario ids, the ledger rows, each row's file refusals, the
+/// QA of a pending retire and whether the Goal is closing. A pending retire refuses at any time
+/// (D-56): the ledger may still show the result the user has already retired.
+fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>, retiring: Option<&str>, closing: bool) -> QaCheck {
     let mut states = Vec::new();
     for (row, files) in rows.iter().zip(files) {
         let mut refusals = Vec::new();
@@ -192,6 +200,12 @@ fn judge(ids: &[String], rows: &[QaRow], files: Vec<Vec<String>>, closing: bool)
             status => refusals.push(format!("status {status} is no QA result (open, {})", QA_RESULTS.join(", "))),
         }
         refusals.extend(files);
+        if retiring == Some(row.qa.as_str()) {
+            let qa = &row.qa;
+            refusals.push(format!(
+                "a retire of {qa} is unfinished ({PENDING}) — run the same dstack evidence retire --qa {qa} --why … again, or record {qa}, which finishes it first"
+            ));
+        }
         let noted = row.status != "met" && row.status != "open" && !matches!(row.note.as_str(), "" | "-");
         states.push(QaState {
             qa: Some(row.qa.clone()),

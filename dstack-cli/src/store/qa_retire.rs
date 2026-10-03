@@ -17,9 +17,35 @@ pub fn history(dir: &Path) -> PathBuf {
     dir.join("qa-history.tsv")
 }
 
-/// The history row of a retire that has not finished every step yet.
+/// The file beside qa.tsv that holds the history row of a retire that has not finished every step
+/// yet; while it exists the Goal QA check refuses (D-56).
+pub const PENDING: &str = "qa-retire.pending";
+
 fn pending(dir: &Path) -> PathBuf {
-    dir.join("qa-retire.pending")
+    dir.join(PENDING)
+}
+
+/// The pending history row, None when no retire is pending; a file that holds no history row
+/// cannot decide.
+fn pending_row(dir: &Path) -> Result<Option<Vec<String>>> {
+    let file = pending(dir);
+    let Some(text) = read_text(&file)? else {
+        return Ok(None);
+    };
+    let cells: Vec<String> = text.trim_end_matches('\n').split('\t').map(String::from).collect();
+    if cells.len() != HISTORY_HEADER.split('\t').count() {
+        return Err(Error::cannot_decide(format!(
+            "{} holds no qa-history.tsv row: {text}",
+            file.display()
+        )));
+    }
+    Ok(Some(cells))
+}
+
+/// The QA whose retire is unfinished, None when none is; verify and report refuse while one is
+/// (D-56), so they read it here rather than the file's format.
+pub fn pending_qa(dir: &Path) -> Result<Option<String>> {
+    Ok(pending_row(dir)?.map(|cells| cells[0].clone()))
 }
 
 /// Retire the recorded result of `qa` with the reason `why`: the scenario reads again as qa add
@@ -70,17 +96,9 @@ pub fn retire(dir: &Path, run: &str, qa: &str, why: &str) -> Result<QaRow> {
 /// unless the history holds one for the same QA and attempt, the scenario reopened unless it is
 /// open already, part 3 published and the pending file removed. Returns the pending row.
 pub fn finish(dir: &Path, run: &str) -> Result<Option<Vec<String>>> {
-    let file = pending(dir);
-    let Some(text) = read_text(&file)? else {
+    let Some(cells) = pending_row(dir)? else {
         return Ok(None);
     };
-    let cells: Vec<String> = text.trim_end_matches('\n').split('\t').map(String::from).collect();
-    if cells.len() != HISTORY_HEADER.split('\t').count() {
-        return Err(Error::cannot_decide(format!(
-            "{} holds no qa-history.tsv row: {text}",
-            file.display()
-        )));
-    }
     let (qa, attempt) = (&cells[0], &cells[9]);
     let rows = tsv::read_rows(&history(dir), 1, true)?;
     let appended = rows.iter().any(|row| row[0] == *qa && row.get(9) == Some(attempt));
