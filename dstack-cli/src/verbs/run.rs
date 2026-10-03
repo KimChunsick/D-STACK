@@ -267,12 +267,12 @@ fn close(ctx: &mut Context, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// The shell sources verify.sh and calls cmd_verify in process, so a fail()/die() inside verify
-/// ends the whole dstack run with that code and that one stderr line, while a plain `return 1|2`
-/// reaches the `if !` branch and becomes the refusal below. The captured stderr tells the two
-/// apart: only fail()/die() leave a trailing `dstack: …` line.
+/// Verify held to the Goal close whatever Plans are left (--at-close, D-47). The shell sources
+/// verify.sh and calls cmd_verify in process, so a fail()/die() inside verify ends the whole run
+/// with that code and that one stderr line, while a plain `return 1|2` becomes the refusal below.
+/// The captured stderr tells the two apart: only fail()/die() leave a trailing `dstack: …` line.
 fn verify_before_close(ctx: &mut Context, id: &str) -> Result<()> {
-    let called = ctx.call("verify", &["--run".to_string(), id.to_string()]);
+    let called = ctx.call("verify", &["--run".to_string(), id.to_string(), "--at-close".to_string()]);
     let mut lines: Vec<String> = called.stderr.lines().map(String::from).collect();
     let died = match lines.last() {
         Some(last) if last.starts_with("dstack: ") => lines.pop(),
