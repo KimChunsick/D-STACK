@@ -7,8 +7,7 @@ use crate::core::args::opt;
 use crate::core::context::Context;
 use crate::core::error::Result;
 use crate::core::meta::meta_get;
-use crate::core::paths::{base_name, paths_overlap, shell_int};
-use crate::core::tools::policy_get;
+use crate::core::paths::{base_name, paths_overlap};
 use crate::store::plan::{self, Plan, PlanDoc};
 
 use super::confirm::{e2e_line, gate_e2e, gate_reason};
@@ -31,7 +30,9 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
             None => fail!("unknown option: {arg} (usage: dstack next [--max N])"),
         }
     }
-    // The cap is printed as it was written, so a policy value of "03" reads as "03".
+    let admission_cap = super::admission::capacity(&target);
+    // The requested cap is printed as written. Scheduling also obeys the durable admission cap,
+    // so `next` never advertises a Plan that `plan start` or resume must refuse for capacity.
     let (cap, cap_text, cap_source) = if !max.is_empty() {
         if !max.chars().all(|c| c.is_ascii_digit()) {
             fail!("--max must be a positive integer (got '{max}')")
@@ -45,14 +46,11 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
         (n, max, "--max")
     } else {
-        match policy_get(&target.roots.store, "max_concurrent") {
-            // A policy value is never compared, only subtracted from, so an overflowing one is
-            // not refused: it folds into an intmax_t the way every bash arithmetic literal does.
-            Some(value) if !value.is_empty() && value.chars().all(|c| c.is_ascii_digit()) => {
-                (shell_int(&value), value, "PROJECT.md max_concurrent")
-            }
-            _ => (5, "5".to_string(), "default"),
-        }
+        (
+            admission_cap.value,
+            admission_cap.text.clone(),
+            admission_cap.source,
+        )
     };
 
     let doc = target.load()?;
@@ -105,11 +103,21 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
 
     let running = in_progress.len() as i64;
     // `$((cap - n_inprog))`: bash wraps at intmax_t, and a negative result is clamped to zero.
-    let free = cap.wrapping_sub(running).max(0);
+    let requested_free = cap.wrapping_sub(running).max(0);
+    let effective_cap = cap.min(admission_cap.value);
+    let free = effective_cap.wrapping_sub(running).max(0);
     say!(
         ctx,
-        "cap:         {cap_text} ({cap_source}); in-progress {running}; free slots {free}"
+        "cap:         {cap_text} ({cap_source}); in-progress {running}; free slots {requested_free}"
     );
+    if cap > admission_cap.value {
+        say!(
+            ctx,
+            "admission cap: {} ({}); schedulable free slots {free}",
+            admission_cap.text,
+            admission_cap.source
+        );
+    }
 
     // Greedy in array order: take a ready plan when it collides with nothing running and nothing
     // already picked. Greedy (not optimal) is deliberate — the order in plan.json is the order

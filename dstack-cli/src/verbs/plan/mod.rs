@@ -98,6 +98,12 @@ pub(crate) struct Target {
     pub roots: Roots,
 }
 
+/// A Plan target whose store lock is retained across load, validation, mutation and publication.
+pub(crate) struct LockedTarget<'a> {
+    target: &'a Target,
+    _guard: LockGuard,
+}
+
 /// _plan_target(): resolve --run/--quick/CURRENT and refuse the target that structurally cannot
 /// hold a plan. The verb's own arguments come back as the second half of the pair.
 pub(crate) fn plan_target(ctx: &mut Context, args: &[String]) -> Result<(Target, Vec<String>)> {
@@ -118,8 +124,11 @@ pub(crate) fn plan_target(ctx: &mut Context, args: &[String]) -> Result<(Target,
 
 impl Target {
     /// All Plan mutations share the main store lock, including calls from different worktrees.
-    pub(crate) fn lock(&self) -> Result<LockGuard> {
-        with_lock(&self.roots.store.join("local"))
+    pub(crate) fn lock(&self) -> Result<LockedTarget<'_>> {
+        Ok(LockedTarget {
+            target: self,
+            _guard: with_lock(&self.roots.store.join("local"))?,
+        })
     }
 
     /// _plan_require(): every verb but `milestone add` and `plan add` needs the file to be there.
@@ -137,37 +146,6 @@ impl Target {
         crate::store::plan::load(&self.dir)
     }
 
-    /// _plan_write(): the refresh, the atomic write and both documents, under the store lock —
-    /// one call so no mutation path can forget half of it. What comes back is what the file now
-    /// holds, which is what the counts line of every verb reports.
-    pub(crate) fn write(&self, mut doc: PlanDoc) -> Result<PlanDoc> {
-        let _lock = self.lock()?;
-        self.write_locked(&mut doc)?;
-        Ok(doc)
-    }
-
-    /// Used only while the caller already holds the store lock across admission checks.
-    pub(crate) fn write_locked(&self, doc: &mut PlanDoc) -> Result<()> {
-        refresh(doc);
-        doc.commit(&self.dir, &base_name(&self.dir), &self.worktree()?)
-    }
-
-    /// _plan_regen(): ROADMAP.md, STATE.md and part 3 of a marker-bearing request, without
-    /// writing plan.json. `plan render` is its only caller — every other path goes through
-    /// write(), which regenerates them as part of the commit.
-    pub(crate) fn regen(&self, doc: &PlanDoc) -> Result<()> {
-        let _lock = self.lock()?;
-        let run = base_name(&self.dir);
-        write_file(&self.dir.join("ROADMAP.md"), &render_roadmap(doc, &run))?;
-        let last = git_out(Some(&self.worktree()?), &["rev-parse", "--short", "HEAD"])
-            .unwrap_or_else(|| "none".to_string());
-        write_file(
-            &self.dir.join("STATE.md"),
-            &render_state(doc, &run, &last, &utc_now()),
-        )?;
-        crate::store::request_part3::regenerate(&self.dir, &run, doc)
-    }
-
     /// The checkout STATE.md's last_commit is read from: the run's own worktree while it exists,
     /// and the worktree dstack was invoked in otherwise.
     pub(crate) fn worktree(&self) -> Result<PathBuf> {
@@ -175,6 +153,42 @@ impl Target {
             Some(wt) if !wt.is_empty() && Path::new(&wt).is_dir() => PathBuf::from(wt),
             _ => self.roots.wt_root.clone(),
         })
+    }
+}
+
+impl LockedTarget<'_> {
+    pub(crate) fn load(&self) -> Result<PlanDoc> {
+        self.target.load()
+    }
+
+    /// Refresh and publish the whole Plan ledger while retaining the lock that preceded load.
+    pub(crate) fn write(&self, mut doc: PlanDoc) -> Result<PlanDoc> {
+        refresh(&mut doc);
+        doc.commit(
+            &self.target.dir,
+            &base_name(&self.target.dir),
+            &self.target.worktree()?,
+        )?;
+        Ok(doc)
+    }
+
+    /// Regenerate every Plan-derived document from the ledger loaded under this same lock.
+    pub(crate) fn regen(&self, doc: &PlanDoc) -> Result<()> {
+        let run = base_name(&self.target.dir);
+        write_file(
+            &self.target.dir.join("ROADMAP.md"),
+            &render_roadmap(doc, &run),
+        )?;
+        let last = git_out(
+            Some(&self.target.worktree()?),
+            &["rev-parse", "--short", "HEAD"],
+        )
+        .unwrap_or_else(|| "none".to_string());
+        write_file(
+            &self.target.dir.join("STATE.md"),
+            &render_state(doc, &run, &last, &utc_now()),
+        )?;
+        crate::store::request_part3::regenerate(&self.target.dir, &run, doc)
     }
 }
 

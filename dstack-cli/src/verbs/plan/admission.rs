@@ -9,6 +9,27 @@ use crate::store::plan::PlanDoc;
 use super::confirm::gate_reason;
 use super::Target;
 
+pub(super) struct Capacity {
+    pub value: i64,
+    pub text: String,
+    pub source: &'static str,
+}
+
+pub(super) fn capacity(target: &Target) -> Capacity {
+    match policy_get(&target.roots.store, "max_concurrent") {
+        Some(text) if !text.is_empty() && text.chars().all(|c| c.is_ascii_digit()) => Capacity {
+            value: shell_int(&text),
+            text,
+            source: "PROJECT.md max_concurrent",
+        },
+        _ => Capacity {
+            value: 5,
+            text: "5".into(),
+            source: "default",
+        },
+    }
+}
+
 pub(super) fn check(target: &Target, doc: &PlanDoc, id: &str, e2e: &str) -> Result<()> {
     let plan = doc.plan(id).expect("the caller checked the plan id");
     let done: Vec<&str> = doc
@@ -32,10 +53,7 @@ pub(super) fn check(target: &Target, doc: &PlanDoc, id: &str, e2e: &str) -> Resu
     if let Some(reason) = gate_reason(doc, e2e, id) {
         return Err(Error::failed(format!("refused: {reason}")));
     }
-    let cap = policy_get(&target.roots.store, "max_concurrent")
-        .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_digit()))
-        .map(|v| shell_int(&v))
-        .unwrap_or(5);
+    let cap = capacity(target).value;
     let active: Vec<_> = doc
         .plans
         .iter()

@@ -81,11 +81,12 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
         if !after.is_empty() {
             fail!("--after belongs to dstack plan insert, not plan add")
         }
-        ensure(&target.dir)?;
     }
     let files = validate_files(&files)?;
 
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    ensure(&target.dir)?;
+    let mut doc = locked.load()?;
     let pids = doc.plan_ids();
     let id = if inserting {
         if !pids.contains(&after) {
@@ -141,7 +142,7 @@ fn add_impl(ctx: &mut Context, args: &[String], inserting: bool) -> Result<()> {
     let deps = validate_deps(&deps, &doc.plan_ids(), "plan", &pids)?;
     assert_acyclic_plans(&doc)?;
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "plan {id}: {slug} (milestone {ms})");
     say!(ctx, "  files: {}", files.join(" "));
     say!(ctx, "  deps:  {}", deps.join(" "));

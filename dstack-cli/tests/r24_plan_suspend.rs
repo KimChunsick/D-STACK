@@ -3,7 +3,8 @@
 #[path = "support/mode_settings.rs"]
 mod support;
 
-use std::process::Command;
+use std::os::unix::fs::PermissionsExt;
+use std::process::{Command, Stdio};
 
 use dstack_cli::store::plan::{self, PlanDoc, Task};
 use support::{tree, Scratch};
@@ -277,4 +278,57 @@ fn R24_resume_rechecks_dependency_and_capacity() {
         &["plan", "start", "P1", "--resume", "--confirm"],
         "worker slot",
     );
+}
+
+#[test]
+fn R24_plan_mutations_do_not_overwrite_a_concurrent_resume() {
+    let t = fixture();
+    let root = t.0.to_str().unwrap();
+    let mut saved = doc(&t);
+    saved.plan_mut("P2").unwrap().files = vec!["independent".into()];
+    saved.plan_mut("P1").unwrap().tasks.push(Task { id: "T1".into(), slug: "race".into(), ..Task::default() });
+    t.write(&format!("{DIR}/plan.json"), &saved.to_json());
+    t.ok(&["plan", "start", "P1", "--worktree", root]);
+    t.ok(&["plan", "start", "P2", "--worktree", root]);
+    t.ok(&["plan", "edit", "P2", "--suspend", "--reason", "wait", "--worker-stopped"]);
+
+    let bin = t.0.join("fake-bin");
+    let git = t.write("fake-bin/git", "#!/bin/sh\nif [ \"$1\" = cat-file ]; then\n  : > \"$R24_LOADED\"\n  while [ ! -f \"$R24_RELEASE\" ]; do sleep 0.01; done\nfi\nPATH=\"${PATH#*:}\" exec git \"$@\"\n");
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let loaded = t.0.join("loaded");
+    let release = t.0.join("release");
+    let spawn = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_dstack"))
+        .current_dir(&t.0).env("DSTACK_ROOT", &t.0)
+        .env("DSTACK_HOME", std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../claude"))
+        .env("DSTACK_DEPS", t.0.join("deps.tsv")).env("CLAUDE_CODE_SESSION_ID", "mode-settings-test")
+        .env("PATH", std::env::join_paths(std::iter::once(bin.clone()).chain(std::env::split_paths(&std::env::var_os("PATH").unwrap()))).unwrap())
+        .env("R24_LOADED", &loaded).env("R24_RELEASE", &release).args(args)
+        .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
+    let task = spawn(&["task", "done", "T1", "--commit", "HEAD"]);
+    for _ in 0..500 { if loaded.is_file() { break; } std::thread::sleep(std::time::Duration::from_millis(10)); }
+    assert!(loaded.is_file(), "task done did not reach its post-load Git check");
+    let lock_held = t.0.join(".dstack/local/lock").is_dir();
+    let mut resume = Some(spawn(&["plan", "start", "P2", "--resume", "--confirm"]));
+    let early = if lock_held { None } else { Some(resume.take().unwrap().wait_with_output().unwrap()) };
+    t.write("release", "");
+    assert!(task.wait_with_output().unwrap().status.success());
+    let resumed = early.unwrap_or_else(|| resume.take().unwrap().wait_with_output().unwrap());
+    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    assert_eq!(doc(&t).field("P2", "status"), "in-progress", "a stale task mutation overwrote the resumed Plan");
+}
+
+#[test]
+fn R24_next_max_does_not_advertise_beyond_the_admission_cap() {
+    let t = fixture();
+    let mut saved = doc(&t);
+    saved.plan_mut("P2").unwrap().files = vec!["independent".into()];
+    t.write(&format!("{DIR}/plan.json"), &saved.to_json());
+    let project = t.read(".dstack/project/PROJECT.md");
+    t.write(".dstack/project/PROJECT.md", &project.replace("max_concurrent: 5", "max_concurrent: 1"));
+    let root = t.0.to_str().unwrap();
+    t.ok(&["plan", "start", "P1", "--worktree", root]);
+    let next = t.ok(&["next", "--max", "2"]);
+    assert!(next.contains("admission cap: 1 (PROJECT.md max_concurrent); schedulable free slots 0"), "{next}");
+    assert!(next.contains("schedulable: (none) — 0 of 0 free slot(s)"), "{next}");
+    refused(&t, &["plan", "start", "P2", "--worktree", root], "worker slot");
 }

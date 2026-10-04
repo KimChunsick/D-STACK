@@ -45,9 +45,9 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
         fail!("slug must match [a-z0-9][a-z0-9-]* (got '{slug}')")
     }
     let goal = super::free_text("goal", goal)?.unwrap_or_default();
+    let locked = target.lock()?;
     ensure(&target.dir)?;
-
-    let mut doc = target.load()?;
+    let mut doc = locked.load()?;
     let ids: Vec<String> = doc.milestones.iter().map(|m| m.id.clone()).collect();
     let last = ids.last().cloned().unwrap_or_default();
     if !after.is_empty() && !ids.contains(&after) {
@@ -85,7 +85,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     }
     doc.milestones = milestones;
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "milestone {id}: {slug}");
     say!(ctx, "  {}", counts_line(&doc));
     Ok(())
@@ -116,7 +116,8 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     if m.is_empty() {
         fail!("{EDIT_USAGE}")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     let ids: Vec<String> = doc.milestones.iter().map(|m| m.id.clone()).collect();
     if !ids.contains(&m) {
         fail!("milestone not found: {m} (known: {})", ids.join(" "))
@@ -134,7 +135,7 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     milestone.goal = goal;
     let slug = milestone.slug.clone();
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "edited milestone {m}: {slug}");
     say!(ctx, "  {}", counts_line(&doc));
     Ok(())

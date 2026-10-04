@@ -19,7 +19,8 @@ plan_verb!(PlanDone, "plan done", done);
 fn render(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, _rest) = super::plan_target(ctx, args)?;
     target.require()?;
-    let doc = target.load()?;
+    let locked = target.lock()?;
+    let doc = locked.load()?;
     let reasons: Vec<(String, String)> = doc.plans.iter().filter(|p| p.status == "suspended")
         .map(|p| Ok((p.id.clone(), super::suspension::reason(&target, &p.id)?)))
         .collect::<Result<_>>()?;
@@ -27,7 +28,7 @@ fn render(ctx: &mut Context, args: &[String]) -> Result<()> {
     for (id, reason) in reasons {
         say!(ctx, "suspended {id}: {reason}");
     }
-    target.regen(&doc)?;
+    locked.regen(&doc)?;
     say!(ctx, "{}", counts_line(&doc));
     say!(
         ctx,
@@ -77,8 +78,8 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     if confirm {
         fail!("--confirm requires --resume")
     }
-    let _lock = target.lock()?;
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
@@ -122,7 +123,7 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     plan.worktree = worktree.clone();
     plan.started_at = now.clone();
 
-    target.write_locked(&mut doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "plan {p}: {status} → in-progress at {now}");
     if !worktree.is_empty() {
         say!(ctx, "  worktree: {worktree}{created}");
@@ -191,7 +192,8 @@ fn done(ctx: &mut Context, args: &[String]) -> Result<()> {
     if p.is_empty() {
         fail!("usage: dstack plan done P<n>")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
@@ -205,7 +207,7 @@ fn done(ctx: &mut Context, args: &[String]) -> Result<()> {
     plan.done_at = now.clone();
 
     // The refresh inside the write promotes whatever this unblocked from pending to ready.
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     let ready: Vec<String> = doc
         .plans
         .iter()

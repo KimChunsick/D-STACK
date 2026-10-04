@@ -65,7 +65,8 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     if p.is_empty() {
         fail!("--plan P<n> is required (a task lives inside exactly one plan, R60)")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
@@ -143,7 +144,7 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     validate_deps(&deps, &doc.task_ids(), "task", &tids)?;
     assert_acyclic_tasks(&doc)?;
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "task {id}: {slug} (plan {p})");
     say!(ctx, "  covers: {}", covers_list.join(" "));
     say!(ctx, "  files:  {}", files.join(" "));
@@ -213,7 +214,8 @@ fn done(ctx: &mut Context, args: &[String]) -> Result<()> {
     if t.is_empty() {
         fail!("usage: dstack task done T<n> --commit <sha>")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.task_ids().contains(&t) {
         fail!("task not found: {t} (known: {})", doc.task_ids().join(" "))
     }
@@ -254,7 +256,7 @@ fn done(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(
         ctx,
         "task {t} (plan {owner}): commit {sha} verified in {}, done at {now}",

@@ -22,7 +22,8 @@ fn remove(ctx: &mut Context, args: &[String]) -> Result<()> {
     if p.is_empty() {
         fail!("usage: dstack plan remove <P<n>>")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
@@ -49,7 +50,7 @@ fn remove(ctx: &mut Context, args: &[String]) -> Result<()> {
         milestone.confirmed.retain(|id| *id != p);
     }
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "removed plan {p} (was {status})");
     say!(ctx, "  {}", counts_line(&doc));
     Ok(())
@@ -115,7 +116,8 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     if reason.is_some() || worker_stopped {
         fail!("--reason and --worker-stopped require --suspend")
     }
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
@@ -180,7 +182,7 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
 
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "edited plan {p} ({status})");
     say!(ctx, "  {}", counts_line(&doc));
     Ok(())

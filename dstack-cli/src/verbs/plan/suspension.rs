@@ -129,8 +129,8 @@ pub(super) fn suspend(
             "--worker-stopped is required: confirm the native worker has stopped",
         ));
     }
-    let _lock = target.lock()?;
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     let plan = doc.plan(id).ok_or_else(|| {
         Error::failed(format!(
             "plan not found: {id} (known: {})",
@@ -164,7 +164,7 @@ pub(super) fn suspend(
         ))
     })?;
     doc.plan_mut(id).expect("checked above").status = "suspended".into();
-    target.write_locked(&mut doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "plan {id}: in-progress → suspended at {at}");
     say!(ctx, "  reason: {reason}");
     say!(ctx, "  {}", counts_line(&doc));
@@ -175,8 +175,8 @@ pub(super) fn resume(ctx: &mut Context, target: &Target, id: &str, confirm: bool
     if !confirm {
         return Err(Error::failed("--confirm is required to resume a suspended Plan after checking its worker remains stopped"));
     }
-    let _lock = target.lock()?;
-    let mut doc = target.load()?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
     let plan = doc.plan(id).ok_or_else(|| {
         Error::failed(format!(
             "plan not found: {id} (known: {})",
@@ -200,7 +200,7 @@ pub(super) fn resume(ctx: &mut Context, target: &Target, id: &str, confirm: bool
     super::admission::check(target, &doc, id, &e2e)?;
     let at = utc_now();
     doc.plan_mut(id).expect("checked above").status = "in-progress".into();
-    target.write_locked(&mut doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "plan {id}: suspended → in-progress at {at}");
     say!(ctx, "  worktree: {}", record.worktree);
     say!(ctx, "  {}", counts_line(&doc));

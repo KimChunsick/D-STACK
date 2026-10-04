@@ -88,12 +88,12 @@ fn list(values: &[String]) -> String {
     or_none(&values.join(", ")).to_string()
 }
 
-/// The one positional M<n> both verbs take, and the Milestone it names in the loaded ledger.
+/// Parse the one positional M<n> both verbs take without loading the mutable ledger.
 fn milestone_arg(
     ctx: &mut Context,
     args: &[String],
     usage: &str,
-) -> Result<(super::Target, PlanDoc, Milestone)> {
+) -> Result<(super::Target, String)> {
     let (target, rest) = super::plan_target(ctx, args)?;
     target.require()?;
     let mut m = String::new();
@@ -109,15 +109,17 @@ fn milestone_arg(
     if m.is_empty() {
         fail!("{usage}")
     }
-    let doc = target.load()?;
-    let milestone = match doc.milestones.iter().find(|milestone| milestone.id == m) {
-        Some(milestone) => milestone.clone(),
+    Ok((target, m))
+}
+
+fn milestone(doc: &PlanDoc, id: &str) -> Result<Milestone> {
+    match doc.milestones.iter().find(|milestone| milestone.id == id) {
+        Some(milestone) => Ok(milestone.clone()),
         None => {
             let ids: Vec<&str> = doc.milestones.iter().map(|m| m.id.as_str()).collect();
-            fail!("milestone not found: {m} (known: {})", ids.join(" "))
+            fail!("milestone not found: {id} (known: {})", ids.join(" "))
         }
-    };
-    Ok((target, doc, milestone))
+    }
 }
 
 fn plans_of<'a>(doc: &'a PlanDoc, milestone: &Milestone) -> Vec<&'a Plan> {
@@ -125,7 +127,9 @@ fn plans_of<'a>(doc: &'a PlanDoc, milestone: &Milestone) -> Vec<&'a Plan> {
 }
 
 fn brief(ctx: &mut Context, args: &[String]) -> Result<()> {
-    let (target, doc, milestone) = milestone_arg(ctx, args, BRIEF_USAGE)?;
+    let (target, id) = milestone_arg(ctx, args, BRIEF_USAGE)?;
+    let doc = target.load()?;
+    let milestone = milestone(&doc, &id)?;
     let e2e = request_e2e(&target.dir)?;
     let plans = plans_of(&doc, &milestone);
     say!(ctx, "milestone {}: {}", milestone.id, milestone.slug);
@@ -203,7 +207,10 @@ fn plan_problems(milestone: &Milestone, plans: &[&Plan], e2e: &str) -> Vec<Strin
 }
 
 fn confirm(ctx: &mut Context, args: &[String]) -> Result<()> {
-    let (target, mut doc, milestone) = milestone_arg(ctx, args, CONFIRM_USAGE)?;
+    let (target, id) = milestone_arg(ctx, args, CONFIRM_USAGE)?;
+    let locked = target.lock()?;
+    let mut doc = locked.load()?;
+    let milestone = milestone(&doc, &id)?;
     let e2e = request_e2e(&target.dir)?;
     let plans = plans_of(&doc, &milestone);
     let mut problems = plan_problems(&milestone, &plans, &e2e);
@@ -240,7 +247,7 @@ fn confirm(ctx: &mut Context, args: &[String]) -> Result<()> {
         .find(|m| m.id == milestone.id)
         .expect("the milestone was found above")
         .confirmed = ids.clone();
-    let doc = target.write(doc)?;
+    let doc = locked.write(doc)?;
     say!(ctx, "confirmed milestone {}: {}", milestone.id, milestone.slug);
     say!(ctx, "  plans: {}", ids.join(", "));
     say!(ctx, "  {}", e2e_line(&e2e));
