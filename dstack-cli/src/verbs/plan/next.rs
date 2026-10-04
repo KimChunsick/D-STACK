@@ -75,6 +75,10 @@ fn next(ctx: &mut Context, args: &[String]) -> Result<()> {
         .collect();
     say!(ctx, "ready:       {}", or_none(&ready));
     say!(ctx, "in-progress: {}", or_none(&in_progress));
+    let suspended = ids_with(&doc, "suspended");
+    if !suspended.is_empty() {
+        say!(ctx, "suspended:  {}", or_none(&suspended));
+    }
 
     // Pairwise overlap over ready ∪ in-progress: those are the plans that could run at the same
     // time, and R66 makes file overlap the only reason two plans may not.

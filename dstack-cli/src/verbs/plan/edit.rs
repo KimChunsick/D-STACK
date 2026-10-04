@@ -10,7 +10,7 @@ use crate::store::plan_ids::{
     assert_acyclic_plans, csv_list, path_within, validate_deps, validate_files,
 };
 
-const EDIT_USAGE: &str = "usage: dstack plan edit P<n> [--slug s] [--files a,b] [--deps P..] [--purpose <text>] [--e2e-focus <text>]";
+const EDIT_USAGE: &str = "usage: dstack plan edit P<n> [--slug s] [--files a,b] [--deps P..] [--purpose <text>] [--e2e-focus <text>] | dstack plan edit P<n> --suspend --reason <text> --worker-stopped";
 
 plan_verb!(PlanRemove, "plan remove", remove);
 plan_verb!(PlanEdit, "plan edit", edit);
@@ -27,8 +27,8 @@ fn remove(ctx: &mut Context, args: &[String]) -> Result<()> {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
     }
     let status = doc.field(&p, "status");
-    if status == "in-progress" {
-        fail!("refused: {p} is in-progress — stop the affected worker; keep the Plan pending/blocked until a supported CLI transition is available; never mark unfinished work done or reset state by hand (R67)")
+    if status == "in-progress" || status == "suspended" {
+        fail!("refused: {p} is {status} — unfinished Plan history and worktree must be retained (R24)")
     }
     let users: Vec<String> = doc
         .plans
@@ -61,6 +61,8 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (mut p, mut slug) = (String::new(), String::new());
     let (mut files, mut deps) = (String::new(), String::new());
     let (mut set_files, mut set_deps) = (false, false);
+    let (mut suspend, mut worker_stopped) = (false, false);
+    let mut reason = None;
     let (mut purpose, mut e2e_focus) = (None, None);
     let mut i = 0;
     while i < rest.len() {
@@ -83,6 +85,15 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
         } else if let Some((value, eaten)) = opt(arg, next, "e2e-focus")? {
             e2e_focus = Some(value);
             i += eaten;
+        } else if let Some((value, eaten)) = opt(arg, next, "reason")? {
+            reason = Some(value);
+            i += eaten;
+        } else if arg == "--suspend" {
+            suspend = true;
+            i += 1;
+        } else if arg == "--worker-stopped" {
+            worker_stopped = true;
+            i += 1;
         } else if is_option(arg) {
             fail!("unknown option: {arg} ({EDIT_USAGE})")
         } else if p.is_empty() {
@@ -95,6 +106,15 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     if p.is_empty() {
         fail!("{EDIT_USAGE}")
     }
+    if suspend {
+        if !slug.is_empty() || set_files || set_deps || purpose.is_some() || e2e_focus.is_some() {
+            fail!("--suspend cannot be combined with plan field edits")
+        }
+        return super::suspension::suspend(ctx, &target, &p, reason, worker_stopped);
+    }
+    if reason.is_some() || worker_stopped {
+        fail!("--reason and --worker-stopped require --suspend")
+    }
     let mut doc = target.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
@@ -105,6 +125,9 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     let status = doc.field(&p, "status");
     if status == "done" {
         fail!("refused: {p} is done — its files and covers are already reviewed; add a new plan instead (R67)")
+    }
+    if status == "suspended" {
+        fail!("refused: {p} is suspended — resume it before editing its declared files or dependencies")
     }
     let busy = subtree_busy(&doc, &p);
     if !busy.is_empty() {

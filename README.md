@@ -172,7 +172,7 @@ dstack status
 | 요청서 | 1부 요청과 2부 설계를 절마다 채우고, R 행(한 줄 + 관찰 가능한 기준)을 번호 붙여 적은 뒤 승인해요 | `dstack request section`, `dstack req add`, `dstack request brief`, `dstack request approve` |
 | 조사와 인터뷰 | 메인 환경의 recon 에이전트가 코드를 읽고, 질문은 대장으로 관리해요 | `dstack ask add|answer|assume` |
 | 계획 | Milestone → Plan → Task를 등록하고 파도 단위로 돌려요 | `dstack plan add`, `dstack next`, 스킬 `dstack-develop` |
-| 구현 | Plan마다 메인 환경의 워커가 빈 맥락으로 dstack이 만든 worktree에서 일해요 | `dstack plan start --worktree`, `dstack worker report` |
+| 구현 | Plan마다 메인 환경의 워커가 빈 맥락으로 dstack이 만든 worktree에서 일해요. 워커가 멈추면 사유를 적어 보류하고, 다시 시작할 때 충돌을 확인해요 | `dstack plan start --worktree`, `dstack plan edit P<n> --suspend --reason <text> --worker-stopped`, `dstack plan start P<n> --resume --confirm`, `dstack worker report` |
 | 리뷰 | Plan이 끝날 때마다 선택한 서브가 요청서 원문과 diff를 함께 봐요 | `dstack review --scope plan`, `dstack mode exec`, 스킬 `codex-review` |
 | 검증과 보고 | 증거를 대장에 기록하고 R별 상태를 계산해요 | `dstack evidence add`, `dstack verify`, `dstack report`, 스킬 `dstack-verify` |
 

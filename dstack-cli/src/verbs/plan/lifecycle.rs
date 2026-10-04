@@ -10,7 +10,7 @@ use crate::core::fsx::utc_now;
 use crate::core::roots::git_out;
 use crate::store::plan_graph::{counts_line, render_table};
 
-use super::confirm::{e2e_line, gate_e2e, gate_reason};
+use super::confirm::{e2e_line, gate_e2e};
 
 plan_verb!(PlanRender, "plan render", render);
 plan_verb!(PlanStart, "plan start", start);
@@ -20,7 +20,13 @@ fn render(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, _rest) = super::plan_target(ctx, args)?;
     target.require()?;
     let doc = target.load()?;
+    let reasons: Vec<(String, String)> = doc.plans.iter().filter(|p| p.status == "suspended")
+        .map(|p| Ok((p.id.clone(), super::suspension::reason(&target, &p.id)?)))
+        .collect::<Result<_>>()?;
     ctx.out.raw(&render_table(&doc));
+    for (id, reason) in reasons {
+        say!(ctx, "suspended {id}: {reason}");
+    }
     target.regen(&doc)?;
     say!(ctx, "{}", counts_line(&doc));
     say!(
@@ -36,6 +42,7 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     let (target, rest) = super::plan_target(ctx, args)?;
     target.require()?;
     let (mut p, mut worktree) = (String::new(), String::new());
+    let (mut resume, mut confirm) = (false, false);
     let mut i = 0;
     while i < rest.len() {
         let arg = rest[i].as_str();
@@ -43,8 +50,14 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
         if let Some((value, eaten)) = opt(arg, next, "worktree")? {
             worktree = value;
             i += eaten;
+        } else if arg == "--resume" {
+            resume = true;
+            i += 1;
+        } else if arg == "--confirm" {
+            confirm = true;
+            i += 1;
         } else if is_option(arg) {
-            fail!("unknown option: {arg} (usage: dstack plan start P<n> [--worktree <path>])")
+            fail!("unknown option: {arg} (usage: dstack plan start P<n> [--worktree <path>] | dstack plan start P<n> --resume --confirm)")
         } else if p.is_empty() {
             p = arg.to_string();
             i += 1;
@@ -53,8 +66,18 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
         }
     }
     if p.is_empty() {
-        fail!("usage: dstack plan start P<n> [--worktree <path>]")
+        fail!("usage: dstack plan start P<n> [--worktree <path>] | dstack plan start P<n> --resume --confirm")
     }
+    if resume {
+        if !worktree.is_empty() {
+            fail!("--resume reuses the recorded worktree; omit --worktree")
+        }
+        return super::suspension::resume(ctx, &target, &p, confirm);
+    }
+    if confirm {
+        fail!("--confirm requires --resume")
+    }
+    let _lock = target.lock()?;
     let mut doc = target.load()?;
     if !doc.plan_ids().contains(&p) {
         fail!("plan not found: {p} (known: {})", doc.plan_ids().join(" "))
@@ -63,32 +86,10 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     if status != "pending" && status != "ready" {
         fail!("refused: {p} is {status} — only a pending or ready plan can start")
     }
-    let done: Vec<&String> = doc
-        .plans
-        .iter()
-        .filter(|plan| plan.status == "done")
-        .map(|plan| &plan.id)
-        .collect();
-    let unmet: Vec<String> = doc
-        .plan(&p)
-        .expect("the plan was found above")
-        .deps
-        .iter()
-        .filter(|dep| !done.contains(dep))
-        .cloned()
-        .collect();
-    if !unmet.is_empty() {
-        fail!(
-            "refused: {p} waits on unfinished dependencies: {}",
-            unmet.join(", ")
-        )
-    }
     // R12/R07: a Plan its Milestone has not confirmed, or one without the E2E focus the run
     // checks, is refused here, before any worktree or branch exists.
     let e2e = gate_e2e(&target.dir)?;
-    if let Some(reason) = gate_reason(&doc, &e2e, &p) {
-        fail!("refused: {reason}")
-    }
+    super::admission::check(&target, &doc, &p, &e2e)?;
 
     let mut created = String::new();
     if !worktree.is_empty() {
@@ -121,7 +122,7 @@ fn start(ctx: &mut Context, args: &[String]) -> Result<()> {
     plan.worktree = worktree.clone();
     plan.started_at = now.clone();
 
-    let doc = target.write(doc)?;
+    target.write_locked(&mut doc)?;
     say!(ctx, "plan {p}: {status} → in-progress at {now}");
     if !worktree.is_empty() {
         say!(ctx, "  worktree: {worktree}{created}");

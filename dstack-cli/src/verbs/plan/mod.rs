@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::core::context::Context;
 use crate::core::error::{Error, Result};
-use crate::core::fsx::{atomic_write, utc_now, with_lock};
+use crate::core::fsx::{atomic_write, utc_now, with_lock, LockGuard};
 use crate::core::meta::meta_get;
 use crate::core::paths::base_name;
 use crate::core::roots::{git_out, Roots};
@@ -42,12 +42,14 @@ macro_rules! plan_verb {
 }
 
 pub mod add;
+pub(crate) mod admission;
 pub mod confirm;
 pub mod edit;
 pub mod lifecycle;
 pub mod milestone;
 pub mod next;
 pub mod selftests;
+pub(crate) mod suspension;
 pub mod task;
 
 pub fn verbs() -> Vec<Box<dyn Verb>> {
@@ -115,6 +117,11 @@ pub(crate) fn plan_target(ctx: &mut Context, args: &[String]) -> Result<(Target,
 }
 
 impl Target {
+    /// All Plan mutations share the main store lock, including calls from different worktrees.
+    pub(crate) fn lock(&self) -> Result<LockGuard> {
+        with_lock(&self.roots.store.join("local"))
+    }
+
     /// _plan_require(): every verb but `milestone add` and `plan add` needs the file to be there.
     pub(crate) fn require(&self) -> Result<()> {
         if crate::store::plan::exists(&self.dir) {
@@ -134,17 +141,22 @@ impl Target {
     /// one call so no mutation path can forget half of it. What comes back is what the file now
     /// holds, which is what the counts line of every verb reports.
     pub(crate) fn write(&self, mut doc: PlanDoc) -> Result<PlanDoc> {
-        refresh(&mut doc);
-        let _lock = with_lock(&self.roots.local)?;
-        doc.commit(&self.dir, &base_name(&self.dir), &self.worktree()?)?;
+        let _lock = self.lock()?;
+        self.write_locked(&mut doc)?;
         Ok(doc)
+    }
+
+    /// Used only while the caller already holds the store lock across admission checks.
+    pub(crate) fn write_locked(&self, doc: &mut PlanDoc) -> Result<()> {
+        refresh(doc);
+        doc.commit(&self.dir, &base_name(&self.dir), &self.worktree()?)
     }
 
     /// _plan_regen(): ROADMAP.md, STATE.md and part 3 of a marker-bearing request, without
     /// writing plan.json. `plan render` is its only caller — every other path goes through
     /// write(), which regenerates them as part of the commit.
     pub(crate) fn regen(&self, doc: &PlanDoc) -> Result<()> {
-        let _lock = with_lock(&self.roots.local)?;
+        let _lock = self.lock()?;
         let run = base_name(&self.dir);
         write_file(&self.dir.join("ROADMAP.md"), &render_roadmap(doc, &run))?;
         let last = git_out(Some(&self.worktree()?), &["rev-parse", "--short", "HEAD"])

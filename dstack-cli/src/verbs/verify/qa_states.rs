@@ -21,7 +21,7 @@ use crate::store::visible::{heading, lines};
 const PASSING: [&str; 3] = ["met", "skipped", "blocked"];
 
 /// The Plan statuses of work still to come; while one is left the Goal is not closing (D-46).
-const LEFT: [&str; 3] = ["pending", "ready", "in-progress"];
+const LEFT: [&str; 4] = ["pending", "ready", "in-progress", "suspended"];
 
 /// One line of the check: a QA scenario of the ledger, or a usage scenario no QA scenario covers.
 pub struct QaState {

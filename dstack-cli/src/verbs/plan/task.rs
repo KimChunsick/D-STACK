@@ -72,6 +72,9 @@ fn add(ctx: &mut Context, args: &[String]) -> Result<()> {
     if doc.field(&p, "status") == "done" {
         fail!("refused: {p} is done — reopening a reviewed plan is not how a late requirement lands; use dstack plan insert --after {p} (R67)")
     }
+    if doc.field(&p, "status") == "suspended" {
+        fail!("refused: {p} is suspended — resume it before changing its tasks")
+    }
     let files = validate_files(&files)?;
     if covers.is_empty() {
         fail!(
@@ -223,6 +226,9 @@ fn done(ctx: &mut Context, args: &[String]) -> Result<()> {
         .find(|plan| plan.tasks.iter().any(|task| task.id == t))
         .map(|plan| plan.id.clone())
         .expect("the task was found above");
+    if doc.field(&owner, "status") == "suspended" {
+        fail!("refused: {owner} is suspended — resume it before recording task completion")
+    }
     let plan_worktree = doc.field(&owner, "worktree");
     let worktree = match !plan_worktree.is_empty() && Path::new(&plan_worktree).is_dir() {
         true => PathBuf::from(&plan_worktree),

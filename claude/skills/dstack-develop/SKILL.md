@@ -123,14 +123,14 @@ the worktree** (R36) and only the main session writes `STATE.md` and the ledger,
      Claude: explicit Agent model. Codex: spawn_agent with fresh bounded context and inheritance.
 4. use runtime.md's interruptible native wait and input branches, retaining active IDs;
      answer questions, record additions, stop only conflicting/affected work, disclose unsupported input.
-     Never duplicate a launch or mark unfinished work done to free input.
+     After a worker stops, suspend its Plan with `dstack plan edit P<n> --suspend --reason <text> --worker-stopped` before scheduling overlapping work. Never duplicate a launch or mark unfinished work done to free input.
 5. per returned worker: run the checklist of §7, in order.
 6. dstack next   → next wave. Repeat until the Milestone has no pending plan.
 ```
 
-Fix a Plan that `next` excludes, never work around it: `dstack plan edit P<n> --purpose <text>` /
-`--e2e-focus <text>` or `dstack milestone edit M<n> --goal <text>`, then show
-`dstack milestone brief M<n>` and run `dstack milestone confirm M<n>` again, also for Plans added later.
+`suspended` is unfinished and does not satisfy dependencies or milestone closure; it releases active overlap and capacity while preserving the worktree, tasks, commits, evidence and reviews. Confirm the old worker is stopped, run `dstack plan start P<n> --resume --confirm` to recheck identity, dependencies and locks, then dispatch one fresh bounded worker.
+
+Fix a Plan that `next` excludes; never work around it. Use `dstack plan edit P<n> --purpose <text>` / `--e2e-focus <text>` or `dstack milestone edit M<n> --goal <text>`, then show `dstack milestone brief M<n>` and run `dstack milestone confirm M<n>` again, also for Plans added later.
 
 **Isolation ban (R36).** Never use Claude Code's own worktree isolation: no `--worktree` flag
 on the Agent tool, no `EnterWorktree`, no `isolation: worktree` in agent frontmatter, no

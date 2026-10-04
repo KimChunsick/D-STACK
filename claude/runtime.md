@@ -56,6 +56,7 @@ Wait protocol: keep active run/Plan/worker IDs; use the host's interruptible nat
 Question: answer then resume the same wait with the same active IDs.
 Addition: main records req/decision changes through dstack, approves authorized scope and adjusts only affected work.
 Conflict: safe-stop affected workers, preserve busy-plan guards and confirm they stopped before replacement; if no supported CLI transition exists, leave pending/blocked.
+For a stopped Plan worker, the supported transition is `dstack plan edit P<n> --suspend --reason <text> --worker-stopped`.
 Stop: stop affected workers and report their actual state; stopped is not done.
 Unsupported: if interruptible wait/input is unavailable, disclose that limit and use supported completion events; do not promise concurrent input.
 No duplicate launch, blanket restart, manual JSON reset or false completion to free input.
@@ -83,10 +84,12 @@ Questions preserve the current objective. For additions use `dstack req add --ru
 `dstack decision add --affects <R ids>`, then the request approval workflow with existing user
 authorization. Track the affected Plan and worker IDs; unrelated work continues. For conflicts,
 use the actual host's worker interruption/cancellation tool, confirm termination and retain
-artifact/HEAD metadata. `dstack plan edit`, `plan insert` and `plan remove` busy guards still
-apply after a worker stops: stopping a process is not a Plan state transition. `dstack run pause`
-is available for pausing the run, not for unlocking a busy Plan. If no suitable CLI transition
-exists, report pending/blocked and the missing transition; do not bypass the guard.
+artifact/HEAD metadata. After the worker stops, use `dstack plan edit P<n> --suspend
+--reason <text> --worker-stopped`. The Plan stays unfinished and keeps its worktree, tasks,
+evidence, reviews and commits. `dstack next` releases only its active overlap and worker slot.
+To continue, confirm the old worker remains stopped, then use `dstack plan start P<n> --resume
+--confirm`; the CLI rechecks checkout identity, dependencies, overlap and capacity under the
+shared store lock. `dstack run pause` pauses the whole run.
 A stop request suspends the authorized work; it never implies a completion or replacement launch.
 
 ## Native implementation, reconnaissance and verification

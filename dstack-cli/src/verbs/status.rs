@@ -152,10 +152,13 @@ fn status_line(roots: &Roots, id: &str) -> Result<String> {
                 .join(",")
         };
         let done = doc.plans.iter().filter(|plan| plan.status == "done").count();
+        let suspended = ids("suspended");
+        let suspended_part = if suspended.is_empty() { String::new() } else { format!(" suspended [{suspended}]") };
         out.push_str(&format!(
-            "; plans ready [{}] in-progress [{}] done {done}/{}",
+            "; plans ready [{}] in-progress [{}]{} done {done}/{}",
             ids("ready"),
             ids("in-progress"),
+            suspended_part,
             doc.plans.len()
         ));
     }

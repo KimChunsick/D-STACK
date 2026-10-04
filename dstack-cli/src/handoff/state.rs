@@ -195,7 +195,7 @@ pub(super) fn items(run: &Path, main_root: &Path, tree: &Path, plan: &PlanDoc, d
         for task in &p.tasks {
             let committed = git::committed(commit_tree, &task.commit)?;
             let complete = committed.is_some() && utc_to_epoch(&task.done_at).is_some();
-            let state = if complete { "completed" } else if p.status == "in-progress" || p.status == "done" || p.status == "blocked" || !task.commit.is_empty() || !task.done_at.is_empty() { "active" } else { "pending" };
+            let state = if complete { "completed" } else if p.status == "in-progress" || p.status == "suspended" || p.status == "done" || p.status == "blocked" || !task.commit.is_empty() || !task.done_at.is_empty() { "active" } else { "pending" };
             let relevant: Vec<_> = attempts.iter().filter(|a| task.covers.contains(&a.row.r)).collect();
             let mut gaps = Vec::new();
             for r in &task.covers {
