@@ -181,8 +181,10 @@ as UNMET, so a `partial` you accept is a decision you write in the response file
 severity, to `<T>/findings.md` as open list items (the Milestone ledger pass reads exactly those
 lines). Do **not** run `dstack plan done`; the Plan stays open and the user decides. If the
 worker has stopped and other work needs the Plan's file slot, use `dstack plan edit P<n>
---suspend --reason <text> --worker-stopped`. Keep the review history and worktree. Resume with
-`dstack plan start P<n> --resume --confirm` after resolving the blocker; this rechecks locks.
+--suspend --reason <text> --worker-stopped`. Keep the review history and worktree. While it is
+suspended, widen the declaration with `dstack plan edit P<n> --files <a,b>` for files the worker
+already touched outside it. Resume with `dstack plan start P<n> --resume --confirm` after
+resolving the blocker; this rechecks locks against the edited declaration.
 An unresolved round is presented, never swallowed.
 
 ## Milestone / Goal ledger pass (R70)

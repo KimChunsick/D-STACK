@@ -1,5 +1,6 @@
 // verbs/plan/edit.rs
-// dstack plan remove and plan edit: the two ways a plan changes before it starts (R67).
+// dstack plan remove and plan edit: the ways a plan changes before it starts; plan edit also
+// changes a suspended plan, whose resume rechecks the edited declaration (R67).
 
 use crate::core::args::{is_option, opt};
 use crate::core::context::Context;
@@ -128,8 +129,10 @@ fn edit(ctx: &mut Context, args: &[String]) -> Result<()> {
     if status == "done" {
         fail!("refused: {p} is done — its files and covers are already reviewed; add a new plan instead (R67)")
     }
-    if status == "suspended" {
-        fail!("refused: {p} is suspended — resume it before editing its declared files or dependencies")
+    // A suspended Plan has no worker holding its files and resume rechecks the edited
+    // declaration, so suspension is the supported point to edit an unfinished Plan.
+    if status == "in-progress" {
+        fail!("refused: {p} is in progress — a worker is holding its files; after it stops, run dstack plan edit {p} --suspend --reason <text> --worker-stopped, edit, then dstack plan start {p} --resume --confirm (R67)")
     }
     let busy = subtree_busy(&doc, &p);
     if !busy.is_empty() {

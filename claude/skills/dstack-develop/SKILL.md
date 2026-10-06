@@ -128,7 +128,7 @@ the worktree** (R36) and only the main session writes `STATE.md` and the ledger,
 6. dstack next   → next wave. Repeat until the Milestone has no pending plan.
 ```
 
-`suspended` is unfinished and does not satisfy dependencies or milestone closure; it releases active overlap and capacity while preserving the worktree, tasks, commits, evidence and reviews. Confirm the old worker is stopped, run `dstack plan start P<n> --resume --confirm` to recheck identity, dependencies and locks, then dispatch one fresh bounded worker.
+`suspended` is unfinished and does not satisfy dependencies or milestone closure; it releases active overlap and capacity while preserving the worktree, tasks, commits, evidence and reviews. While it is suspended, `dstack plan edit P<n> --files <a,b>` or `--deps <P..>` may widen or correct its declaration. Confirm the old worker is stopped, run `dstack plan start P<n> --resume --confirm` to recheck identity, dependencies, overlap and capacity against the edited declaration, then dispatch one fresh bounded worker.
 
 Fix a Plan that `next` excludes; never work around it. Use `dstack plan edit P<n> --purpose <text>` / `--e2e-focus <text>` or `dstack milestone edit M<n> --goal <text>`, then show `dstack milestone brief M<n>` and run `dstack milestone confirm M<n>` again, also for Plans added later.
 

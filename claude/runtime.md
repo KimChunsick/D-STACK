@@ -89,7 +89,9 @@ artifact/HEAD metadata. After the worker stops, use `dstack plan edit P<n> --sus
 evidence, reviews and commits. `dstack next` releases only its active overlap and worker slot.
 To continue, confirm the old worker remains stopped, then use `dstack plan start P<n> --resume
 --confirm`; the CLI rechecks checkout identity, dependencies, overlap and capacity under the
-shared store lock. `dstack run pause` pauses the whole run.
+shared store lock. While the Plan is suspended, `dstack plan edit P<n> --files <a,b>` or
+`--deps <P..>` may widen or correct its declaration; `--resume --confirm` then rechecks overlap,
+dependencies and capacity against the edited declaration. `dstack run pause` pauses the whole run.
 A stop request suspends the authorized work; it never implies a completion or replacement launch.
 
 ## Native implementation, reconnaissance and verification
